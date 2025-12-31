@@ -7,6 +7,11 @@ This service proxies OpenAI Responses API for logged-in users. It verifies Fireb
 - `POST /chat/stream` (streaming)
 - `POST /chat` (non-stream)
 
+Health check example:
+```bash
+curl -i "$SERVICE_URL/healthz"
+```
+
 ## Usage policy
 - Authenticated users are restricted to `gpt-4.1` only.
 - Rate limit: 60 requests per user per hour.

@@ -31,12 +31,13 @@ initializeFirebase();
 
 const app = express();
 app.disable("x-powered-by");
-app.use(cors({ origin: true }));
-app.use(express.json({ limit: "25mb" }));
 
 app.get("/healthz", (_req, res) => {
-  res.json({ ok: true });
+  res.status(200).type("text/plain").send("ok");
 });
+
+app.use(cors({ origin: true }));
+app.use(express.json({ limit: "25mb" }));
 
 app.post("/chat", async (req, res) => {
   const decoded = await authenticateRequest(req, res);
