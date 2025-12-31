@@ -32,6 +32,11 @@ initializeFirebase();
 const app = express();
 app.disable("x-powered-by");
 
+app.use((req, _res, next) => {
+  console.log("[req]", req.method, req.url);
+  next();
+});
+
 app.get("/healthz", (_req, res) => {
   res.status(200).type("text/plain").send("ok");
 });
@@ -148,13 +153,42 @@ app.post("/chat/stream", async (req, res) => {
   } catch (error) {
     console.warn("Stream error", error);
   } finally {
-    res.end();
+  res.end();
   }
 });
+
+logRoutes(app);
 
 app.listen(PORT, () => {
   console.log(`qb-support-backend listening on :${PORT}`);
 });
+
+function logRoutes(appInstance: express.Express) {
+  const stack = (appInstance as any)?._router?.stack ?? [];
+  const routes: Array<{ method: string; path: string }> = [];
+  for (const layer of stack) {
+    if (!layer) continue;
+    if (layer.route?.path && layer.route?.methods) {
+      const methods = Object.keys(layer.route.methods)
+        .filter((method) => layer.route.methods[method])
+        .map((method) => method.toUpperCase());
+      for (const method of methods) {
+        routes.push({ method, path: String(layer.route.path) });
+      }
+    } else if (layer.name === "router" && layer.handle?.stack) {
+      for (const nested of layer.handle.stack) {
+        if (!nested?.route?.path || !nested?.route?.methods) continue;
+        const methods = Object.keys(nested.route.methods)
+          .filter((method) => nested.route.methods[method])
+          .map((method) => method.toUpperCase());
+        for (const method of methods) {
+          routes.push({ method, path: String(nested.route.path) });
+        }
+      }
+    }
+  }
+  console.log("[routes]", routes);
+}
 
 function initializeFirebase() {
   if (getApps().length) return;
