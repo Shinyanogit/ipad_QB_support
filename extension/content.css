@@ -467,6 +467,68 @@ body.qb-support-chat-dock > #app {
   overscroll-behavior: contain;
 }
 
+body.qb-support-chat-dock > #app img {
+  max-width: 100%;
+  height: auto;
+}
+
+body.qb-support-chat-dock #app,
+body.qb-support-chat-dock .common-header,
+body.qb-support-chat-dock .common-header__wrapper,
+body.qb-support-chat-dock .service-header,
+body.qb-support-chat-dock .service-header__wrapper,
+body.qb-support-chat-dock .service-footer,
+body.qb-support-chat-dock .service-footer__wrapper,
+body.qb-support-chat-dock .router-view-wrapper,
+body.qb-support-chat-dock .wrapper,
+body.qb-support-chat-dock .contents,
+body.qb-support-chat-dock .contents__left,
+body.qb-support-chat-dock .question-container,
+body.qb-support-chat-dock .question-wrapper,
+body.qb-support-chat-dock .question-main,
+body.qb-support-chat-dock .question-content,
+body.qb-support-chat-dock .question-footer,
+body.qb-support-chat-dock .question-nav,
+body.qb-support-chat-dock .question-nav__title,
+body.qb-support-chat-dock .header,
+body.qb-support-chat-dock .answer-item,
+body.qb-support-chat-dock .resultcontent,
+body.qb-support-chat-dock .desc--main,
+body.qb-support-chat-dock .desc--sub,
+body.qb-support-chat-dock .desc {
+  margin-left: 0 !important;
+  margin-right: auto !important;
+  max-width: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+body.qb-support-chat-dock .answer-item {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+body.qb-support-chat-dock .resultcontent,
+body.qb-support-chat-dock .question-content,
+body.qb-support-chat-dock .question-wrapper {
+  overflow-x: hidden;
+}
+
+body.qb-support-chat-dock .resultcontent *,
+body.qb-support-chat-dock .question-content * {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+body.qb-support-chat-dock .resultcontent,
+body.qb-support-chat-dock .question-content,
+body.qb-support-chat-dock .desc--main,
+body.qb-support-chat-dock .desc--sub,
+body.qb-support-chat-dock .desc {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 #qb-support-chat-root {
   z-index: 2147483001;
   display: flex;
@@ -566,11 +628,13 @@ body.qb-support-chat-dock > #app {
   display: flex;
   flex-direction: column;
   position: relative;
-  background: #002d29;
+  background: rgba(0, 45, 41, 0.88);
   border-left: 1px solid rgba(0, 150, 136, 0.25);
   border-right: 1px solid rgba(0, 150, 136, 0.25);
   box-shadow: 0 18px 40px rgba(4, 9, 15, 0.55);
   color: #e7eff8;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
 }
 
 .qb-support-chat-header {
@@ -866,7 +930,7 @@ html[data-qb-theme="light"] .qb-support-toggle-btn {
 }
 
 html[data-qb-theme="light"] .qb-support-chat-panel {
-  background: #002d29;
+  background: rgba(0, 45, 41, 0.88);
   border-left: 1px solid rgba(0, 150, 136, 0.25);
   border-right: 1px solid rgba(0, 150, 136, 0.25);
   color: #f5fbff;
@@ -896,14 +960,14 @@ html[data-qb-theme="light"] .qb-support-chat-msg.is-user {
 }
 
 html[data-qb-theme="dark"] .qb-support-chat-panel {
-  background: #0b1218;
+  background: rgba(11, 18, 24, 0.88);
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   color: #f5fbff;
 }
 
 html[data-qb-theme="dark"] .qb-support-chat-header {
-  background: #0b1218;
+  background: rgba(11, 18, 24, 0.72);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 

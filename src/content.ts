@@ -53,9 +53,7 @@ const CHAT_TOGGLE_SHORTCUT = "Ctrl+O";
 const CHAT_NEW_SHORTCUT = "Ctrl+N";
 const CHAT_TEMPLATE_MAX = 5;
 const CHAT_DOCK_MIN_WIDTH = 320;
-const CHAT_DOCK_MAX_WIDTH = 720;
 const CHAT_DOCK_TARGET_RATIO = 0.45;
-const CHAT_DOCK_MIN_CONTENT_WIDTH = 640;
 const CHAT_DOCK_GAP = 20;
 const QB_ACTION_ORIGIN = "https://input.medilink-study.com";
 const QB_TOP_ORIGIN = "https://qb.medilink-study.com";
@@ -1709,8 +1707,7 @@ function applyChatDockLayout() {
   if (window !== window.top) return;
   const body = document.body;
   if (!body || !chatRoot) return;
-  const isWide = isWideLayout();
-  const showDock = settings.chatOpen && isWide;
+  const showDock = settings.chatOpen;
 
   chatRoot.dataset.mode = showDock ? "dock" : "overlay";
   body.style.marginRight = "";
@@ -1718,7 +1715,7 @@ function applyChatDockLayout() {
   document.documentElement.style.overflowX = "";
   body.classList.toggle(CHAT_DOCK_CLASS, showDock);
   if (chatResizer) {
-    chatResizer.dataset.active = showDock ? "true" : "false";
+    chatResizer.dataset.active = settings.chatOpen ? "true" : "false";
   }
   if (showDock) {
     const dockWidth = getDockWidth();
@@ -1733,20 +1730,12 @@ function applyChatDockLayout() {
   }
 }
 
-function isWideLayout(): boolean {
-  const w = window.innerWidth;
-  const h = window.innerHeight || 1;
-  const wideEnough =
-    w >= CHAT_DOCK_MIN_WIDTH + CHAT_DOCK_MIN_CONTENT_WIDTH + CHAT_DOCK_GAP;
-  return w / h > 1.2 && wideEnough;
-}
-
 function getDockWidth(): number {
   const min = CHAT_DOCK_MIN_WIDTH;
   const max = getDockMaxWidth();
   if (!chatDockWidth) {
     const target = Math.floor(window.innerWidth * CHAT_DOCK_TARGET_RATIO);
-    chatDockWidth = Math.min(max, Math.min(CHAT_DOCK_MAX_WIDTH, Math.max(min, target)));
+    chatDockWidth = Math.min(max, Math.max(min, target));
   }
   if (chatDockWidth < min) chatDockWidth = min;
   if (chatDockWidth > max) chatDockWidth = max;
@@ -1754,10 +1743,7 @@ function getDockWidth(): number {
 }
 
 function getDockMaxWidth(): number {
-  const byContent = Math.floor(
-    window.innerWidth - CHAT_DOCK_MIN_CONTENT_WIDTH - CHAT_DOCK_GAP
-  );
-  return Math.min(CHAT_DOCK_MAX_WIDTH, Math.max(CHAT_DOCK_MIN_WIDTH, byContent));
+  return Math.max(CHAT_DOCK_MIN_WIDTH, window.innerWidth - CHAT_DOCK_GAP);
 }
 
 function setChatDockWidth(width: number) {
@@ -1771,7 +1757,7 @@ function setChatDockWidth(width: number) {
 }
 
 function startChatResize(event: PointerEvent) {
-  if (!settings.chatOpen || !isWideLayout() || !chatResizer) return;
+  if (!settings.chatOpen || !chatResizer) return;
   if (!document.body.classList.contains(CHAT_DOCK_CLASS)) return;
   chatResizeActive = true;
   chatResizer.setPointerCapture(event.pointerId);
