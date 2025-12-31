@@ -14,7 +14,7 @@ export const CHAT_MODEL_OPTIONS = [
   "gpt-5",
   "gpt-4.1",
   "gpt-4o",
-] as const;
+];
 const CHAT_TEMPLATE_LIMIT = 5;
 const DEFAULT_EXPLANATION_PROMPTS: Record<ExplanationLevel, string> = {
   highschool:
@@ -162,6 +162,7 @@ export const defaultSettings: Settings = {
   chatOpen: false,
   chatDock: "right",
   chatApiKey: "",
+  chatBackendUrl: "",
   chatModel: "gpt-5.2",
   chatTemplates: DEFAULT_CHAT_TEMPLATES,
   chatTemplateCount: 3,
@@ -213,6 +214,10 @@ export function normalizeSettings(
       typeof input.chatApiKey === "string"
         ? input.chatApiKey.trim()
         : defaultSettings.chatApiKey,
+    chatBackendUrl:
+      typeof input.chatBackendUrl === "string"
+        ? input.chatBackendUrl.trim()
+        : defaultSettings.chatBackendUrl,
     chatModel: normalizeChatModel(input.chatModel) ?? defaultSettings.chatModel,
     chatTemplates: normalizeChatTemplates(input.chatTemplates),
     chatTemplateCount: (() => {
@@ -249,9 +254,7 @@ function normalizeChatModel(input?: string | null): string | null {
   if (typeof input !== "string") return null;
   const trimmed = input.trim();
   if (!trimmed) return null;
-  return CHAT_MODEL_OPTIONS.includes(trimmed as (typeof CHAT_MODEL_OPTIONS)[number])
-    ? trimmed
-    : null;
+  return CHAT_MODEL_OPTIONS.includes(trimmed) ? trimmed : null;
 }
 
 function normalizeSingleKey(input?: string | null): string {

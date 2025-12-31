@@ -47,6 +47,7 @@ export interface Settings {
   chatOpen: boolean;
   chatDock: ChatDock;
   chatApiKey: string;
+  chatBackendUrl: string;
   chatModel: string;
   chatTemplates: ChatTemplateSetting[];
   chatTemplateCount: number;

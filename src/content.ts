@@ -61,6 +61,7 @@ const QB_ACTION_ORIGIN = "https://input.medilink-study.com";
 const QB_TOP_ORIGIN = "https://qb.medilink-study.com";
 const FIREBASE_SETTINGS_COLLECTION = "qb_support_settings";
 const FIREBASE_SETTINGS_VERSION = 1;
+const BACKEND_FORCED_MODEL = "gpt-4.1";
 const EXPLANATION_LEVEL_LABELS: Record<string, string> = {
   highschool: "高校生でもわかる",
   "med-junior": "医学部低学年",
@@ -96,6 +97,15 @@ type ResponseInputItem = {
   content: Array<ResponseInputText | ResponseInputImage>;
 };
 
+type ChatAuthMode = "apiKey" | "backend";
+
+type ChatAuth = {
+  mode: ChatAuthMode;
+  apiKey?: string;
+  backendUrl?: string;
+  authToken?: string;
+};
+
 let settings: Settings = { ...defaultSettings };
 let currentInfo: QuestionInfo | null = null;
 let currentSnapshot: QuestionSnapshot | null = null;
@@ -114,6 +124,8 @@ let chatStatusField: HTMLElement | null = null;
 let chatInputWrap: HTMLDivElement | null = null;
 let chatApiInput: HTMLInputElement | null = null;
 let chatApiSaveButton: HTMLButtonElement | null = null;
+let chatBackendInput: HTMLInputElement | null = null;
+let chatBackendSaveButton: HTMLButtonElement | null = null;
 let chatModelInput: HTMLSelectElement | null = null;
 let chatModelSaveButton: HTMLButtonElement | null = null;
 let chatSettingsPanel: HTMLDivElement | null = null;
@@ -244,6 +256,7 @@ function initAuth() {
   onAuthStateChanged(auth, (user) => {
     authUser = user;
     updateAuthUI();
+    applyChatSettings();
     if (!user) {
       remoteSettingsLoadedFor = null;
       setAuthSyncStatus("未ログイン", false);
@@ -1102,6 +1115,12 @@ function ensureChatUI() {
         ".qb-support-chat-save"
       ) as HTMLButtonElement | null;
     }
+    chatBackendInput = chatRoot.querySelector(
+      ".qb-support-chat-backend-url"
+    ) as HTMLInputElement | null;
+    chatBackendSaveButton = chatRoot.querySelector(
+      ".qb-support-chat-backend-save"
+    ) as HTMLButtonElement | null;
     const modelNode = chatRoot.querySelector(".qb-support-chat-model");
     chatModelInput = modelNode instanceof HTMLSelectElement ? modelNode : null;
     chatModelSaveButton = chatRoot.querySelector(
@@ -1119,8 +1138,46 @@ function ensureChatUI() {
     if (chatApiSaveButton) {
       chatApiSaveButton.classList.add("qb-support-chat-api-save");
     }
+    const apiSection = chatRoot.querySelector(".qb-support-chat-api");
+    if (apiSection) {
+      if (!chatBackendInput) {
+        const backendLabel = document.createElement("label");
+        backendLabel.textContent = "Chat Backend URL";
+        backendLabel.className = "qb-support-chat-api-label";
+        chatBackendInput = document.createElement("input");
+        chatBackendInput.type = "text";
+        chatBackendInput.className = "qb-support-chat-input qb-support-chat-backend-url";
+        chatBackendInput.placeholder = "https://your-service.example";
+        apiSection.appendChild(backendLabel);
+        apiSection.appendChild(chatBackendInput);
+      }
+      if (!chatBackendSaveButton) {
+        chatBackendSaveButton = document.createElement("button");
+        chatBackendSaveButton.type = "button";
+        chatBackendSaveButton.className =
+          "qb-support-chat-save qb-support-chat-backend-save";
+        chatBackendSaveButton.textContent = "適用";
+        apiSection.appendChild(chatBackendSaveButton);
+        chatBackendSaveButton.addEventListener("click", () => {
+          const nextUrl = chatBackendInput?.value.trim() ?? "";
+          if (!nextUrl) {
+            if (settings.chatBackendUrl) {
+              void saveSettings({ ...settings, chatBackendUrl: "" });
+              setChatStatus("バックエンドURLをクリアしました", false);
+              return;
+            }
+            setChatStatus("バックエンドURLを入力してください", true);
+            return;
+          }
+          void saveSettings({ ...settings, chatBackendUrl: nextUrl });
+          setChatStatus("バックエンドURLを保存しました", false);
+        });
+      }
+      if (chatBackendSaveButton) {
+        applyButtonVariant(chatBackendSaveButton, "primary");
+      }
+    }
     if (!chatModelInput || !chatModelSaveButton) {
-      const apiSection = chatRoot.querySelector(".qb-support-chat-api");
       if (apiSection) {
         let modelLabel = apiSection.querySelector(
           ".qb-support-chat-model-label"
@@ -1198,6 +1255,7 @@ function ensureChatUI() {
     ) as HTMLButtonElement | null;
     applyButtonVariant(chatNewButton, "ghost");
     applyButtonVariant(chatApiSaveButton, "primary");
+    applyButtonVariant(chatBackendSaveButton, "primary");
     applyButtonVariant(chatModelSaveButton, "primary");
     applyButtonVariant(chatSendButton, "primary");
     attachChatSettingsHandlers();
@@ -1282,6 +1340,35 @@ function ensureChatUI() {
     setChatStatus("APIキーを保存しました", false);
   });
 
+  const backendLabel = document.createElement("label");
+  backendLabel.textContent = "Chat Backend URL";
+  backendLabel.className = "qb-support-chat-api-label";
+
+  chatBackendInput = document.createElement("input");
+  chatBackendInput.type = "text";
+  chatBackendInput.className = "qb-support-chat-input qb-support-chat-backend-url";
+  chatBackendInput.placeholder = "https://your-service.example";
+
+  chatBackendSaveButton = document.createElement("button");
+  chatBackendSaveButton.type = "button";
+  chatBackendSaveButton.className = "qb-support-chat-save qb-support-chat-backend-save";
+  chatBackendSaveButton.textContent = "適用";
+  applyButtonVariant(chatBackendSaveButton, "primary");
+  chatBackendSaveButton.addEventListener("click", () => {
+    const nextUrl = chatBackendInput?.value.trim() ?? "";
+    if (!nextUrl) {
+      if (settings.chatBackendUrl) {
+        void saveSettings({ ...settings, chatBackendUrl: "" });
+        setChatStatus("バックエンドURLをクリアしました", false);
+        return;
+      }
+      setChatStatus("バックエンドURLを入力してください", true);
+      return;
+    }
+    void saveSettings({ ...settings, chatBackendUrl: nextUrl });
+    setChatStatus("バックエンドURLを保存しました", false);
+  });
+
   const modelLabel = document.createElement("label");
   modelLabel.textContent = "Model";
   modelLabel.className = "qb-support-chat-api-label qb-support-chat-model-label";
@@ -1297,6 +1384,9 @@ function ensureChatUI() {
   apiSection.appendChild(apiLabel);
   apiSection.appendChild(chatApiInput);
   apiSection.appendChild(chatApiSaveButton);
+  apiSection.appendChild(backendLabel);
+  apiSection.appendChild(chatBackendInput);
+  apiSection.appendChild(chatBackendSaveButton);
   apiSection.appendChild(modelLabel);
   apiSection.appendChild(chatModelInput);
   apiSection.appendChild(chatModelSaveButton);
@@ -1420,8 +1510,22 @@ function applyChatSettings() {
       : "sk-...";
   }
 
-  if (chatModelInput && document.activeElement !== chatModelInput) {
-    chatModelInput.value = settings.chatModel;
+  if (chatBackendInput && document.activeElement !== chatBackendInput) {
+    chatBackendInput.value = settings.chatBackendUrl ?? "";
+  }
+
+  const backendMode = isBackendModelLocked();
+
+  if (chatModelInput) {
+    if (backendMode) {
+      chatModelInput.value = BACKEND_FORCED_MODEL;
+    } else if (document.activeElement !== chatModelInput) {
+      chatModelInput.value = settings.chatModel;
+    }
+    chatModelInput.disabled = backendMode;
+  }
+  if (chatModelSaveButton) {
+    chatModelSaveButton.disabled = backendMode;
   }
 }
 
@@ -1758,14 +1862,61 @@ function populateChatSettingsPanel() {
   chatSettingsPanel.dataset.populated = "true";
 }
 
+function resolveBackendBaseUrl(): string | null {
+  const raw = settings.chatBackendUrl?.trim() ?? "";
+  if (!raw) return null;
+  try {
+    return new URL(raw).toString();
+  } catch {
+    return null;
+  }
+}
+
+function isBackendModelLocked(): boolean {
+  const apiKey = settings.chatApiKey?.trim() ?? "";
+  if (apiKey) return false;
+  if (!authUser) return false;
+  return Boolean(resolveBackendBaseUrl());
+}
+
+async function resolveChatAuth(): Promise<ChatAuth> {
+  const apiKey = settings.chatApiKey?.trim() ?? "";
+  if (apiKey) {
+    return { mode: "apiKey", apiKey };
+  }
+
+  if (!authUser) {
+    throw new Error("APIキーを設定するか、Googleでログインしてください");
+  }
+
+  const backendBaseUrl = resolveBackendBaseUrl();
+  if (!backendBaseUrl) {
+    throw new Error("バックエンドURLを設定してください");
+  }
+
+  const idToken = await authUser.getIdToken();
+  if (!idToken) {
+    throw new Error("認証トークンを取得できませんでした");
+  }
+
+  return { mode: "backend", backendUrl: backendBaseUrl, authToken: idToken };
+}
+
+async function resolveChatAuthWithStatus(): Promise<ChatAuth | null> {
+  try {
+    return await resolveChatAuth();
+  } catch (error) {
+    setChatStatus(error instanceof Error ? error.message : String(error), true);
+    return null;
+  }
+}
+
 async function sendTemplateMessage(template: ChatTemplateSetting | string) {
   const rawMessage = typeof template === "string" ? template : template.prompt;
   if (!rawMessage.trim()) return;
   const message = applyTemplateConstraints(rawMessage, template);
-  if (!settings.chatApiKey) {
-    setChatStatus("APIキーを設定してください", true);
-    return;
-  }
+  const auth = await resolveChatAuthWithStatus();
+  if (!auth) return;
   if (!chatInput || !chatMessagesEl) {
     ensureChatUI();
   }
@@ -1945,10 +2096,8 @@ async function handleChatSend() {
   if (chatRequestPending) return;
   const userMessage = chatInput.value.trim();
   if (!userMessage) return;
-  if (!settings.chatApiKey) {
-    setChatStatus("APIキーを設定してください", true);
-    return;
-  }
+  const auth = await resolveChatAuthWithStatus();
+  if (!auth) return;
 
   chatInput.value = "";
   setChatStatus("", false);
@@ -1960,7 +2109,9 @@ async function handleChatSend() {
   const requestId = createChatRequestId();
   activeChatRequestId = requestId;
   const placeholder = appendChatMessage("assistant", "回答中...", { pending: true });
-  const useThinking = settings.chatModel.startsWith("gpt-5");
+  const effectiveModel =
+    auth.mode === "backend" ? BACKEND_FORCED_MODEL : settings.chatModel;
+  const useThinking = effectiveModel.startsWith("gpt-5");
   let thinkingTimer: number | null = null;
   let gotDelta = false;
 
@@ -1991,6 +2142,7 @@ async function handleChatSend() {
         instructions,
         previousResponseId: chatLastResponseId,
       },
+      auth,
       (delta) => {
         gotDelta = true;
         if (thinkingTimer) {
@@ -2013,14 +2165,14 @@ async function handleChatSend() {
     } else if (finalText) {
       const message = appendChatMessage("assistant", finalText);
       if (message && response.usage) {
-        const meta = formatUsageMeta(response.usage, settings.chatModel);
+        const meta = formatUsageMeta(response.usage, effectiveModel);
         if (meta) {
           setChatMessageMeta(message, meta);
         }
       }
     }
     if (placeholder && response.usage) {
-      const meta = formatUsageMeta(response.usage, settings.chatModel);
+      const meta = formatUsageMeta(response.usage, effectiveModel);
       if (meta) {
         setChatMessageMeta(placeholder, meta);
       }
@@ -2412,6 +2564,7 @@ async function requestChatResponseStream(
     instructions: string;
     previousResponseId: string | null;
   },
+  auth: ChatAuth,
   onDelta: (delta: string) => void
 ): Promise<{ text: string; responseId: string | null; usage: ResponseUsage | null }> {
   if (!webext.runtime?.connect) {
@@ -2529,12 +2682,18 @@ async function requestChatResponseStream(
     port.onMessage.addListener(onMessage);
     port.onDisconnect.addListener(onDisconnect);
 
+    const model = auth.mode === "backend" ? BACKEND_FORCED_MODEL : settings.chatModel;
+    const apiKey = auth.mode === "apiKey" ? auth.apiKey ?? "" : "";
+    const backendUrl = auth.mode === "backend" ? auth.backendUrl ?? "" : "";
+    const authToken = auth.mode === "backend" ? auth.authToken ?? "" : "";
     try {
       port.postMessage({
         type: "QB_CHAT_STREAM_REQUEST",
         requestId: request.requestId,
-        apiKey: settings.chatApiKey,
-        model: settings.chatModel,
+        apiKey,
+        backendUrl,
+        authToken,
+        model,
         input: request.input,
         instructions: request.instructions,
         previousResponseId: request.previousResponseId ?? null,

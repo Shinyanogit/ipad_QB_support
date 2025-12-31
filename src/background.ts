@@ -155,6 +155,39 @@ function sendMouseEvent(
   });
 }
 
+function resolveBackendChatUrl(base: string): string | null {
+  return resolveBackendEndpoint(base, "chat");
+}
+
+function resolveBackendStreamUrl(base: string): string | null {
+  return resolveBackendEndpoint(base, "chat/stream");
+}
+
+function resolveBackendEndpoint(base: string, suffix: string): string | null {
+  const trimmed = base.trim();
+  if (!trimmed) return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return null;
+  }
+  let path = url.pathname.replace(/\/+$/, "");
+  if (!path) {
+    path = `/${suffix}`;
+  } else if (path.endsWith(`/${suffix}`)) {
+    // already set
+  } else if (suffix === "chat/stream" && path.endsWith("/chat")) {
+    path = `${path}/stream`;
+  } else if (suffix === "chat" && path.endsWith("/chat/stream")) {
+    path = path.replace(/\/chat\/stream$/, "/chat");
+  } else {
+    path = `${path}/${suffix}`;
+  }
+  url.pathname = path;
+  return url.toString();
+}
+
 function getOAuthClientId(): string | null {
   const manifest = webext.runtime?.getManifest?.();
   if (!manifest?.oauth2?.client_id) return null;
@@ -412,13 +445,21 @@ async function handleAuthTokenRemoval(token?: string | null): Promise<void> {
 
 async function handleChatRequest(message: {
   apiKey?: string;
+  backendUrl?: string;
+  authToken?: string;
   model?: string;
   messages?: Array<{ role: string; content: string }>;
 }) {
   const apiKey = typeof message.apiKey === "string" ? message.apiKey.trim() : "";
-  if (!apiKey) throw new Error("API key is not set.");
-  const model =
+  const backendBaseUrl =
+    typeof message.backendUrl === "string" ? message.backendUrl.trim() : "";
+  const authToken = typeof message.authToken === "string" ? message.authToken.trim() : "";
+  const backendUrl = backendBaseUrl ? resolveBackendChatUrl(backendBaseUrl) : "";
+  const useBackend = !apiKey && Boolean(backendUrl && authToken);
+  if (!apiKey && !useBackend) throw new Error("API key is not set.");
+  const requestedModel =
     typeof message.model === "string" && message.model ? message.model : "gpt-4o-mini";
+  const model = useBackend ? "gpt-4.1" : requestedModel;
   const messages = Array.isArray(message.messages) ? message.messages : [];
   const supportsTemperature = model === "gpt-5.2";
 
@@ -430,14 +471,17 @@ async function handleChatRequest(message: {
     payload.temperature = 0.2;
   }
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  const response = await fetch(
+    useBackend && backendUrl ? backendUrl : "https://api.openai.com/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${useBackend ? authToken : apiKey}`,
+      },
+      body: JSON.stringify(payload),
+    }
+  );
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -458,6 +502,8 @@ async function handleChatStream(
   message: {
     requestId: string;
     apiKey?: string;
+    backendUrl?: string;
+    authToken?: string;
     model?: string;
     input?: unknown;
     instructions?: string;
@@ -466,9 +512,15 @@ async function handleChatStream(
 ) {
   const requestId = message.requestId;
   const apiKey = typeof message.apiKey === "string" ? message.apiKey.trim() : "";
-  if (!apiKey) throw new Error("API key is not set.");
-  const model =
+  const backendBaseUrl =
+    typeof message.backendUrl === "string" ? message.backendUrl.trim() : "";
+  const authToken = typeof message.authToken === "string" ? message.authToken.trim() : "";
+  const backendUrl = backendBaseUrl ? resolveBackendStreamUrl(backendBaseUrl) : "";
+  const useBackend = !apiKey && Boolean(backendUrl && authToken);
+  if (!apiKey && !useBackend) throw new Error("API key is not set.");
+  const requestedModel =
     typeof message.model === "string" && message.model ? message.model : "gpt-4o-mini";
+  const model = useBackend ? "gpt-4.1" : requestedModel;
   const input = message.input ?? [];
   const instructions =
     typeof message.instructions === "string" ? message.instructions.trim() : "";
@@ -492,15 +544,18 @@ async function handleChatStream(
     payload.temperature = 0.2;
   }
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(payload),
-    signal: controller.signal,
-  });
+  const response = await fetch(
+    useBackend && backendUrl ? backendUrl : "https://api.openai.com/v1/responses",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${useBackend ? authToken : apiKey}`,
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    }
+  );
 
   if (!response.ok) {
     const errorText = await response.text();

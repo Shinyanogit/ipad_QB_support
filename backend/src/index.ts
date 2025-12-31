@@ -43,8 +43,7 @@ app.post("/chat", async (req, res) => {
   if (!decoded) return;
 
   const body = req.body as { model?: string; messages?: unknown } | undefined;
-  const model = typeof body?.model === "string" && body.model.trim() ? body.model.trim() : "gpt-4o-mini";
-  const policyError = await enforceUsagePolicy(decoded.uid, model);
+  const policyError = await enforceUsagePolicy(decoded.uid);
   if (policyError) {
     res.status(policyError.status).json(policyError.body);
     return;
@@ -52,9 +51,6 @@ app.post("/chat", async (req, res) => {
   const messages = Array.isArray(body?.messages) ? body?.messages : [];
 
   const payload: Record<string, unknown> = { model: RESTRICTED_MODEL, messages };
-  if (RESTRICTED_MODEL === "gpt-5.2") {
-    payload.temperature = 0.2;
-  }
 
   const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -86,7 +82,6 @@ app.post("/chat/stream", async (req, res) => {
         previous_response_id?: string | null;
       }
     | undefined;
-  const model = typeof body?.model === "string" && body.model.trim() ? body.model.trim() : "gpt-4o-mini";
   const instructions = typeof body?.instructions === "string" ? body.instructions.trim() : "";
   const input = body?.input ?? [];
   const previousResponseId =
@@ -94,7 +89,7 @@ app.post("/chat/stream", async (req, res) => {
       ? body.previous_response_id
       : null;
 
-  const policyError = await enforceUsagePolicy(decoded.uid, model);
+  const policyError = await enforceUsagePolicy(decoded.uid);
   if (policyError) {
     res.status(policyError.status).json(policyError.body);
     return;
@@ -108,9 +103,6 @@ app.post("/chat/stream", async (req, res) => {
     stream: true,
     store: true,
   };
-  if (RESTRICTED_MODEL === "gpt-5.2") {
-    payload.temperature = 0.2;
-  }
 
   const controller = new AbortController();
   req.on("close", () => controller.abort());
@@ -226,18 +218,8 @@ async function authenticateRequest(
 }
 
 async function enforceUsagePolicy(
-  uid: string,
-  requestedModel: string
+  uid: string
 ): Promise<{ status: number; body: Record<string, unknown> } | null> {
-  if (requestedModel !== RESTRICTED_MODEL) {
-    return {
-      status: 403,
-      body: {
-        error: "Model not allowed.",
-        allowed_model: RESTRICTED_MODEL,
-      },
-    };
-  }
   try {
     const result = await consumeRateLimit(uid);
     if (!result.allowed) {
