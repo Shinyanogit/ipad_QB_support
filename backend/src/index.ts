@@ -3,6 +3,7 @@ import express from "express";
 import { readFileSync } from "node:fs";
 import { cert, getApps, initializeApp, type ServiceAccount } from "firebase-admin/app";
 import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const OPENAI_API_KEY = (process.env.OPENAI_API_KEY ?? "").trim();
@@ -12,6 +13,10 @@ const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS ?? "")
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
 const ALLOWED_DOMAIN = (process.env.ALLOWED_DOMAIN ?? "").trim().toLowerCase();
+const RATE_LIMIT_MAX = 60;
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const RESTRICTED_MODEL = "gpt-4.1";
+const RATE_LIMIT_COLLECTION = "qb_support_rate_limits_v1";
 
 if (!OPENAI_API_KEY) {
   console.error("Missing OPENAI_API_KEY.");
@@ -39,10 +44,15 @@ app.post("/chat", async (req, res) => {
 
   const body = req.body as { model?: string; messages?: unknown } | undefined;
   const model = typeof body?.model === "string" && body.model.trim() ? body.model.trim() : "gpt-4o-mini";
+  const policyError = await enforceUsagePolicy(decoded.uid, model);
+  if (policyError) {
+    res.status(policyError.status).json(policyError.body);
+    return;
+  }
   const messages = Array.isArray(body?.messages) ? body?.messages : [];
 
-  const payload: Record<string, unknown> = { model, messages };
-  if (model === "gpt-5.2") {
+  const payload: Record<string, unknown> = { model: RESTRICTED_MODEL, messages };
+  if (RESTRICTED_MODEL === "gpt-5.2") {
     payload.temperature = 0.2;
   }
 
@@ -84,15 +94,21 @@ app.post("/chat/stream", async (req, res) => {
       ? body.previous_response_id
       : null;
 
+  const policyError = await enforceUsagePolicy(decoded.uid, model);
+  if (policyError) {
+    res.status(policyError.status).json(policyError.body);
+    return;
+  }
+
   const payload: Record<string, unknown> = {
-    model,
+    model: RESTRICTED_MODEL,
     input,
     instructions: instructions || undefined,
     previous_response_id: previousResponseId ?? undefined,
     stream: true,
     store: true,
   };
-  if (model === "gpt-5.2") {
+  if (RESTRICTED_MODEL === "gpt-5.2") {
     payload.temperature = 0.2;
   }
 
@@ -207,6 +223,87 @@ async function authenticateRequest(
     return null;
   }
   return decoded;
+}
+
+async function enforceUsagePolicy(
+  uid: string,
+  requestedModel: string
+): Promise<{ status: number; body: Record<string, unknown> } | null> {
+  if (requestedModel !== RESTRICTED_MODEL) {
+    return {
+      status: 403,
+      body: {
+        error: "Model not allowed.",
+        allowed_model: RESTRICTED_MODEL,
+      },
+    };
+  }
+  try {
+    const result = await consumeRateLimit(uid);
+    if (!result.allowed) {
+      return {
+        status: 429,
+        body: {
+          error: "Rate limit exceeded.",
+          limit: RATE_LIMIT_MAX,
+          remaining: 0,
+          resetAt: result.resetAt,
+        },
+      };
+    }
+  } catch (error) {
+    console.warn("Rate limit check failed", error);
+    return {
+      status: 503,
+      body: { error: "Rate limit check failed." },
+    };
+  }
+  return null;
+}
+
+async function consumeRateLimit(
+  uid: string
+): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
+  const db = getFirestore();
+  const ref = db.collection(RATE_LIMIT_COLLECTION).doc(uid);
+  const now = Date.now();
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists ? (snap.data() as { windowStart?: number; count?: number }) : {};
+    const windowStart = typeof data.windowStart === "number" ? data.windowStart : 0;
+    const count = typeof data.count === "number" ? data.count : 0;
+    const windowExpired = !windowStart || now - windowStart >= RATE_LIMIT_WINDOW_MS;
+    if (windowExpired) {
+      tx.set(
+        ref,
+        { windowStart: now, count: 1, updatedAt: now },
+        { merge: true }
+      );
+      return {
+        allowed: true,
+        remaining: RATE_LIMIT_MAX - 1,
+        resetAt: now + RATE_LIMIT_WINDOW_MS,
+      };
+    }
+    if (count >= RATE_LIMIT_MAX) {
+      return {
+        allowed: false,
+        remaining: 0,
+        resetAt: windowStart + RATE_LIMIT_WINDOW_MS,
+      };
+    }
+    const nextCount = count + 1;
+    tx.set(
+      ref,
+      { windowStart, count: nextCount, updatedAt: now },
+      { merge: true }
+    );
+    return {
+      allowed: true,
+      remaining: Math.max(0, RATE_LIMIT_MAX - nextCount),
+      resetAt: windowStart + RATE_LIMIT_WINDOW_MS,
+    };
+  });
 }
 
 function getBearerToken(req: express.Request): string | null {
