@@ -467,8 +467,17 @@ body.qb-support-chat-dock > #app {
   overscroll-behavior: contain;
 }
 
-body.qb-support-chat-dock > #app img {
+body.qb-support-chat-dock > #app img,
+body.qb-support-chat-dock .question-content img,
+body.qb-support-chat-dock .resultcontent img {
+  width: auto !important;
   max-width: 100%;
+  height: auto;
+}
+
+body.qb-support-chat-dock .question-content img,
+body.qb-support-chat-dock .resultcontent img {
+  max-width: min(100%, var(--qb-support-img-base-width, 100%));
   height: auto;
 }
 

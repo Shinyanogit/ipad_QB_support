@@ -30,7 +30,7 @@ import {
   signInWithCredential,
   signOut,
 } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore/lite";
 import { getFirebaseAuth, getFirebaseDb } from "./lib/firebase";
 import {
   getManifest,
@@ -157,6 +157,8 @@ let authInitialized = false;
 let authSyncTimer: number | null = null;
 let authSyncInFlight = false;
 let authSyncPending = false;
+let authRemoteFetchPending = false;
+let authNetworkBound = false;
 let remoteSettingsLoadedFor: string | null = null;
 let lastAuthAccessToken: string | null = null;
 let explanationLevelSelect: HTMLSelectElement | null = null;
@@ -231,6 +233,7 @@ async function saveSettings(next: Settings, options?: { skipRemote?: boolean }) 
 function initAuth() {
   if (authInitialized || window !== window.top) return;
   authInitialized = true;
+  ensureAuthNetworkListeners();
   const auth = getFirebaseAuth();
   setPersistence(auth, browserLocalPersistence).catch((error) => {
     console.warn("[QB_SUPPORT][auth-persistence]", error);
@@ -283,14 +286,25 @@ function setAuthSyncStatus(message: string, isError: boolean) {
 }
 
 async function requestGoogleAuthToken(): Promise<string> {
-  const response = await sendRuntimeMessage<{
-    ok: boolean;
-    token?: string;
-    error?: string;
-  }>({
-    type: "QB_AUTH_GET_TOKEN",
-    interactive: true,
+  const timeoutMs = 20000;
+  let timeoutId: number | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error("ログイン画面の起動がタイムアウトしました。"));
+    }, timeoutMs);
   });
+  const response = await Promise.race([
+    sendRuntimeMessage<{
+      ok: boolean;
+      token?: string;
+      error?: string;
+    }>({
+      type: "QB_AUTH_GET_TOKEN",
+      interactive: true,
+    }),
+    timeoutPromise,
+  ]);
+  if (timeoutId) window.clearTimeout(timeoutId);
   if (!response?.ok) {
     const message = response?.error ?? "OAuth token request failed.";
     throw new Error(message);
@@ -358,6 +372,11 @@ async function handleAuthSignOut() {
 
 function scheduleRemoteSettingsSync() {
   if (!authUser || window !== window.top) return;
+  if (!navigator.onLine) {
+    authSyncPending = true;
+    setAuthSyncStatus("オフライン: 同期保留", false);
+    return;
+  }
   if (authSyncTimer) window.clearTimeout(authSyncTimer);
   authSyncTimer = window.setTimeout(() => {
     void syncSettingsToRemote();
@@ -381,6 +400,11 @@ async function syncSettingsFromRemote(uid: string) {
     setAuthSyncStatus("同期完了", false);
   } catch (error) {
     console.warn("[QB_SUPPORT][auth-sync]", error);
+    if (isOfflineSyncError(error)) {
+      authRemoteFetchPending = true;
+      setAuthSyncStatus("オフライン: 同期保留", false);
+      return;
+    }
     setAuthSyncStatus(`同期エラー: ${String(error)}`, true);
   }
 }
@@ -406,6 +430,11 @@ async function syncSettingsToRemote() {
     authSyncPending = true;
     return;
   }
+  if (!navigator.onLine) {
+    authSyncPending = true;
+    setAuthSyncStatus("オフライン: 同期保留", false);
+    return;
+  }
   authSyncInFlight = true;
   setAuthSyncStatus("同期中...", false);
   try {
@@ -423,6 +452,11 @@ async function syncSettingsToRemote() {
     setAuthSyncStatus("同期完了", false);
   } catch (error) {
     console.warn("[QB_SUPPORT][auth-sync]", error);
+    if (isOfflineSyncError(error)) {
+      authSyncPending = true;
+      setAuthSyncStatus("オフライン: 同期保留", false);
+      return;
+    }
     setAuthSyncStatus(`同期エラー: ${String(error)}`, true);
   } finally {
     authSyncInFlight = false;
@@ -431,6 +465,37 @@ async function syncSettingsToRemote() {
       void syncSettingsToRemote();
     }
   }
+}
+
+function ensureAuthNetworkListeners() {
+  if (authNetworkBound) return;
+  authNetworkBound = true;
+  window.addEventListener("online", () => {
+    if (!authUser) return;
+    if (authRemoteFetchPending) {
+      authRemoteFetchPending = false;
+      void syncSettingsFromRemote(authUser.uid);
+      return;
+    }
+    if (authSyncPending) {
+      authSyncPending = false;
+      void syncSettingsToRemote();
+    }
+  });
+  window.addEventListener("offline", () => {
+    if (!authUser) return;
+    setAuthSyncStatus("オフライン: 同期保留", false);
+  });
+}
+
+function isOfflineSyncError(error: unknown): boolean {
+  if (!navigator.onLine) return true;
+  const message = String(error ?? "");
+  return (
+    message.includes("client is offline") ||
+    message.includes("offline") ||
+    message.includes("unavailable")
+  );
 }
 
 function ensureUI() {
@@ -2508,7 +2573,33 @@ function refreshQuestionInfo() {
   } else if (currentSnapshot) {
     currentSnapshot = null;
   }
+  if (!settings.chatOpen && window === window.top) {
+    captureQuestionImageBaseSizes();
+  }
   updateHintQuickButton();
+}
+
+function captureQuestionImageBaseSizes() {
+  const container = document.querySelector(".question-container");
+  if (!container) return;
+  const images = container.querySelectorAll<HTMLImageElement>("img");
+  images.forEach((img) => {
+    if (img.dataset.qbSupportBaseWidth) return;
+    const record = () => {
+      if (img.dataset.qbSupportBaseWidth) return;
+      const rect = img.getBoundingClientRect();
+      const width = Math.round(rect.width);
+      if (width > 0) {
+        img.dataset.qbSupportBaseWidth = String(width);
+        img.style.setProperty("--qb-support-img-base-width", `${width}px`);
+      }
+    };
+    if (img.complete) {
+      record();
+    } else {
+      img.addEventListener("load", record, { once: true });
+    }
+  });
 }
 
 function startObservers() {
@@ -2547,7 +2638,7 @@ function startObservers() {
 }
 
 function attachEventHandlers() {
-  document.addEventListener(
+  window.addEventListener(
     "keydown",
     (event) => {
       const debug = settings.debugEnabled;

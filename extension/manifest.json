@@ -3,7 +3,7 @@
   "name": "MedicMedia QB Support",
   "version": "0.1.0",
   "description": "QBオンライン問題演習ページ向けの学習支援パネル(ipad対応)",
-  "permissions": ["storage", "debugger", "identity"],
+  "permissions": ["storage", "debugger", "identity", "tabs", "webNavigation"],
   "host_permissions": [
     "https://qb.medilink-study.com/*",
     "https://input.medilink-study.com/*",
@@ -15,7 +15,7 @@
     "https://qb-support-d2c98.firebaseapp.com/*"
   ],
   "oauth2": {
-    "client_id": "400313981210-b17klja297eaav2cvdh9k3v11sm0d964.apps.googleusercontent.com",
+    "client_id": "400313981210-vcr6v5bmmt5in9vlunn9qrffas8d2m1u.apps.googleusercontent.com",
     "scopes": ["openid", "email", "profile"]
   },
   "background": {

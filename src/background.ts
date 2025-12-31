@@ -1,9 +1,18 @@
 import { webext } from "./lib/webext";
 
+const AUTH_LOG_PREFIX = "[QB_SUPPORT][auth-bg]";
+const AUTH_METHOD_TIMEOUT_MS = 8000;
+const AUTH_INTERACTIVE_TIMEOUT_MS = 120000;
+
 const ATTACHED_TABS = new Set<number>();
 
 webext.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== "string") return;
+  console.log("[QB_SUPPORT][bg-message]", {
+    type: message.type,
+    senderUrl: sender.url ?? null,
+    tabId: sender.tab?.id ?? null,
+  });
   if (message.type === "QB_CDP_CLICK") {
     if (!webext.debugger) {
       sendResponse({ ok: false, error: "Debugger API not available" });
@@ -42,6 +51,42 @@ webext.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+if (webext.webNavigation?.onCommitted) {
+  webext.webNavigation.onCommitted.addListener((details) => {
+    if (!details.url) return;
+    if (
+      !details.url.includes("accounts.google.com") &&
+      !details.url.includes(".chromiumapp.org/")
+    ) {
+      return;
+    }
+    console.log("[QB_SUPPORT][webnav]", {
+      event: "committed",
+      tabId: details.tabId,
+      frameId: details.frameId,
+      url: details.url,
+    });
+  });
+}
+
+if (webext.webNavigation?.onCompleted) {
+  webext.webNavigation.onCompleted.addListener((details) => {
+    if (!details.url) return;
+    if (
+      !details.url.includes("accounts.google.com") &&
+      !details.url.includes(".chromiumapp.org/")
+    ) {
+      return;
+    }
+    console.log("[QB_SUPPORT][webnav]", {
+      event: "completed",
+      tabId: details.tabId,
+      frameId: details.frameId,
+      url: details.url,
+    });
+  });
+}
 
 webext.runtime?.onConnect?.addListener((port) => {
   if (port.name !== "qb-chat") return;
@@ -116,29 +161,237 @@ function getOAuthClientId(): string | null {
   return manifest.oauth2.client_id;
 }
 
-async function handleAuthTokenRequest(interactive: boolean): Promise<string> {
-  const identity = webext.identity;
-  if (!identity?.getAuthToken) throw new Error("chrome.identity API not available.");
+function buildOAuthUrl(identity: chrome.identity.Identity): string {
   const clientId = getOAuthClientId();
   if (!clientId) {
     throw new Error(
-      "manifest.json に oauth2.client_id がありません。Google Cloud Console で Chrome拡張向けのOAuthクライアントIDを作成して設定してください。"
+      "manifest.json に oauth2.client_id がありません。Google Cloud Console で OAuth クライアントIDを作成して設定してください。"
     );
   }
+  const redirectUri = identity.getRedirectURL("qb-support-auth");
+  const state =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  url.searchParams.set("client_id", clientId);
+  url.searchParams.set("redirect_uri", redirectUri);
+  url.searchParams.set("response_type", "token");
+  url.searchParams.set("scope", "openid email profile");
+  url.searchParams.set("prompt", "select_account");
+  url.searchParams.set("include_granted_scopes", "true");
+  url.searchParams.set("state", state);
+  return url.toString();
+}
+
+function withAuthTimeout<T>(
+  promise: Promise<T>,
+  label: string,
+  timeoutMs: number = AUTH_METHOD_TIMEOUT_MS
+): Promise<T> {
+  let timeoutId: number | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      console.warn(AUTH_LOG_PREFIX, `${label} timed out`);
+      if (label === "getAuthToken") {
+        console.warn(AUTH_LOG_PREFIX, "Atlas非対応の可能性があります。");
+      }
+      reject(new Error(`${label} timed out`));
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
+
+function getAuthTimeout(interactive: boolean): number {
+  return interactive ? AUTH_INTERACTIVE_TIMEOUT_MS : AUTH_METHOD_TIMEOUT_MS;
+}
+
+async function launchWebAuthFlowToken(
+  identity: chrome.identity.Identity,
+  interactive: boolean
+): Promise<string> {
+  if (!identity.launchWebAuthFlow) {
+    throw new Error("chrome.identity.launchWebAuthFlow is not available.");
+  }
+  const url = buildOAuthUrl(identity);
+  console.log(AUTH_LOG_PREFIX, "launchWebAuthFlow:start", { url });
   return new Promise<string>((resolve, reject) => {
-    identity.getAuthToken({ interactive }, (token) => {
+    identity.launchWebAuthFlow({ url, interactive }, (redirectUrl) => {
       const err = webext.runtime?.lastError;
+      console.log(AUTH_LOG_PREFIX, "launchWebAuthFlow:callback", {
+        redirectUrl: redirectUrl ?? null,
+        lastError: err?.message ?? null,
+      });
       if (err?.message) {
         reject(new Error(err.message));
         return;
       }
+      if (!redirectUrl) {
+        reject(new Error("OAuth redirect URL was not returned."));
+        return;
+      }
+      let parsed: URL;
+      try {
+        parsed = new URL(redirectUrl);
+      } catch (parseError) {
+        reject(new Error(`Invalid redirect URL: ${String(parseError)}`));
+        return;
+      }
+      const params = new URLSearchParams(parsed.hash.replace(/^#/, ""));
+      const error = params.get("error");
+      if (error) {
+        reject(new Error(`OAuth error: ${error}`));
+        return;
+      }
+      const token = params.get("access_token");
       if (!token) {
-        reject(new Error("OAuth token was not returned."));
+        reject(new Error("OAuth access_token was not returned."));
         return;
       }
       resolve(token);
     });
   });
+}
+
+async function launchTabAuthFlowToken(
+  identity: chrome.identity.Identity,
+  interactive: boolean
+): Promise<string> {
+  const tabs = webext.tabs;
+  if (!tabs?.create || !tabs.onUpdated) {
+    throw new Error("chrome.tabs API not available.");
+  }
+  const url = buildOAuthUrl(identity);
+  const redirectBase = identity.getRedirectURL("qb-support-auth");
+  console.log(AUTH_LOG_PREFIX, "tabs.create:start", { url });
+  const tab = await new Promise<chrome.tabs.Tab>((resolve, reject) => {
+    tabs.create({ url, active: interactive }, (created) => {
+      const err = webext.runtime?.lastError;
+      console.log(AUTH_LOG_PREFIX, "tabs.create:callback", {
+        tabId: created?.id ?? null,
+        lastError: err?.message ?? null,
+      });
+      if (err?.message) {
+        reject(new Error(err.message));
+        return;
+      }
+      if (!created) {
+        reject(new Error("Failed to create auth tab."));
+        return;
+      }
+      resolve(created);
+    });
+  });
+  const tabId = tab.id;
+  if (typeof tabId !== "number") {
+    throw new Error("Auth tab id is missing.");
+  }
+  return new Promise<string>((resolve, reject) => {
+    let lastUrl: string | null = null;
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      reject(new Error("OAuth tab flow timed out."));
+    }, AUTH_METHOD_TIMEOUT_MS);
+
+    const onUpdated = (updatedTabId: number, info: chrome.tabs.TabChangeInfo) => {
+      if (updatedTabId !== tabId) return;
+      if (!info.url) return;
+      lastUrl = info.url;
+      console.log(AUTH_LOG_PREFIX, "tabs.onUpdated", {
+        tabId: updatedTabId,
+        url: info.url,
+        status: info.status ?? null,
+      });
+      if (!info.url.startsWith(redirectBase)) return;
+      const redirectUrl = info.url;
+      let parsed: URL;
+      try {
+        parsed = new URL(redirectUrl);
+      } catch (parseError) {
+        cleanup();
+        reject(new Error(`Invalid redirect URL: ${String(parseError)}`));
+        return;
+      }
+      const params = new URLSearchParams(parsed.hash.replace(/^#/, ""));
+      const error = params.get("error");
+      if (error) {
+        cleanup();
+        reject(new Error(`OAuth error: ${error}`));
+        return;
+      }
+      const token = params.get("access_token");
+      if (!token) {
+        cleanup();
+        reject(new Error("OAuth access_token was not returned."));
+        return;
+      }
+      cleanup();
+      resolve(token);
+    };
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      tabs.onUpdated.removeListener(onUpdated);
+      tabs.remove(tabId);
+      if (lastUrl) {
+        console.log(AUTH_LOG_PREFIX, "tabs.onUpdated:last", { tabId, url: lastUrl });
+      }
+    };
+
+    tabs.onUpdated.addListener(onUpdated);
+  });
+}
+
+async function handleAuthTokenRequest(interactive: boolean): Promise<string> {
+  const identity = webext.identity;
+  if (!identity) throw new Error("chrome.identity API not available.");
+  if (identity.launchWebAuthFlow) {
+    try {
+      return await withAuthTimeout(
+        launchWebAuthFlowToken(identity, interactive),
+        "launchWebAuthFlow",
+        getAuthTimeout(interactive)
+      );
+    } catch (error) {
+      console.warn("[QB_SUPPORT][auth]", "launchWebAuthFlow failed", error);
+    }
+  }
+  if (identity.getAuthToken) {
+    try {
+      console.log(AUTH_LOG_PREFIX, "getAuthToken:start");
+      return await withAuthTimeout(
+        new Promise<string>((resolve, reject) => {
+          identity.getAuthToken({ interactive }, (token) => {
+            const err = webext.runtime?.lastError;
+            console.log(AUTH_LOG_PREFIX, "getAuthToken:callback", {
+              tokenPresent: Boolean(token),
+              lastError: err?.message ?? null,
+            });
+            if (err?.message) {
+              reject(new Error(err.message));
+              return;
+            }
+            if (!token) {
+              reject(new Error("OAuth token was not returned."));
+              return;
+            }
+            resolve(token);
+          });
+        }),
+        "getAuthToken",
+        getAuthTimeout(interactive)
+      );
+    } catch (error) {
+      console.warn("[QB_SUPPORT][auth]", "getAuthToken failed", error);
+    }
+  }
+  return withAuthTimeout(
+    launchTabAuthFlowToken(identity, interactive),
+    "tabsAuthFlow",
+    getAuthTimeout(interactive)
+  );
 }
 
 async function handleAuthTokenRemoval(token?: string | null): Promise<void> {

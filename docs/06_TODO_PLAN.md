@@ -21,6 +21,7 @@
 - C: クリックログが出るが反応しない → サイト側イベント要件
 - D: Chatが無応答 → APIキー未設定 or background未動作
 - E: `auth/internal-error` → CSPでgapiがブロックされるケース（`chrome.identity` 移行で回避）
+- F: 「デバッグを開始しました」警告 → `chrome.debugger` 使用時のChrome強制表示（非表示不可）
 
 ## Next
 - iPad Safariでの動作検証（Xcodeビルドと実機確認）

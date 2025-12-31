@@ -15,6 +15,8 @@ type WebExtLike = {
   storage?: { sync?: StorageAreaLike; local?: StorageAreaLike };
   runtime?: RuntimeLike;
   identity?: typeof chrome.identity;
+  tabs?: typeof chrome.tabs;
+  webNavigation?: typeof chrome.webNavigation;
   debugger?: typeof chrome.debugger;
 };
 

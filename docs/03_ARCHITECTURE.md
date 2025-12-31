@@ -22,6 +22,7 @@
 5. backgroundへ `QB_CHAT_STREAM_REQUEST` を送信 → OpenAI Responses API（SSE）→ ストリーミング応答
 6. Firebaseログイン時は `chrome.identity` → OAuth token → `signInWithCredential` で認証
 7. 認証済みユーザーは Firestore に設定を同期
+8. チャット表示はドックのみ（オーバーレイは使用しない）
 
 ## フレーム間通信
 - top → iframe: `QB_ACTION` / `QB_QUESTION_REQUEST`
