@@ -20901,6 +20901,11 @@ This typically indicates that your device does not have a healthy Internet conne
   var CHAT_TOGGLE_SHORTCUT = "Ctrl+O";
   var CHAT_NEW_SHORTCUT = "Ctrl+N";
   var CHAT_TEMPLATE_MAX = 5;
+  var CHAT_DOCK_MIN_WIDTH = 320;
+  var CHAT_DOCK_MAX_WIDTH = 720;
+  var CHAT_DOCK_TARGET_RATIO = 0.45;
+  var CHAT_DOCK_MIN_CONTENT_WIDTH = 640;
+  var CHAT_DOCK_GAP = 20;
   var QB_ACTION_ORIGIN = "https://input.medilink-study.com";
   var QB_TOP_ORIGIN = "https://qb.medilink-study.com";
   var FIREBASE_SETTINGS_COLLECTION = "qb_support_settings";
@@ -22365,19 +22370,30 @@ This typically indicates that your device does not have a healthy Internet conne
   function isWideLayout() {
     const w = window.innerWidth;
     const h = window.innerHeight || 1;
-    return w / h > 1.2;
+    const wideEnough = w >= CHAT_DOCK_MIN_WIDTH + CHAT_DOCK_MIN_CONTENT_WIDTH + CHAT_DOCK_GAP;
+    return w / h > 1.2 && wideEnough;
   }
   function getDockWidth() {
-    const min = 280;
+    const min = CHAT_DOCK_MIN_WIDTH;
+    const max = getDockMaxWidth();
     if (!chatDockWidth) {
-      chatDockWidth = Math.min(360, Math.floor(window.innerWidth * 0.35));
+      const target = Math.floor(window.innerWidth * CHAT_DOCK_TARGET_RATIO);
+      chatDockWidth = Math.min(max, Math.min(CHAT_DOCK_MAX_WIDTH, Math.max(min, target)));
     }
     if (chatDockWidth < min) chatDockWidth = min;
+    if (chatDockWidth > max) chatDockWidth = max;
     return chatDockWidth;
   }
+  function getDockMaxWidth() {
+    const byContent = Math.floor(
+      window.innerWidth - CHAT_DOCK_MIN_CONTENT_WIDTH - CHAT_DOCK_GAP
+    );
+    return Math.min(CHAT_DOCK_MAX_WIDTH, Math.max(CHAT_DOCK_MIN_WIDTH, byContent));
+  }
   function setChatDockWidth(width) {
-    chatDockWidth = width;
-    const value = `${width}px`;
+    const max = getDockMaxWidth();
+    chatDockWidth = Math.min(Math.max(CHAT_DOCK_MIN_WIDTH, width), max);
+    const value = `${chatDockWidth}px`;
     chatRoot?.style.setProperty("--qb-support-chat-dock-width", value);
     chatResizer?.style.setProperty("--qb-support-chat-dock-width", value);
     document.body?.style.setProperty("--qb-support-chat-dock-width", value);
@@ -22392,8 +22408,9 @@ This typically indicates that your device does not have a healthy Internet conne
     const onMove = (ev) => {
       if (!chatResizeActive) return;
       const width = Math.round(window.innerWidth - ev.clientX);
-      const min = 280;
-      setChatDockWidth(Math.max(min, width));
+      const min = CHAT_DOCK_MIN_WIDTH;
+      const max = getDockMaxWidth();
+      setChatDockWidth(Math.min(Math.max(min, width), max));
     };
     const onUp = (ev) => {
       chatResizeActive = false;

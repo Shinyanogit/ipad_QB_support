@@ -18,3 +18,11 @@
   - `chatDock`: "left" | "right"
   - `chatApiKey`: string
   - `chatModel`: string
+  - `chatTemplates`: { enabled/label/shortcut/prompt }[]
+  - `chatTemplateCount`: number
+  - `commonPrompt`: string
+  - `hintConstraintPrompt`: string
+  - `explanationLevel`: "highschool" | "med-junior" | "med-senior"
+  - `explanationPrompts`: Record<explanationLevel, string>
+  - `themePreference`: "system" | "light" | "dark"
+  - `pageAccentEnabled`: boolean

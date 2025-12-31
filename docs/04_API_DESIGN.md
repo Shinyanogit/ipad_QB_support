@@ -13,6 +13,7 @@
   - `id`: string | null
   - `url`: string
   - `questionText`: string | null
+  - `imageUrls`: string[]
   - `optionTexts`: string[]
   - `progressText`: string | null
   - `pageRef`: string | null
@@ -35,6 +36,14 @@
   - `chatDock`: "left" | "right"
   - `chatApiKey`: string
   - `chatModel`: string
+  - `chatTemplates`: { enabled/label/shortcut/prompt }[]
+  - `chatTemplateCount`: number
+  - `commonPrompt`: string
+  - `hintConstraintPrompt`: string
+  - `explanationLevel`: "highschool" | "med-junior" | "med-senior"
+  - `explanationPrompts`: Record<explanationLevel, string>
+  - `themePreference`: "system" | "light" | "dark"
+  - `pageAccentEnabled`: boolean
 
 ## Core Functions
 - `extractQuestionInfo(doc: Document, url: string): QuestionInfo | null`
@@ -59,3 +68,15 @@
   - iframe → top: 問題スナップショット返却
 - `QB_CHAT_REQUEST`
   - content → background: OpenAI API呼び出し
+- `QB_CHAT_STREAM_REQUEST`
+  - content → background: OpenAI Responses API (SSE) 呼び出し
+- `QB_CHAT_STREAM_DELTA`
+  - background → content: ストリーミング差分
+- `QB_CHAT_STREAM_DONE`
+  - background → content: 完了通知（usage/response_id含む）
+- `QB_CHAT_STREAM_ERROR`
+  - background → content: ストリーミング失敗
+- `QB_AUTH_GET_TOKEN`
+  - content → background: `chrome.identity` のOAuthトークン取得
+- `QB_AUTH_REMOVE_TOKEN`
+  - content → background: OAuthトークンのキャッシュ削除
