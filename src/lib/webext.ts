@@ -7,6 +7,7 @@ type RuntimeLike = {
   getManifest?: () => chrome.runtime.Manifest;
   sendMessage?: (...args: any[]) => any;
   onMessage?: chrome.runtime.ExtensionMessageEvent;
+  connect?: (...args: any[]) => chrome.runtime.Port;
   lastError?: { message?: string };
 };
 

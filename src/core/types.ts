@@ -13,6 +13,7 @@ export interface QuestionSnapshot {
   id: string | null;
   url: string;
   questionText: string | null;
+  imageUrls: string[];
   optionTexts: string[];
   progressText: string | null;
   pageRef: string | null;
@@ -21,6 +22,14 @@ export interface QuestionSnapshot {
 }
 
 export type ChatDock = "left" | "right";
+export type ExplanationLevel = "highschool" | "med-junior" | "med-senior";
+
+export interface ChatTemplateSetting {
+  enabled: boolean;
+  label: string;
+  shortcut: string;
+  prompt: string;
+}
 
 export interface Settings {
   enabled: boolean;
@@ -38,4 +47,7 @@ export interface Settings {
   chatDock: ChatDock;
   chatApiKey: string;
   chatModel: string;
+  chatTemplates: ChatTemplateSetting[];
+  explanationLevel: ExplanationLevel;
+  explanationPrompts: Record<ExplanationLevel, string>;
 }

@@ -9,27 +9,83 @@ import {
 } from "./core/qbDom";
 import {
   defaultSettings,
+  CHAT_MODEL_OPTIONS,
   isShortcutMatch,
   normalizeSettings,
   normalizeShortcut,
   shortcutFromEvent,
 } from "./core/settings";
-import type { QuestionInfo, QuestionSnapshot, Settings } from "./core/types";
-import { getManifest, getStorageArea, sendRuntimeMessage, storageGet, storageSet } from "./lib/webext";
+import type {
+  ChatTemplateSetting,
+  QuestionInfo,
+  QuestionSnapshot,
+  Settings,
+} from "./core/types";
+import type { User } from "firebase/auth";
+import {
+  browserLocalPersistence,
+  onAuthStateChanged,
+  setPersistence,
+  signInWithPopup,
+  signOut,
+} from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { googleAuthProvider, getFirebaseAuth, getFirebaseDb } from "./lib/firebase";
+import {
+  getManifest,
+  getStorageArea,
+  sendRuntimeMessage,
+  storageGet,
+  storageSet,
+  webext,
+} from "./lib/webext";
 
 const STORAGE_KEY = "qb_support_settings_v1";
 const ROOT_ID = "qb-support-root";
 const MARKER_ID = "qb-support-marker";
 const CHAT_ROOT_ID = "qb-support-chat-root";
 const CHAT_TOGGLE_ID = "qb-support-chat-toggle";
+const CHAT_DOCK_CLASS = "qb-support-chat-dock";
+const CHAT_RESIZER_ID = "qb-support-chat-resizer";
+const CHAT_TEMPLATE_ID = "qb-support-chat-templates";
+const CHAT_TOGGLE_SHORTCUT = "Ctrl+O";
+const CHAT_NEW_SHORTCUT = "Ctrl+N";
 const QB_ACTION_ORIGIN = "https://input.medilink-study.com";
 const QB_TOP_ORIGIN = "https://qb.medilink-study.com";
+const FIREBASE_SETTINGS_COLLECTION = "qb_support_settings";
+const FIREBASE_SETTINGS_VERSION = 1;
+const EXPLANATION_LEVEL_LABELS: Record<string, string> = {
+  highschool: "高校生でもわかる",
+  "med-junior": "医学部低学年",
+  "med-senior": "医学部高学年〜研修医",
+};
+type ChatTemplateRow = {
+  enabled: HTMLInputElement;
+  label: HTMLInputElement;
+  shortcut: HTMLInputElement;
+  prompt: HTMLTextAreaElement;
+};
 
 type ChatRole = "user" | "assistant" | "system";
 
 type ChatMessage = {
   role: ChatRole;
   content: string;
+};
+
+type ResponseInputText = {
+  type: "input_text";
+  text: string;
+};
+
+type ResponseInputImage = {
+  type: "input_image";
+  image_url: string;
+};
+
+type ResponseInputItem = {
+  role: "user";
+  content: Array<ResponseInputText | ResponseInputImage>;
 };
 
 let settings: Settings = { ...defaultSettings };
@@ -49,8 +105,22 @@ let chatSendButton: HTMLButtonElement | null = null;
 let chatStatusField: HTMLElement | null = null;
 let chatApiInput: HTMLInputElement | null = null;
 let chatApiSaveButton: HTMLButtonElement | null = null;
+let chatModelInput: HTMLSelectElement | null = null;
+let chatModelSaveButton: HTMLButtonElement | null = null;
+let chatTemplateBar: HTMLDivElement | null = null;
+let chatTemplateRows: ChatTemplateRow[] = [];
+let chatResizer: HTMLDivElement | null = null;
 let chatHistory: ChatMessage[] = [];
 let chatRequestPending = false;
+let chatComposing = false;
+let chatLayoutBound = false;
+let chatDockWidth = 0;
+let chatResizeActive = false;
+let lastChatOpen = false;
+let lastChatDocked = false;
+let chatLastResponseId: string | null = null;
+let activeChatRequestId: string | null = null;
+let activeChatPort: chrome.runtime.Port | null = null;
 let shortcutInput: HTMLInputElement | null = null;
 let positionSelect: HTMLSelectElement | null = null;
 let enabledToggle: HTMLInputElement | null = null;
@@ -62,6 +132,19 @@ let navPrevInput: HTMLInputElement | null = null;
 let navNextInput: HTMLInputElement | null = null;
 let revealInput: HTMLInputElement | null = null;
 let optionInputs: HTMLInputElement[] = [];
+let authUser: User | null = null;
+let authStatusField: HTMLElement | null = null;
+let authMetaField: HTMLElement | null = null;
+let authSyncField: HTMLElement | null = null;
+let authSignInButton: HTMLButtonElement | null = null;
+let authSignOutButton: HTMLButtonElement | null = null;
+let authInitialized = false;
+let authSyncTimer: number | null = null;
+let authSyncInFlight = false;
+let authSyncPending = false;
+let remoteSettingsLoadedFor: string | null = null;
+let explanationLevelSelect: HTMLSelectElement | null = null;
+let explanationPromptInputs: Partial<Record<string, HTMLTextAreaElement>> = {};
 
 const start = () => {
   logInjectionOnce();
@@ -82,6 +165,7 @@ async function init() {
   await loadSettings();
   ensureUI();
   ensureChatUI();
+  initAuth();
   applySettings();
   refreshQuestionInfo();
   startObservers();
@@ -106,13 +190,177 @@ async function loadSettings() {
   settings = normalizeSettings(stored[STORAGE_KEY]);
 }
 
-async function saveSettings(next: Settings) {
+async function saveSettings(next: Settings, options?: { skipRemote?: boolean }) {
   settings = normalizeSettings(next);
   const area = getStorageArea(true);
   if (area) {
     await storageSet(area, { [STORAGE_KEY]: settings });
   }
   applySettings();
+  if (!options?.skipRemote) {
+    scheduleRemoteSettingsSync();
+  }
+}
+
+function initAuth() {
+  if (authInitialized || window !== window.top) return;
+  authInitialized = true;
+  const auth = getFirebaseAuth();
+  setPersistence(auth, browserLocalPersistence).catch((error) => {
+    console.warn("[QB_SUPPORT][auth-persistence]", error);
+  });
+  onAuthStateChanged(auth, (user) => {
+    authUser = user;
+    updateAuthUI();
+    if (!user) {
+      remoteSettingsLoadedFor = null;
+      setAuthSyncStatus("未ログイン", false);
+      return;
+    }
+    if (remoteSettingsLoadedFor !== user.uid) {
+      remoteSettingsLoadedFor = user.uid;
+      void syncSettingsFromRemote(user.uid);
+    } else {
+      setAuthSyncStatus("同期済み", false);
+    }
+  });
+}
+
+function updateAuthUI() {
+  if (!authStatusField || !authSignInButton || !authSignOutButton || !authMetaField) return;
+  authStatusField.classList.remove("is-error");
+  if (!authUser) {
+    authStatusField.textContent = "未ログイン";
+    authMetaField.textContent = "";
+    authSignInButton.disabled = false;
+    authSignInButton.style.display = "inline-flex";
+    authSignOutButton.style.display = "none";
+    return;
+  }
+  const name = authUser.displayName || authUser.email || "Googleユーザー";
+  authStatusField.textContent = `ログイン中: ${name}`;
+  authMetaField.textContent = authUser.email ?? "";
+  authSignInButton.style.display = "none";
+  authSignOutButton.style.display = "inline-flex";
+}
+
+function setAuthStatus(message: string, isError: boolean) {
+  if (!authStatusField) return;
+  authStatusField.textContent = message;
+  authStatusField.classList.toggle("is-error", isError);
+}
+
+function setAuthSyncStatus(message: string, isError: boolean) {
+  if (!authSyncField) return;
+  authSyncField.textContent = message;
+  authSyncField.classList.toggle("is-error", isError);
+}
+
+async function handleAuthSignIn() {
+  const button = authSignInButton;
+  if (button) button.disabled = true;
+  setAuthStatus("ログイン中...", false);
+  try {
+    await signInWithPopup(getFirebaseAuth(), googleAuthProvider);
+  } catch (error) {
+    console.warn("[QB_SUPPORT][auth]", error);
+    const err = error as { code?: string; message?: string };
+    const detail = err?.code ? `${err.code}: ${err.message ?? ""}`.trim() : String(error);
+    setAuthStatus(`ログイン失敗: ${detail}`, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function handleAuthSignOut() {
+  const button = authSignOutButton;
+  if (button) button.disabled = true;
+  try {
+    await signOut(getFirebaseAuth());
+    setAuthStatus("ログアウトしました", false);
+  } catch (error) {
+    console.warn("[QB_SUPPORT][auth]", error);
+    setAuthStatus(`ログアウト失敗: ${String(error)}`, true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function scheduleRemoteSettingsSync() {
+  if (!authUser || window !== window.top) return;
+  if (authSyncTimer) window.clearTimeout(authSyncTimer);
+  authSyncTimer = window.setTimeout(() => {
+    void syncSettingsToRemote();
+  }, 700);
+}
+
+async function syncSettingsFromRemote(uid: string) {
+  setAuthSyncStatus("同期中...", false);
+  try {
+    const remoteSettings = await fetchRemoteSettings(uid);
+    if (remoteSettings) {
+      const merged = normalizeSettings({
+        ...settings,
+        ...remoteSettings,
+        chatOpen: settings.chatOpen,
+      });
+      await saveSettings(merged, { skipRemote: true });
+    } else {
+      await syncSettingsToRemote();
+    }
+    setAuthSyncStatus("同期完了", false);
+  } catch (error) {
+    console.warn("[QB_SUPPORT][auth-sync]", error);
+    setAuthSyncStatus(`同期エラー: ${String(error)}`, true);
+  }
+}
+
+async function fetchRemoteSettings(uid: string): Promise<Partial<Settings> | null> {
+  const db = getFirebaseDb();
+  const ref = doc(db, FIREBASE_SETTINGS_COLLECTION, uid);
+  const snapshot = await getDoc(ref);
+  if (!snapshot.exists()) return null;
+  const data = snapshot.data() as { settings?: Partial<Settings> } | undefined;
+  if (!data?.settings || typeof data.settings !== "object") return null;
+  return data.settings;
+}
+
+function buildRemoteSettingsPayload(current: Settings): Partial<Settings> {
+  const { chatOpen, ...rest } = current;
+  return rest;
+}
+
+async function syncSettingsToRemote() {
+  if (!authUser) return;
+  if (authSyncInFlight) {
+    authSyncPending = true;
+    return;
+  }
+  authSyncInFlight = true;
+  setAuthSyncStatus("同期中...", false);
+  try {
+    const db = getFirebaseDb();
+    const ref = doc(db, FIREBASE_SETTINGS_COLLECTION, authUser.uid);
+    await setDoc(
+      ref,
+      {
+        settings: buildRemoteSettingsPayload(settings),
+        schemaVersion: FIREBASE_SETTINGS_VERSION,
+        updatedAt: Date.now(),
+      },
+      { merge: true }
+    );
+    setAuthSyncStatus("同期完了", false);
+  } catch (error) {
+    console.warn("[QB_SUPPORT][auth-sync]", error);
+    setAuthSyncStatus(`同期エラー: ${String(error)}`, true);
+  } finally {
+    authSyncInFlight = false;
+    if (authSyncPending) {
+      authSyncPending = false;
+      void syncSettingsToRemote();
+    }
+  }
 }
 
 function ensureUI() {
@@ -224,9 +472,31 @@ function ensureUI() {
     return { label, input };
   };
 
+  const buildShortcutField = (labelText: string, placeholder = "例: Ctrl+S") => {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "qb-support-input";
+    input.placeholder = placeholder;
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Tab") return;
+      if (event.key === "Backspace" || event.key === "Delete") {
+        input.value = "";
+        return;
+      }
+      event.preventDefault();
+      const shortcut = shortcutFromEvent(event);
+      if (shortcut) input.value = shortcut;
+    });
+    const label = document.createElement("label");
+    label.className = "qb-support-field";
+    label.appendChild(makeSpan(labelText));
+    label.appendChild(input);
+    return { label, input };
+  };
+
   const navPrevField = buildKeyField("前へ");
   const navNextField = buildKeyField("次へ");
-  const revealField = buildKeyField("解答");
+  const revealField = buildShortcutField("解答", "例: Ctrl+S");
 
   navPrevInput = navPrevField.input;
   navNextInput = navNextField.input;
@@ -254,7 +524,7 @@ function ensureUI() {
     const optionKeys = optionInputs.map((input) => normalizeKey(input.value)).filter(Boolean);
     const navPrevKey = normalizeKey(navPrevInput?.value ?? "");
     const navNextKey = normalizeKey(navNextInput?.value ?? "");
-    const revealKey = normalizeKey(revealInput?.value ?? "");
+    const revealKey = normalizeShortcut(revealInput?.value ?? "");
     if (!navPrevKey || !navNextKey || !revealKey || optionKeys.length === 0) {
       setStatus("ショートカットを入力してください", true);
       return;
@@ -286,9 +556,234 @@ function ensureUI() {
   shortcutSection.appendChild(optionsWrap);
   shortcutSection.appendChild(saveButton);
 
+  const templateSection = document.createElement("div");
+  templateSection.className = "qb-support-section";
+  templateSection.appendChild(makeSectionTitle("チャットテンプレ"));
+
+  const templateList = document.createElement("div");
+  templateList.className = "qb-support-template-list";
+  chatTemplateRows = [];
+
+  const buildTemplateField = (labelText: string, input: HTMLElement) => {
+    const label = document.createElement("label");
+    label.className = "qb-support-field qb-support-template-field";
+    label.appendChild(makeSpan(labelText));
+    label.appendChild(input);
+    return label;
+  };
+
+  for (let i = 0; i < 5; i += 1) {
+    const row = document.createElement("div");
+    row.className = "qb-support-template-row";
+
+    const headerRow = document.createElement("div");
+    headerRow.className = "qb-support-template-header";
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "qb-support-template-title";
+    titleEl.textContent = `テンプレ${i + 1}`;
+
+    const enabledInput = document.createElement("input");
+    enabledInput.type = "checkbox";
+    enabledInput.className = "qb-support-toggle-input";
+
+    const enabledLabel = document.createElement("label");
+    enabledLabel.className = "qb-support-toggle";
+    enabledLabel.appendChild(enabledInput);
+    enabledLabel.appendChild(makeSpan("有効"));
+
+    headerRow.appendChild(titleEl);
+    headerRow.appendChild(enabledLabel);
+
+    const labelInput = document.createElement("input");
+    labelInput.type = "text";
+    labelInput.className = "qb-support-input qb-support-template-label";
+    labelInput.placeholder = "ボタン名";
+
+    const shortcutInput = document.createElement("input");
+    shortcutInput.type = "text";
+    shortcutInput.className = "qb-support-input qb-support-template-shortcut";
+    shortcutInput.placeholder = "例: Ctrl+Z";
+    shortcutInput.addEventListener("keydown", (event) => {
+      if (event.key === "Tab") return;
+      if (event.key === "Backspace" || event.key === "Delete") {
+        shortcutInput.value = "";
+        return;
+      }
+      event.preventDefault();
+      const shortcut = shortcutFromEvent(event);
+      if (shortcut) shortcutInput.value = shortcut;
+    });
+
+    const promptInput = document.createElement("textarea");
+    promptInput.className = "qb-support-template-prompt";
+    promptInput.rows = 3;
+    promptInput.placeholder = "プロンプト";
+
+    const fields = document.createElement("div");
+    fields.className = "qb-support-template-fields";
+    fields.appendChild(buildTemplateField("ボタン名", labelInput));
+    fields.appendChild(buildTemplateField("ショートカット", shortcutInput));
+    fields.appendChild(buildTemplateField("プロンプト", promptInput));
+
+    row.appendChild(headerRow);
+    row.appendChild(fields);
+    templateList.appendChild(row);
+
+    chatTemplateRows.push({
+      enabled: enabledInput,
+      label: labelInput,
+      shortcut: shortcutInput,
+      prompt: promptInput,
+    });
+  }
+
+  const templateSaveButton = document.createElement("button");
+  templateSaveButton.type = "button";
+  templateSaveButton.className = "qb-support-save qb-support-template-save";
+  templateSaveButton.textContent = "テンプレ保存";
+  templateSaveButton.addEventListener("click", () => {
+    const nextTemplates = chatTemplateRows.map((row, index) => {
+      const label = row.label.value.trim() || `テンプレ${index + 1}`;
+      const shortcut = normalizeShortcut(row.shortcut.value);
+      const prompt = row.prompt.value.trim();
+      return {
+        enabled: row.enabled.checked,
+        label,
+        shortcut,
+        prompt,
+      };
+    });
+    if (nextTemplates.some((template) => template.enabled && !template.prompt)) {
+      setStatus("有効なテンプレはプロンプト必須です", true);
+      return;
+    }
+    void saveSettings({
+      ...settings,
+      chatTemplates: nextTemplates,
+    });
+    setStatus("テンプレを保存しました", false);
+  });
+
+  templateSection.appendChild(templateList);
+  templateSection.appendChild(templateSaveButton);
+
+  const explanationSection = document.createElement("div");
+  explanationSection.className = "qb-support-section";
+  explanationSection.appendChild(makeSectionTitle("解説レベル"));
+
+  explanationLevelSelect = document.createElement("select");
+  explanationLevelSelect.className = "qb-support-select qb-support-explanation-level";
+  Object.entries(EXPLANATION_LEVEL_LABELS).forEach(([value, label]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    explanationLevelSelect?.appendChild(option);
+  });
+
+  const explanationSelectLabel = document.createElement("label");
+  explanationSelectLabel.className = "qb-support-field";
+  explanationSelectLabel.appendChild(makeSpan("レベル"));
+  explanationSelectLabel.appendChild(explanationLevelSelect);
+
+  const buildExplanationPromptField = (labelText: string, key: string) => {
+    const textarea = document.createElement("textarea");
+    textarea.className = "qb-support-template-prompt qb-support-explanation-prompt";
+    textarea.rows = 3;
+    textarea.placeholder = "プロンプト";
+    explanationPromptInputs[key] = textarea;
+    const label = document.createElement("label");
+    label.className = "qb-support-field qb-support-template-field";
+    label.appendChild(makeSpan(labelText));
+    label.appendChild(textarea);
+    return label;
+  };
+
+  const promptWrap = document.createElement("div");
+  promptWrap.className = "qb-support-template-fields qb-support-explanation-prompts";
+  promptWrap.appendChild(
+    buildExplanationPromptField("高校生でもわかる", "highschool")
+  );
+  promptWrap.appendChild(buildExplanationPromptField("医学部低学年", "med-junior"));
+  promptWrap.appendChild(
+    buildExplanationPromptField("医学部高学年〜研修医", "med-senior")
+  );
+
+  const explanationSaveButton = document.createElement("button");
+  explanationSaveButton.type = "button";
+  explanationSaveButton.className = "qb-support-save qb-support-explanation-save";
+  explanationSaveButton.textContent = "解説設定を保存";
+  explanationSaveButton.addEventListener("click", () => {
+    const level = explanationLevelSelect?.value ?? "med-junior";
+    const nextPrompts = {
+      highschool: explanationPromptInputs.highschool?.value.trim() ?? "",
+      "med-junior": explanationPromptInputs["med-junior"]?.value.trim() ?? "",
+      "med-senior": explanationPromptInputs["med-senior"]?.value.trim() ?? "",
+    };
+    if (!nextPrompts.highschool || !nextPrompts["med-junior"] || !nextPrompts["med-senior"]) {
+      setStatus("解説プロンプトを入力してください", true);
+      return;
+    }
+    void saveSettings({
+      ...settings,
+      explanationLevel: level,
+      explanationPrompts: nextPrompts,
+    });
+    setStatus("解説レベルを保存しました", false);
+  });
+
+  explanationSection.appendChild(explanationSelectLabel);
+  explanationSection.appendChild(promptWrap);
+  explanationSection.appendChild(explanationSaveButton);
+
+  const authSection = document.createElement("div");
+  authSection.className = "qb-support-section";
+  authSection.appendChild(makeSectionTitle("アカウント"));
+
+  authStatusField = document.createElement("div");
+  authStatusField.className = "qb-support-auth-status";
+  authStatusField.textContent = "未ログイン";
+
+  authMetaField = document.createElement("div");
+  authMetaField.className = "qb-support-auth-meta";
+
+  authSyncField = document.createElement("div");
+  authSyncField.className = "qb-support-auth-sync";
+  authSyncField.textContent = "未ログイン";
+
+  authSignInButton = document.createElement("button");
+  authSignInButton.type = "button";
+  authSignInButton.className = "qb-support-save qb-support-auth-button";
+  authSignInButton.textContent = "Googleでログイン";
+  authSignInButton.addEventListener("click", () => {
+    void handleAuthSignIn();
+  });
+
+  authSignOutButton = document.createElement("button");
+  authSignOutButton.type = "button";
+  authSignOutButton.className = "qb-support-save qb-support-auth-button qb-support-auth-signout";
+  authSignOutButton.textContent = "ログアウト";
+  authSignOutButton.style.display = "none";
+  authSignOutButton.addEventListener("click", () => {
+    void handleAuthSignOut();
+  });
+
+  const authActions = document.createElement("div");
+  authActions.className = "qb-support-auth-actions";
+  authActions.appendChild(authSignInButton);
+  authActions.appendChild(authSignOutButton);
+
+  authSection.appendChild(authStatusField);
+  authSection.appendChild(authMetaField);
+  authSection.appendChild(authSyncField);
+  authSection.appendChild(authActions);
+
   panel.appendChild(header);
   panel.appendChild(settingsSection);
   panel.appendChild(shortcutSection);
+  panel.appendChild(templateSection);
+  panel.appendChild(explanationSection);
+  panel.appendChild(authSection);
 
   launcher = document.createElement("button");
   launcher.type = "button";
@@ -322,12 +817,66 @@ function ensureChatUI() {
       ".qb-support-chat-status"
     ) as HTMLElement | null;
     chatApiInput = chatRoot.querySelector(
-      ".qb-support-chat-api input"
+      ".qb-support-chat-api-key"
     ) as HTMLInputElement | null;
+    if (!chatApiInput) {
+      chatApiInput = chatRoot.querySelector(
+        ".qb-support-chat-api input"
+      ) as HTMLInputElement | null;
+    }
     chatApiSaveButton = chatRoot.querySelector(
-      ".qb-support-chat-save"
+      ".qb-support-chat-api-save"
     ) as HTMLButtonElement | null;
-    chatToggle = document.getElementById(CHAT_TOGGLE_ID) as HTMLButtonElement | null;
+    if (!chatApiSaveButton) {
+      chatApiSaveButton = chatRoot.querySelector(
+        ".qb-support-chat-save"
+      ) as HTMLButtonElement | null;
+    }
+    const modelNode = chatRoot.querySelector(".qb-support-chat-model");
+    chatModelInput = modelNode instanceof HTMLSelectElement ? modelNode : null;
+    chatModelSaveButton = chatRoot.querySelector(
+      ".qb-support-chat-model-save"
+    ) as HTMLButtonElement | null;
+    if (chatApiInput) {
+      chatApiInput.classList.add("qb-support-chat-api-key");
+    }
+    if (chatApiSaveButton) {
+      chatApiSaveButton.classList.add("qb-support-chat-api-save");
+    }
+    if (!chatModelInput || !chatModelSaveButton) {
+      const apiSection = chatRoot.querySelector(".qb-support-chat-api");
+      if (apiSection) {
+        let modelLabel = apiSection.querySelector(
+          ".qb-support-chat-model-label"
+        ) as HTMLLabelElement | null;
+        if (!modelLabel) {
+          modelLabel = document.createElement("label");
+          modelLabel.textContent = "Model";
+          modelLabel.className = "qb-support-chat-api-label qb-support-chat-model-label";
+          apiSection.appendChild(modelLabel);
+        }
+
+        const existingInput = apiSection.querySelector(".qb-support-chat-model");
+        if (existingInput && !(existingInput instanceof HTMLSelectElement)) {
+          existingInput.remove();
+        }
+        chatModelInput = createChatModelSelect();
+        apiSection.appendChild(chatModelInput);
+
+        if (!chatModelSaveButton) {
+          chatModelSaveButton = document.createElement("button");
+          chatModelSaveButton.type = "button";
+          chatModelSaveButton.className =
+            "qb-support-chat-save qb-support-chat-model-save";
+          chatModelSaveButton.textContent = "適用";
+          apiSection.appendChild(chatModelSaveButton);
+        }
+      }
+    }
+    attachChatModelHandlers();
+    ensureChatToggle();
+    ensureChatResizer();
+    ensureChatTemplates();
     return;
   }
 
@@ -344,15 +893,22 @@ function ensureChatUI() {
   title.className = "qb-support-chat-title";
   title.textContent = "QB Chat";
 
-  const dragButton = document.createElement("button");
-  dragButton.type = "button";
-  dragButton.className = "qb-support-chat-drag";
-  dragButton.textContent = "⇄";
-  dragButton.title = "左右にドラッグで切替";
-  dragButton.setAttribute("aria-label", "左右にドラッグで切替");
+  const actions = document.createElement("div");
+  actions.className = "qb-support-chat-actions";
+
+  const resetButton = document.createElement("button");
+  resetButton.type = "button";
+  resetButton.className = "qb-support-chat-new";
+  resetButton.textContent = "新規";
+  resetButton.dataset.shortcut = "Ctrl+N";
+  resetButton.addEventListener("click", () => {
+    resetChatHistory("会話をリセットしました");
+  });
+
+  actions.appendChild(resetButton);
 
   header.appendChild(title);
-  header.appendChild(dragButton);
+  header.appendChild(actions);
 
   const apiSection = document.createElement("div");
   apiSection.className = "qb-support-chat-api";
@@ -363,12 +919,12 @@ function ensureChatUI() {
 
   chatApiInput = document.createElement("input");
   chatApiInput.type = "password";
-  chatApiInput.className = "qb-support-chat-input";
+  chatApiInput.className = "qb-support-chat-input qb-support-chat-api-key";
   chatApiInput.placeholder = "sk-...";
 
   chatApiSaveButton = document.createElement("button");
   chatApiSaveButton.type = "button";
-  chatApiSaveButton.className = "qb-support-chat-save";
+  chatApiSaveButton.className = "qb-support-chat-save qb-support-chat-api-save";
   chatApiSaveButton.textContent = "保存";
   chatApiSaveButton.addEventListener("click", () => {
     const nextKey = chatApiInput?.value.trim() ?? "";
@@ -385,9 +941,24 @@ function ensureChatUI() {
     setChatStatus("APIキーを保存しました", false);
   });
 
+  const modelLabel = document.createElement("label");
+  modelLabel.textContent = "Model";
+  modelLabel.className = "qb-support-chat-api-label qb-support-chat-model-label";
+
+  chatModelInput = createChatModelSelect();
+
+  chatModelSaveButton = document.createElement("button");
+  chatModelSaveButton.type = "button";
+  chatModelSaveButton.className = "qb-support-chat-save qb-support-chat-model-save";
+  chatModelSaveButton.textContent = "適用";
+
   apiSection.appendChild(apiLabel);
   apiSection.appendChild(chatApiInput);
   apiSection.appendChild(chatApiSaveButton);
+  apiSection.appendChild(modelLabel);
+  apiSection.appendChild(chatModelInput);
+  apiSection.appendChild(chatModelSaveButton);
+  attachChatModelHandlers();
 
   chatMessagesEl = document.createElement("div");
   chatMessagesEl.className = "qb-support-chat-messages";
@@ -420,38 +991,58 @@ function ensureChatUI() {
   chatRoot.appendChild(chatPanel);
   document.body.appendChild(chatRoot);
 
+  ensureChatToggle();
+  ensureChatResizer();
+  ensureChatTemplates();
+}
+
+function ensureChatResizer() {
+  const existing = document.getElementById(CHAT_RESIZER_ID);
+  if (existing) {
+    chatResizer = existing as HTMLDivElement;
+    return;
+  }
+  chatResizer = document.createElement("div");
+  chatResizer.id = CHAT_RESIZER_ID;
+  chatResizer.className = "qb-support-chat-resizer";
+  chatResizer.addEventListener("pointerdown", (event) => {
+    startChatResize(event);
+  });
+  document.body.appendChild(chatResizer);
+}
+
+function ensureChatToggle() {
+  const existing = document.getElementById(CHAT_TOGGLE_ID);
+  if (existing) {
+    chatToggle = existing as HTMLButtonElement;
+    return;
+  }
   chatToggle = document.createElement("button");
   chatToggle.id = CHAT_TOGGLE_ID;
   chatToggle.type = "button";
   chatToggle.className = "qb-support-chat-toggle";
-  chatToggle.textContent = "Chat";
-  chatToggle.setAttribute("aria-label", "QB Chat");
+  chatToggle.textContent = "<";
+  chatToggle.setAttribute("aria-label", "チャットを開く");
+  chatToggle.dataset.shortcut = CHAT_TOGGLE_SHORTCUT;
   chatToggle.addEventListener("click", () => {
     void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
   });
-
   document.body.appendChild(chatToggle);
-
-  dragButton.addEventListener("pointerdown", (event) => {
-    startChatDrag(event);
-  });
-  dragButton.addEventListener("touchstart", (event) => {
-    if (event.touches.length === 1) {
-      startChatDrag(event.touches[0]);
-    }
-  });
 }
 
 function applyChatSettings() {
   if (!chatRoot || !chatPanel || !chatToggle) return;
   const docEl = document.documentElement;
   docEl.dataset.qbChatOpen = settings.chatOpen ? "true" : "false";
-  docEl.dataset.qbChatSide = settings.chatDock;
-  chatRoot.dataset.side = settings.chatDock;
+  docEl.dataset.qbChatSide = "right";
+  chatRoot.dataset.side = "right";
   chatRoot.dataset.open = settings.chatOpen ? "true" : "false";
-  chatToggle.dataset.side = settings.chatDock;
+  chatToggle.dataset.side = "right";
   chatToggle.dataset.open = settings.chatOpen ? "true" : "false";
-  chatToggle.textContent = settings.chatOpen ? "Close" : "Chat";
+  chatToggle.dataset.shortcut = CHAT_TOGGLE_SHORTCUT;
+  updateChatToggleLabel();
+  applyChatDockLayout();
+  ensureChatLayoutHandler();
 
   if (chatApiInput && document.activeElement !== chatApiInput) {
     chatApiInput.value = "";
@@ -459,6 +1050,202 @@ function applyChatSettings() {
       ? "保存済み (再入力で更新)"
       : "sk-...";
   }
+
+  if (chatModelInput && document.activeElement !== chatModelInput) {
+    chatModelInput.value = settings.chatModel;
+  }
+}
+
+function ensureChatLayoutHandler() {
+  if (chatLayoutBound) return;
+  chatLayoutBound = true;
+  window.addEventListener("resize", () => applyChatDockLayout());
+}
+
+function ensureChatTemplates() {
+  if (window !== window.top) return;
+  const existing = document.getElementById(CHAT_TEMPLATE_ID);
+  if (existing) {
+    chatTemplateBar = existing as HTMLDivElement;
+  }
+  if (!chatTemplateBar) {
+    const bar = document.createElement("div");
+    bar.id = CHAT_TEMPLATE_ID;
+    bar.className = "qb-support-chat-templates";
+    document.body.appendChild(bar);
+    chatTemplateBar = bar;
+  }
+  updateChatTemplatesUI();
+}
+
+function getEnabledChatTemplates(): ChatTemplateSetting[] {
+  return (settings.chatTemplates ?? []).filter(
+    (template) => template.enabled && template.prompt.trim()
+  );
+}
+
+function updateChatTemplatesUI() {
+  if (!chatTemplateBar) return;
+  const templates = getEnabledChatTemplates();
+  chatTemplateBar.innerHTML = "";
+  if (templates.length === 0) {
+    chatTemplateBar.style.display = "none";
+    return;
+  }
+  chatTemplateBar.style.display = "flex";
+  templates.forEach((template, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "qb-support-chat-template-btn";
+    button.textContent = template.label || `テンプレ${index + 1}`;
+    if (template.shortcut) {
+      button.dataset.shortcut = template.shortcut;
+    }
+    button.addEventListener("click", () => {
+      void sendTemplateMessage(template.prompt);
+    });
+    chatTemplateBar.appendChild(button);
+  });
+}
+
+function createChatModelSelect(): HTMLSelectElement {
+  const select = document.createElement("select");
+  select.className = "qb-support-chat-input qb-support-chat-model";
+  for (const model of CHAT_MODEL_OPTIONS) {
+    const option = document.createElement("option");
+    option.value = model;
+    option.textContent = model;
+    select.appendChild(option);
+  }
+  select.value = settings.chatModel;
+  return select;
+}
+
+function attachChatModelHandlers() {
+  if (!chatModelInput) return;
+  if (chatModelInput.dataset.handlers === "true") return;
+  chatModelInput.dataset.handlers = "true";
+  chatModelInput.addEventListener("change", () => {
+    const nextModel = chatModelInput?.value ?? "";
+    if (!nextModel) return;
+    void saveSettings({ ...settings, chatModel: nextModel });
+    setChatStatus(`モデルを ${nextModel} に設定しました`, false);
+  });
+  if (chatModelSaveButton && chatModelSaveButton.dataset.handlers !== "true") {
+    chatModelSaveButton.dataset.handlers = "true";
+    chatModelSaveButton.addEventListener("click", () => {
+      const nextModel = chatModelInput?.value ?? "";
+      if (!nextModel) return;
+      void saveSettings({ ...settings, chatModel: nextModel });
+      setChatStatus(`モデルを ${nextModel} に設定しました`, false);
+    });
+  }
+}
+
+async function sendTemplateMessage(message: string) {
+  if (!message.trim()) return;
+  if (!settings.chatApiKey) {
+    setChatStatus("APIキーを設定してください", true);
+    return;
+  }
+  if (!chatInput || !chatMessagesEl) {
+    ensureChatUI();
+  }
+  await saveSettings({ ...settings, chatOpen: true });
+  if (!chatInput) return;
+  chatInput.value = message;
+  void handleChatSend();
+}
+
+function applyChatDockLayout() {
+  if (window !== window.top) return;
+  const body = document.body;
+  if (!body || !chatRoot) return;
+  const isWide = isWideLayout();
+  const showDock = settings.chatOpen && isWide;
+
+  chatRoot.dataset.mode = showDock ? "dock" : "overlay";
+  body.style.marginRight = "";
+  body.style.transition = "";
+  document.documentElement.style.overflowX = "";
+  body.classList.toggle(CHAT_DOCK_CLASS, showDock);
+  if (chatResizer) {
+    chatResizer.dataset.active = showDock ? "true" : "false";
+  }
+  if (showDock) {
+    const dockWidth = getDockWidth();
+    setChatDockWidth(dockWidth);
+  }
+
+  const shouldFocus = showDock && settings.chatOpen && (!lastChatOpen || !lastChatDocked);
+  lastChatOpen = settings.chatOpen;
+  lastChatDocked = showDock;
+  if (shouldFocus) {
+    focusChatInput();
+  }
+}
+
+function isWideLayout(): boolean {
+  const w = window.innerWidth;
+  const h = window.innerHeight || 1;
+  return w / h > 1.2;
+}
+
+function getDockWidth(): number {
+  const min = 280;
+  if (!chatDockWidth) {
+    chatDockWidth = Math.min(360, Math.floor(window.innerWidth * 0.35));
+  }
+  if (chatDockWidth < min) chatDockWidth = min;
+  return chatDockWidth;
+}
+
+function setChatDockWidth(width: number) {
+  chatDockWidth = width;
+  const value = `${width}px`;
+  chatRoot?.style.setProperty("--qb-support-chat-dock-width", value);
+  chatResizer?.style.setProperty("--qb-support-chat-dock-width", value);
+  document.body?.style.setProperty("--qb-support-chat-dock-width", value);
+  chatTemplateBar?.style.setProperty("--qb-support-chat-dock-width", value);
+}
+
+function startChatResize(event: PointerEvent) {
+  if (!settings.chatOpen || !isWideLayout() || !chatResizer) return;
+  if (!document.body.classList.contains(CHAT_DOCK_CLASS)) return;
+  chatResizeActive = true;
+  chatResizer.setPointerCapture(event.pointerId);
+  event.preventDefault();
+
+  const onMove = (ev: PointerEvent) => {
+    if (!chatResizeActive) return;
+    const width = Math.round(window.innerWidth - ev.clientX);
+    const min = 280;
+    setChatDockWidth(Math.max(min, width));
+  };
+
+  const onUp = (ev: PointerEvent) => {
+    chatResizeActive = false;
+    chatResizer?.releasePointerCapture(ev.pointerId);
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+  };
+
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+}
+
+function updateChatToggleLabel() {
+  if (!chatToggle) return;
+  const open = settings.chatOpen;
+  chatToggle.textContent = open ? ">" : "<";
+  chatToggle.setAttribute("aria-label", open ? "チャットを閉じる" : "チャットを開く");
+}
+
+function focusChatInput() {
+  if (!chatInput) return;
+  window.setTimeout(() => {
+    chatInput?.focus();
+  }, 0);
 }
 
 function attachChatHandlers() {
@@ -469,50 +1256,18 @@ function attachChatHandlers() {
     void handleChatSend();
   });
 
+  chatInput?.addEventListener("compositionstart", () => {
+    chatComposing = true;
+  });
+  chatInput?.addEventListener("compositionend", () => {
+    chatComposing = false;
+  });
   chatInput?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !chatComposing) {
       event.preventDefault();
       void handleChatSend();
     }
   });
-}
-
-function startChatDrag(event: { clientX: number }) {
-  if (!chatRoot) return;
-  let active = true;
-  chatRoot.dataset.dragging = "true";
-
-  const finalize = (clientX: number | null) => {
-    if (!active) return;
-    active = false;
-    if (chatRoot) delete chatRoot.dataset.dragging;
-    window.removeEventListener("pointermove", onPointerMove);
-    window.removeEventListener("pointerup", onPointerUp);
-    window.removeEventListener("touchmove", onTouchMove);
-    window.removeEventListener("touchend", onTouchEnd);
-    if (clientX === null) return;
-    const nextDock = clientX < window.innerWidth / 2 ? "left" : "right";
-    if (nextDock !== settings.chatDock) {
-      void saveSettings({ ...settings, chatDock: nextDock });
-    }
-  };
-
-  const onPointerMove = () => {
-    if (chatRoot) chatRoot.dataset.dragging = "true";
-  };
-  const onPointerUp = (ev: PointerEvent) => finalize(ev.clientX);
-  const onTouchMove = () => {
-    if (chatRoot) chatRoot.dataset.dragging = "true";
-  };
-  const onTouchEnd = (ev: TouchEvent) => {
-    const touch = ev.changedTouches[0];
-    finalize(touch ? touch.clientX : null);
-  };
-
-  window.addEventListener("pointermove", onPointerMove);
-  window.addEventListener("pointerup", onPointerUp);
-  window.addEventListener("touchmove", onTouchMove, { passive: true });
-  window.addEventListener("touchend", onTouchEnd);
 }
 
 async function handleChatSend() {
@@ -532,25 +1287,83 @@ async function handleChatSend() {
   appendChatMessage("user", userMessage);
 
   chatRequestPending = true;
+  const requestId = createChatRequestId();
+  activeChatRequestId = requestId;
   const placeholder = appendChatMessage("assistant", "回答中...", { pending: true });
+  const useThinking = settings.chatModel.startsWith("gpt-5");
+  let thinkingTimer: number | null = null;
+  let gotDelta = false;
 
   try {
     const snapshot = await resolveQuestionSnapshot();
-    const requestMessages = buildChatMessages(snapshot, userMessage);
+    const includeContext = !chatLastResponseId;
+    const { input, instructions } = await buildChatRequest(
+      snapshot,
+      userMessage,
+      includeContext
+    );
+    if (useThinking && placeholder) {
+      thinkingTimer = window.setTimeout(() => {
+        if (!gotDelta) {
+          setChatMessageContent(placeholder, "assistant", "thinking...");
+        }
+      }, 1200);
+    }
     console.debug("[QB_SUPPORT][chat-send]", {
       hasSnapshot: Boolean(snapshot),
       history: chatHistory.length,
     });
-    const response = await requestChatCompletion(requestMessages);
+    const streamState = { text: "" };
+    const response = await requestChatResponseStream(
+      {
+        requestId,
+        input,
+        instructions,
+        previousResponseId: chatLastResponseId,
+      },
+      (delta) => {
+        gotDelta = true;
+        if (thinkingTimer) {
+          window.clearTimeout(thinkingTimer);
+          thinkingTimer = null;
+        }
+        streamState.text += delta;
+        if (placeholder) {
+          setChatMessageContent(placeholder, "assistant", streamState.text || "回答中...");
+          placeholder.classList.remove("is-pending");
+          chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+        }
+      }
+    );
+    if (activeChatRequestId !== requestId) return;
+    const finalText = response.text || streamState.text;
     if (placeholder) {
-      placeholder.textContent = response;
+      setChatMessageContent(placeholder, "assistant", finalText || "応答がありません");
       placeholder.classList.remove("is-pending");
-    } else {
-      appendChatMessage("assistant", response);
+    } else if (finalText) {
+      const message = appendChatMessage("assistant", finalText);
+      if (message && response.usage) {
+        const meta = formatUsageMeta(response.usage, settings.chatModel);
+        if (meta) {
+          setChatMessageMeta(message, meta);
+        }
+      }
     }
-    chatHistory.push({ role: "assistant", content: response });
-    trimChatHistory();
+    if (placeholder && response.usage) {
+      const meta = formatUsageMeta(response.usage, settings.chatModel);
+      if (meta) {
+        setChatMessageMeta(placeholder, meta);
+      }
+    }
+    if (finalText) {
+      chatHistory.push({ role: "assistant", content: finalText });
+      trimChatHistory();
+    }
+    if (response.responseId) {
+      chatLastResponseId = response.responseId;
+    }
   } catch (error) {
+    if (activeChatRequestId !== requestId) return;
     if (placeholder) {
       placeholder.textContent = "応答に失敗しました";
       placeholder.classList.remove("is-pending");
@@ -558,7 +1371,11 @@ async function handleChatSend() {
     console.warn("[QB_SUPPORT][chat-error]", error);
     setChatStatus(`エラー: ${String(error)}`, true);
   } finally {
-    chatRequestPending = false;
+    if (thinkingTimer) window.clearTimeout(thinkingTimer);
+    if (activeChatRequestId === requestId) {
+      chatRequestPending = false;
+      activeChatRequestId = null;
+    }
   }
 }
 
@@ -578,10 +1395,104 @@ function appendChatMessage(
   const message = document.createElement("div");
   message.className = `qb-support-chat-msg is-${role}`;
   if (options?.pending) message.classList.add("is-pending");
-  message.textContent = content;
+  setChatMessageContent(message, role, content);
   chatMessagesEl.appendChild(message);
   chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
   return message;
+}
+
+function setChatMessageContent(message: HTMLDivElement, role: ChatRole, content: string) {
+  if (role === "assistant") {
+    message.innerHTML = renderMarkdown(content);
+  } else {
+    message.textContent = content;
+  }
+}
+
+function renderMarkdown(text: string): string {
+  const escaped = escapeHtml(text);
+  const codeBlocks: string[] = [];
+  const withBlocks = escaped.replace(/```([\s\S]*?)```/g, (_, code) => {
+    const block = `<pre class="qb-support-code"><code>${code.trim()}</code></pre>`;
+    codeBlocks.push(block);
+    return `@@QB_CODEBLOCK_${codeBlocks.length - 1}@@`;
+  });
+  let html = withBlocks;
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  html = html.replace(/\n/g, "<br>");
+  html = html.replace(/@@QB_CODEBLOCK_(\d+)@@/g, (_, index) => {
+    const block = codeBlocks[Number(index)];
+    return block ?? "";
+  });
+  return html;
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      case "'":
+        return "&#39;";
+      default:
+        return char;
+    }
+  });
+}
+
+function setChatMessageMeta(message: HTMLDivElement, meta: string) {
+  let metaEl = message.querySelector(".qb-support-chat-meta") as HTMLDivElement | null;
+  if (!metaEl) {
+    metaEl = document.createElement("div");
+    metaEl.className = "qb-support-chat-meta";
+    message.appendChild(metaEl);
+  }
+  metaEl.textContent = meta;
+}
+
+type ResponseUsage = {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+};
+
+const MODEL_PRICING_USD_PER_1M: Record<string, { input: number; output: number }> = {
+  "gpt-5.2": { input: 10, output: 30 },
+  "gpt-5.2-chat-latest": { input: 10, output: 30 },
+  "gpt-5": { input: 10, output: 30 },
+  "gpt-4.1": { input: 5, output: 15 },
+  "gpt-4o": { input: 5, output: 15 },
+};
+const USD_TO_JPY = 155;
+
+function formatUsageMeta(usage: ResponseUsage, model: string): string | null {
+  const inputTokens = usage.input_tokens ?? 0;
+  const outputTokens = usage.output_tokens ?? 0;
+  const totalTokens = usage.total_tokens ?? inputTokens + outputTokens;
+  if (!totalTokens) return null;
+  const pricing = MODEL_PRICING_USD_PER_1M[model];
+  const cost =
+    pricing
+      ? ((inputTokens * pricing.input + outputTokens * pricing.output) / 1_000_000) *
+        USD_TO_JPY
+      : null;
+  const costLabel = cost !== null ? `¥${cost.toFixed(2)} (概算)` : "¥-";
+  return `tokens: ${totalTokens} (in ${inputTokens} / out ${outputTokens}) ・ ${costLabel}`;
+}
+
+function createChatRequestId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 async function resolveQuestionSnapshot(): Promise<QuestionSnapshot | null> {
@@ -592,27 +1503,56 @@ async function resolveQuestionSnapshot(): Promise<QuestionSnapshot | null> {
   return snapshot ?? null;
 }
 
-function buildChatMessages(
+async function buildChatRequest(
   snapshot: QuestionSnapshot | null,
-  userMessage: string
-): ChatMessage[] {
-  const history = chatHistory.slice(-8);
-  const last = history[history.length - 1];
-  if (last && last.role === "user" && last.content === userMessage) {
-    history.pop();
+  userMessage: string,
+  includeContext: boolean
+): Promise<{ input: ResponseInputItem[]; instructions: string }> {
+  const input: ResponseInputItem[] = [];
+  if (includeContext) {
+    input.push(await buildContextInput(snapshot));
   }
-  return [
-    { role: "system", content: buildSystemPrompt(snapshot) },
-    ...history,
-    { role: "user", content: userMessage },
-  ];
+  input.push({
+    role: "user",
+    content: [{ type: "input_text", text: userMessage }],
+  });
+  return { input, instructions: buildChatInstructions() };
 }
 
-function buildSystemPrompt(snapshot: QuestionSnapshot | null): string {
-  const base =
-    "あなたはQB問題集の学習支援アシスタントです。与えられた問題文と選択肢に基づいて、日本語で簡潔に答えてください。情報が不足している場合は、その旨を伝えてください。";
-  if (!snapshot) return `${base}\n\n問題情報: 取得できませんでした。`;
-  const lines: string[] = [base, "", "問題情報:"];
+function buildChatInstructions(): string {
+  const levelKey = settings.explanationLevel ?? "med-junior";
+  const levelLabel = EXPLANATION_LEVEL_LABELS[levelKey] ?? levelKey;
+  const prompt = settings.explanationPrompts?.[levelKey] ?? "";
+  return [
+    "あなたはQB問題集の学習支援アシスタントです。",
+    "与えられた問題文・選択肢・添付画像に基づいて、日本語で簡潔に答えてください。",
+    "情報が不足している場合は、その旨を伝えてください。",
+    `解説レベル: ${levelLabel}`,
+    prompt,
+  ].join("\n");
+}
+
+async function buildContextInput(
+  snapshot: QuestionSnapshot | null
+): Promise<ResponseInputItem> {
+  const resolvedImages = await loadSnapshotImages(snapshot);
+  const content: Array<ResponseInputText | ResponseInputImage> = [];
+  content.push({
+    type: "input_text",
+    text: buildQuestionContext(snapshot, resolvedImages.length),
+  });
+  for (const imageUrl of resolvedImages) {
+    content.push({ type: "input_image", image_url: imageUrl });
+  }
+  return { role: "user", content };
+}
+
+function buildQuestionContext(
+  snapshot: QuestionSnapshot | null,
+  imageCountOverride?: number
+): string {
+  if (!snapshot) return "問題情報: 取得できませんでした。";
+  const lines: string[] = ["問題情報:"];
   lines.push(`URL: ${snapshot.url}`);
   if (snapshot.id) lines.push(`ID: ${snapshot.id}`);
   if (snapshot.progressText) lines.push(`進捗: ${snapshot.progressText}`);
@@ -628,38 +1568,236 @@ function buildSystemPrompt(snapshot: QuestionSnapshot | null): string {
     lines.push("選択肢:");
     lines.push(...options);
   }
+  const imageCount = imageCountOverride ?? snapshot.imageUrls.length;
+  if (imageCount) {
+    lines.push(`画像: ${imageCount}件`);
+  }
   return lines.join("\n");
+}
+
+async function loadSnapshotImages(snapshot: QuestionSnapshot | null): Promise<string[]> {
+  const images = snapshot?.imageUrls ?? [];
+  const results: string[] = [];
+  for (const imageUrl of images) {
+    const dataUrl = await loadImageAsDataUrl(imageUrl);
+    if (dataUrl) results.push(dataUrl);
+  }
+  return results;
+}
+
+async function loadImageAsDataUrl(imageUrl: string): Promise<string | null> {
+  try {
+    const response = await fetch(imageUrl, { credentials: "include" });
+    if (!response.ok) {
+      console.warn("[QB_SUPPORT][chat-image]", {
+        event: "fetch-failed",
+        url: imageUrl,
+        status: response.status,
+      });
+      return null;
+    }
+    const blob = await response.blob();
+    const maxBytes = 4 * 1024 * 1024;
+    if (blob.size > maxBytes) {
+      console.warn("[QB_SUPPORT][chat-image]", {
+        event: "too-large",
+        url: imageUrl,
+        bytes: blob.size,
+      });
+      return null;
+    }
+    return await blobToDataUrl(blob);
+  } catch (error) {
+    console.warn("[QB_SUPPORT][chat-image]", {
+      event: "fetch-error",
+      url: imageUrl,
+      error: String(error),
+    });
+    return null;
+  }
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("FileReader failed"));
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function updateSnapshot(snapshot: QuestionSnapshot) {
   const prevId = currentSnapshot?.id ?? null;
   currentSnapshot = snapshot;
   if (prevId && snapshot.id && prevId !== snapshot.id) {
-    resetChatHistory();
+    resetChatHistory("問題が切り替わったため履歴をリセットしました");
   }
 }
 
-function resetChatHistory() {
+function resetChatHistory(message = "問題が切り替わったため履歴をリセットしました") {
+  cancelActiveChatRequest();
   chatHistory = [];
+  chatLastResponseId = null;
   if (chatMessagesEl) chatMessagesEl.innerHTML = "";
-  setChatStatus("問題が切り替わったため履歴をリセットしました", false);
+  setChatStatus(message, false);
 }
 
-async function requestChatCompletion(messages: ChatMessage[]): Promise<string> {
-  const response = await sendRuntimeMessage<{
-    ok: boolean;
-    text?: string;
-    error?: string;
-  }>({
-    type: "QB_CHAT_REQUEST",
-    apiKey: settings.chatApiKey,
-    model: settings.chatModel,
-    messages,
+function cancelActiveChatRequest() {
+  if (activeChatPort) {
+    try {
+      activeChatPort.disconnect();
+    } catch {
+    }
+  }
+  if (activeChatRequestId) {
+    console.warn("[QB_SUPPORT][chat-stream]", {
+      event: "cancel",
+      requestId: activeChatRequestId,
+    });
+  }
+  activeChatPort = null;
+  activeChatRequestId = null;
+  chatRequestPending = false;
+}
+
+async function requestChatResponseStream(
+  request: {
+    requestId: string;
+    input: ResponseInputItem[];
+    instructions: string;
+    previousResponseId: string | null;
+  },
+  onDelta: (delta: string) => void
+): Promise<{ text: string; responseId: string | null; usage: ResponseUsage | null }> {
+  if (!webext.runtime?.connect) {
+    throw new Error("background接続が利用できません");
+  }
+
+  const port = webext.runtime.connect({ name: "qb-chat" });
+  activeChatPort = port;
+  console.debug("[QB_SUPPORT][chat-stream]", {
+    event: "connect",
+    requestId: request.requestId,
   });
 
-  if (!response) throw new Error("background応答がありません");
-  if (!response.ok) throw new Error(response.error ?? "APIエラー");
-  return response.text ?? "";
+  return new Promise((resolve, reject) => {
+    let text = "";
+    let responseId: string | null = null;
+    let usage: ResponseUsage | null = null;
+    let finished = false;
+
+    const cleanup = () => {
+      if (activeChatPort === port) {
+        activeChatPort = null;
+      }
+      port.onMessage.removeListener(onMessage);
+      port.onDisconnect.removeListener(onDisconnect);
+      try {
+        port.disconnect();
+      } catch {
+      }
+      window.clearTimeout(timeoutId);
+    };
+
+    const finish = (error?: Error | null) => {
+      if (finished) return;
+      finished = true;
+      if (error) {
+        console.warn("[QB_SUPPORT][chat-stream]", {
+          event: "finish",
+          requestId: request.requestId,
+          error: error.message,
+        });
+      } else {
+        console.debug("[QB_SUPPORT][chat-stream]", {
+          event: "finish",
+          requestId: request.requestId,
+          responseId,
+          length: text.length,
+        });
+      }
+      cleanup();
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve({ text, responseId, usage });
+    };
+
+    const onMessage = (message: unknown) => {
+      if (!message || typeof message !== "object") return;
+      const payload = message as {
+        type?: string;
+        requestId?: string;
+        delta?: string;
+        error?: string;
+        responseId?: string | null;
+        usage?: ResponseUsage | null;
+      };
+      if (payload.requestId !== request.requestId || !payload.type) return;
+      console.debug("[QB_SUPPORT][chat-stream]", {
+        event: "message",
+        type: payload.type,
+        requestId: payload.requestId,
+      });
+      if (payload.type === "QB_CHAT_STREAM_DELTA") {
+        const delta = typeof payload.delta === "string" ? payload.delta : "";
+        if (!delta) return;
+        text += delta;
+        onDelta(delta);
+        return;
+      }
+      if (payload.type === "QB_CHAT_STREAM_DONE") {
+        responseId =
+          typeof payload.responseId === "string" || payload.responseId === null
+            ? payload.responseId
+            : responseId;
+        if (payload.usage && typeof payload.usage === "object") {
+          usage = payload.usage;
+        }
+        finish(null);
+        return;
+      }
+      if (payload.type === "QB_CHAT_STREAM_ERROR") {
+        finish(new Error(payload.error ?? "応答に失敗しました"));
+      }
+    };
+
+    const onDisconnect = () => {
+      const lastError = webext.runtime?.lastError?.message;
+      console.warn("[QB_SUPPORT][chat-stream]", {
+        event: "disconnect",
+        requestId: request.requestId,
+        lastError,
+      });
+      finish(
+        new Error(
+          lastError ? `backgroundとの接続が切れました: ${lastError}` : "backgroundとの接続が切れました"
+        )
+      );
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      finish(new Error("応答がタイムアウトしました"));
+    }, 120000);
+
+    port.onMessage.addListener(onMessage);
+    port.onDisconnect.addListener(onDisconnect);
+
+    try {
+      port.postMessage({
+        type: "QB_CHAT_STREAM_REQUEST",
+        requestId: request.requestId,
+        apiKey: settings.chatApiKey,
+        model: settings.chatModel,
+        input: request.input,
+        instructions: request.instructions,
+        previousResponseId: request.previousResponseId ?? null,
+      });
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
 }
 
 function setChatStatus(message: string, isError: boolean) {
@@ -681,6 +1819,11 @@ function applySettings() {
   panel.classList.toggle("is-hidden", !settings.enabled);
   launcher.classList.toggle("is-disabled", settings.enabled);
   launcher.classList.toggle("is-hidden", settings.enabled);
+  if (settings.shortcut) {
+    launcher.dataset.shortcut = settings.shortcut;
+  } else {
+    launcher.removeAttribute("data-shortcut");
+  }
   toggleMarker(settings.debugEnabled);
   if (shortcutsToggle) shortcutsToggle.checked = settings.shortcutsEnabled;
   if (debugToggle) debugToggle.checked = settings.debugEnabled;
@@ -692,8 +1835,31 @@ function applySettings() {
   optionInputs.forEach((input, index) => {
     input.value = settings.optionKeys[index] ?? "";
   });
+  syncTemplateSettingsUI();
+  if (explanationLevelSelect) {
+    explanationLevelSelect.value = settings.explanationLevel;
+  }
+  Object.entries(explanationPromptInputs).forEach(([key, input]) => {
+    const prompt = settings.explanationPrompts?.[key as keyof typeof settings.explanationPrompts];
+    if (input && typeof prompt === "string") {
+      input.value = prompt;
+    }
+  });
   applySidebarVisibility(settings.searchVisible, settings.noteVisible);
   applyChatSettings();
+  updateChatTemplatesUI();
+}
+
+function syncTemplateSettingsUI() {
+  if (!chatTemplateRows.length) return;
+  const templates = settings.chatTemplates ?? [];
+  chatTemplateRows.forEach((row, index) => {
+    const template = templates[index];
+    row.enabled.checked = template?.enabled ?? false;
+    row.label.value = template?.label ?? `テンプレ${index + 1}`;
+    row.shortcut.value = template?.shortcut ?? "";
+    row.prompt.value = template?.prompt ?? "";
+  });
 }
 
 function refreshQuestionInfo() {
@@ -780,7 +1946,22 @@ function attachEventHandlers() {
       }
       if (!settings.shortcutsEnabled) return;
       if (event.isComposing) return;
-      if (isTypingTarget(event.target)) return;
+      const isTyping = isTypingTarget(event.target);
+      const templateShortcut = getChatTemplateShortcut(event);
+      if (templateShortcut && window === window.top && (!isTyping || event.ctrlKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+        void sendTemplateMessage(templateShortcut.prompt);
+        return;
+      }
+      if (isShortcutMatch(event, CHAT_NEW_SHORTCUT) && window === window.top) {
+        event.preventDefault();
+        event.stopPropagation();
+        resetChatHistory("会話をリセットしました");
+        void saveSettings({ ...settings, chatOpen: true });
+        return;
+      }
+      if (isTyping && !event.ctrlKey) return;
       if (!isQuestionPage()) {
         if (shouldLogKey) {
           console.log("[QB_SUPPORT][frame-skip]", {
@@ -790,6 +1971,14 @@ function attachEventHandlers() {
             reason: "no-question-container",
           });
         }
+        return;
+      }
+
+      const key = normalizeKey(event.key);
+      if (isShortcutMatch(event, CHAT_TOGGLE_SHORTCUT) && window === window.top) {
+        event.preventDefault();
+        event.stopPropagation();
+        void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
         return;
       }
 
@@ -818,7 +2007,6 @@ function attachEventHandlers() {
         return;
       }
 
-      const key = normalizeKey(event.key);
       if (key === settings.navNextKey || key === settings.navPrevKey) {
       if (window === window.top) {
         sendAction({
@@ -920,16 +2108,16 @@ function attachEventHandlers() {
       return;
     }
 
-    if (key === settings.revealKey) {
-      if (window === window.top) {
-        sendAction(
-          {
-            action: "reveal",
-            key: key.toLowerCase(),
-          },
-          event
-        );
-        return;
+      if (isShortcutMatch(event, settings.revealKey)) {
+        if (window === window.top) {
+          sendAction(
+            {
+              action: "reveal",
+              key: key.toLowerCase(),
+            },
+            event
+          );
+          return;
       }
       const revealButton = getAnswerRevealButton(document);
       if (shouldLogKey) {
@@ -1297,18 +2485,47 @@ function listFrameSources(): string[] {
   return frames.map((frame) => frame.getAttribute("src") ?? "");
 }
 
+function getTemplateShortcutKeys(): string[] {
+  const keys: string[] = [];
+  for (const template of getEnabledChatTemplates()) {
+    const normalized = normalizeShortcut(template.shortcut);
+    if (!normalized) continue;
+    const parts = normalized.split("+");
+    const key = parts[parts.length - 1];
+    if (key) keys.push(key);
+  }
+  return keys;
+}
+
+function getShortcutBaseKey(shortcut: string): string {
+  const normalized = normalizeShortcut(shortcut);
+  if (!normalized) return "";
+  const parts = normalized.split("+");
+  return parts[parts.length - 1] ?? "";
+}
+
 function isTargetKey(rawKey: string): boolean {
   const key = normalizeKey(rawKey);
   return (
     key === settings.navPrevKey ||
     key === settings.navNextKey ||
-    key === settings.revealKey ||
+    key === getShortcutBaseKey(settings.revealKey) ||
+    key === getShortcutBaseKey(CHAT_TOGGLE_SHORTCUT) ||
+    getTemplateShortcutKeys().includes(key) ||
     settings.optionKeys.includes(key)
   );
 }
 
 function hasModifier(event: KeyboardEvent): boolean {
   return event.metaKey || event.ctrlKey || event.altKey;
+}
+
+function getChatTemplateShortcut(event: KeyboardEvent) {
+  for (const template of getEnabledChatTemplates()) {
+    if (!template.shortcut) continue;
+    if (isShortcutMatch(event, template.shortcut)) return template;
+  }
+  return null;
 }
 
 function normalizeKey(rawKey: string): string {

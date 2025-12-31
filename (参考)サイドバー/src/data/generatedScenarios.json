@@ -1,0 +1,3117 @@
+{
+  "categories": [
+    {
+      "roman": "I",
+      "id": "pain-by-location",
+      "label_ja": "部位別の痛み",
+      "label_en": "Pain by Location",
+      "order": 1
+    },
+    {
+      "roman": "II",
+      "id": "consciousness",
+      "label_ja": "意識に関連した症候",
+      "label_en": "Consciousness-Related Symptoms",
+      "order": 2
+    },
+    {
+      "roman": "III",
+      "id": "systemic",
+      "label_ja": "全身症状",
+      "label_en": "Systemic Symptoms",
+      "order": 3
+    },
+    {
+      "roman": "IV",
+      "id": "gastrointestinal",
+      "label_ja": "消化器に関連した症候",
+      "label_en": "Gastrointestinal Symptoms",
+      "order": 4
+    },
+    {
+      "roman": "V",
+      "id": "cardiopulmonary",
+      "label_ja": "呼吸・循環に関連した症候",
+      "label_en": "Respiratory / Circulatory Symptoms",
+      "order": 5
+    },
+    {
+      "roman": "VI",
+      "id": "neuro-psych",
+      "label_ja": "神経・精神に関連した症候",
+      "label_en": "Neurologic / Psychiatric Symptoms",
+      "order": 6
+    },
+    {
+      "roman": "VII",
+      "id": "other-common",
+      "label_ja": "その他のよくある症候",
+      "label_en": "Other Common Symptoms",
+      "order": 7
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "abdominal-pain-3",
+      "nightNumber": 3,
+      "titleJa": "腹痛",
+      "titleEn": "abdominal pain",
+      "categoryId": "pain-by-location",
+      "categoryRoman": "I",
+      "categoryOrder": 1,
+      "symptomOrder": 1,
+      "symptomLabelJa": "腹痛",
+      "symptomLabelEn": "abdominal pain",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Ken Tanaka",
+        "age": 78,
+        "gender": "male",
+        "demographicsJa": "78歳男性",
+        "demographicsEn": "78-year-old male",
+        "chiefComplaintJa": "腹痛，悪心",
+        "chiefComplaintEn": "abdominal pain, nausea",
+        "vitalsJa": "バイタル：血圧 148/84， 脈92回 整，呼吸数 20回，SpO₂ 99%，体温 37.8℃",
+        "vitalsEn": "Blood pressure 148/84, pulse 92 regular, respiratory rate 20, SpO₂ 99%, body temperature 37.8℃"
+      },
+      "caseNotes": {
+        "summaryEn": "78-year-old male with abdominal pain, nausea.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "今朝起きてから痛い，気持ち悪い感じもする． 徐々に痛くなった． 今までになく，初めての痛み．",
+          "textEn": "Since I woke up this morning, I've been feeling sore and uncomfortable.It gradually became painful.This is the first pain I've ever had."
+        },
+        {
+          "label": "P",
+          "cue": "provoking or relieving factors",
+          "textJa": "朝食は食べられたが，昼食は腹痛と気持ち悪 さで食べられなかった． 特に楽になる行動は無い．",
+          "textEn": "I was able to eat breakfast, but I was unable to eat lunch due to abdominal pain and discomfort.There is no activity that is particularly easy."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "波はあるが，痛みが全くなくなることはない． 歩くと響く感じがする．",
+          "textEn": "There are waves, but the pain never completely goes away.I can feel it echoing when I walk."
+        },
+        {
+          "label": "R",
+          "cue": "location or radiation",
+          "textJa": "今は右下腹部が痛い， 朝はお腹の真ん中あたりが痛んだ．",
+          "textEn": "Now I have pain in my lower right abdomen, and in the morning I had pain in the middle of my stomach."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "診察前の体温は37.8℃． 頭は痛くない．昨日の朝を最後に排便して いない． 今は食欲はない．",
+          "textEn": "Body temperature before examination was 37.8℃.My head doesn't hurt.He hasn't defecated since yesterday morning.I have no appetite now."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history It was pointed out that the patient had high blood pressure during a medical examination.I have never had abdominal surgery."
+        ],
+        "medications": [
+          "Medication history: I have not taken any medications."
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Preferences: Smoking: 1 pack/day from around 20 years old.",
+          "Food: I often eat chicken dishes.",
+          "Note: No one around me has the same symptoms."
+        ]
+      },
+      "otherHistory": [
+        "1 cup of alcohol per day."
+      ]
+    },
+    {
+      "id": "chest-pain-1",
+      "nightNumber": 1,
+      "titleJa": "胸痛",
+      "titleEn": "chest pain",
+      "categoryId": "pain-by-location",
+      "categoryRoman": "I",
+      "categoryOrder": 1,
+      "symptomOrder": 2,
+      "symptomLabelJa": "胸痛",
+      "symptomLabelEn": "chest pain",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Hiroshi Yamamoto",
+        "age": 56,
+        "gender": "male",
+        "demographicsJa": "56歳男性",
+        "demographicsEn": "56-year-old male",
+        "chiefComplaintJa": "胸痛",
+        "chiefComplaintEn": "chest pain",
+        "vitalsJa": "バイタル：血圧 160/96，脈拍 120回/分，呼吸数 20回/分，体温 36.2℃，SpO₂ 97%(鼻カニューラ3L/分",
+        "vitalsEn": "Blood pressure 160/96, pulse 120/min, respiratory rate 20/min, body temperature 36.2℃, SpO₂ 97% (nasal cannula 3L/min)"
+      },
+      "caseNotes": {
+        "summaryEn": "56-year-old male with chest pain.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "初めて経験する痛み． 朝起きて仕事に向かう準備をしていたときに 突然痛くなった．",
+          "textEn": "It's my first time experiencing pain.When I woke up in the morning and was getting ready to go to work, I suddenly felt pain."
+        },
+        {
+          "label": "R",
+          "cue": "location or radiation",
+          "textJa": "指1本では指せず，前胸部が痛い． 左肩や喉のあたりも痛い．",
+          "textEn": "I can't point it with one finger and my anterior chest hurts.My left shoulder and throat also hurt."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "冷や汗がでていた．",
+          "textEn": "I was breaking out in a cold sweat."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "痛みが10分以上持続している．",
+          "textEn": "The pain lasts for more than 10 minutes."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [
+          "Family history Father had myocardial infarction.Past medical history: I have never had any illness.A health checkup indicated that she had high blood pressure, high blood sugar, and high cholesterol, but she did not seek medical attention."
+        ],
+        "socialHistory": [
+          "Preferences: Smoking 20 cigarettes/day from around age 20."
+        ]
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "headache-1-12",
+      "nightNumber": 12,
+      "titleJa": "頭痛①",
+      "titleEn": "Headache①",
+      "categoryId": "pain-by-location",
+      "categoryRoman": "I",
+      "categoryOrder": 1,
+      "symptomOrder": 3,
+      "symptomLabelJa": "頭痛",
+      "symptomLabelEn": "headache",
+      "symptomVariant": 1,
+      "patient": {
+        "name": "Aya Nakamura",
+        "age": 48,
+        "gender": "female",
+        "demographicsJa": "48歳女性",
+        "demographicsEn": "48-year-old female",
+        "chiefComplaintJa": "頭痛",
+        "chiefComplaintEn": "headache",
+        "vitalsJa": "バイタル：血圧 152/88， 脈80回/分 整，呼吸数 16回/分，SpO₂ 9５%(room air)，体温 35.8℃．",
+        "vitalsEn": "Blood pressure 152/88, pulse 80 beats/min, respiratory rate 16/min, SpO₂ 95% (room air), body temperature 35.8℃."
+      },
+      "caseNotes": {
+        "summaryEn": "48-year-old female with headache.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "２日前に洗濯物を干していたら突然頭が痛くなった． 特に力んだりした訳ではない． 今までこのようなことは無かった．",
+          "textEn": "Two days ago, when I was hanging the laundry, I suddenly felt a headache.It wasn't like I put any particular effort into it.Nothing like this has ever happened before."
+        },
+        {
+          "label": "P",
+          "cue": "provoking or relieving factors",
+          "textJa": "頭痛は長く続き，そのうち感じなくなった． 今日はまだドキドキとしている．",
+          "textEn": "The headache lasted for a long time and eventually stopped.I'm still nervous today."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "頭の後ろの方が痛い． 痛みは瞬間的に一気に痛くなった．",
+          "textEn": "The back of my head hurts.The pain suddenly worsened in an instant."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "目が見えにくかったりはしていない． 気も失っていない． 吐き気がして吐いてしまった．",
+          "textEn": "I don't have any trouble seeing.I haven't lost my mind.I felt nauseous and threw up."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "発祥 様式 初めての強い頭痛は, 脳卒中などのred flags である． 脳卒中を想起し，力んだりしていないかを問 診する． 「いつから頭が痛くなりましたか」「突然でしたか」 「重いものを持ち上げたり力んだりした時に痛みました か」「今までにこのような頭痛はありましたか」",
+          "textEn": "Origin: A severe headache for the first time is a red flag for a stroke.Remember that the patient has had a stroke, and ask if he or she is straining.``When did your head start hurting?'' ``Did it happen suddenly?'' ``Does it hurt when you lift something heavy or strain?'' ``Have you ever had a headache like this before?''"
+        },
+        {
+          "label": "P",
+          "cue": "provoking or relieving factors",
+          "textJa": "寛解・ 増悪因子 「痛みはずっと続いていますか，よくなることは ありますか」",
+          "textEn": "Remission/exacerbation factors “Does the pain continue or does it ever get better?”"
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "症状の性質， 程度 1分以内に痛みが最強になるような頭痛(雷鳴 頭痛)はred flagsである．このうち20%ほどは くも膜下出血であり，その他，内頸動脈や椎 骨動脈の解離，下垂体卒中，脳静脈洞血栓症， 片頭痛，RCVS(可逆性脳血管攣縮症候群) など． 「頭のどこが痛いですか」 「一気に痛くなりましたか」",
+          "textEn": "Nature and Severity of Symptoms Headaches where the pain becomes strongest within 1 minute (thunderclap headache) are red flags.Approximately 20% of these are subarachnoid hemorrhage, and other causes include dissection of the internal carotid artery or vertebral artery, pituitary apoplexy, cerebral venous sinus thrombosis, migraine, and RCVS (reversible cerebral vasospasm syndrome).``Where does your head hurt?'' ``Did the pain suddenly get worse?''"
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "随伴症状 くも膜下出血で起こる複視や眼瞼下垂，視野 異常などを否定したい． また，くも膜下出血 で失神することもあり，意識障害もチェック． 「目がみえにくかったりものが二重に見えたりすること はないですか」 「気を失っていないですか」",
+          "textEn": "Accompanying symptoms: Double vision, ptosis, visual field abnormalities, etc. caused by subarachnoid hemorrhage should be ruled out.Also, check for impaired consciousness, as syncope may occur due to subarachnoid hemorrhage.``Are you having trouble seeing or seeing double?'' ``Are you fainting?''"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: I have never had any major illness, but I have only been told that my cholesterol is high.35:45",
+          "Medical history ``Have you ever had a major illness?'' [Approach] When you see a headache, first rule out subarachnoid hemorrhage ■ Differentiation of other headaches Migraine, tension-type headache, cluster headache, cerebral hemorrhage, meningitis, glaucoma, acute sinusitis, giant cell arteritis (temporal arteritis), drug-induced None Points to note when CT scans appear normal in subarachnoid hemorrhage but are unclear・Look at the difference between the left and right sides of the Sylvian fissure.-Look at the cerebral columns.The back of the cerebral horn has venous sinuses and may appear white even when normal, so look at the front.・Look at the left-right differences in the cerebral sulci on the parietal region.CT scans may reveal only minor findings, so a medical interview is important!● Normal...?CT image of subarachnoid hemorrhage [Approach] When you see a headache, the first thing to do is to rule out subarachnoid hemorrhage.How to listen to the interview/intent: `` `` .'' `` .'' `` .'' `` .'' `` .'' `` .'' `` .'' are red flags, such as a stroke. , Ask the patient whether he or she is straining. , `` ``Does it get better?'' . '' .'' Headaches where the pain becomes strongest within minutes (thunderclap headache) are red flags. About 20% of these are subarachnoid headaches.,Other symptoms include dissection of the internal carotid artery or vertebral artery, pituitary apoplexy, cerebral venous sinus thrombosis, migraine, RCVS (reversible), etc.'' ,We want to rule out visual field abnormalities.Also, syncope can occur with SAH, so check for impaired consciousness.'' ,We want to decide whether to perform a physical examination or give priority to CT imaging.''"
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": [
+        "My blood pressure was around 120 during a medical checkup, and I was never told it was high.",
+        "Purpose of the interview How to take the interview",
+        "Medical Examination First of all, consider subarachnoid hemorrhage and decide whether to perform a physical examination or give priority to CT imaging.\"What is your usual blood pressure?\""
+      ]
+    },
+    {
+      "id": "headache-2-13",
+      "nightNumber": 13,
+      "titleJa": "頭痛②",
+      "titleEn": "Headache ②",
+      "categoryId": "pain-by-location",
+      "categoryRoman": "I",
+      "categoryOrder": 1,
+      "symptomOrder": 4,
+      "symptomLabelJa": "頭痛",
+      "symptomLabelEn": "headache",
+      "symptomVariant": 2,
+      "patient": {
+        "name": "Yuki Sato",
+        "age": 36,
+        "gender": "female",
+        "demographicsJa": "36歳女性",
+        "demographicsEn": "36-year-old female",
+        "chiefComplaintJa": "頭痛",
+        "chiefComplaintEn": "headache",
+        "vitalsJa": "バイタル：血圧 126/76， 脈72回/分 整，呼吸数 12回/分，SpO₂ 98%(room air)，体温 36.5℃",
+        "vitalsEn": "Blood pressure 126/76, pulse 72/min, respiratory rate 12/min, SpO₂ 98% (room air), body temperature 36.5℃"
+      },
+      "caseNotes": {
+        "summaryEn": "36-year-old female with headache.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "朝7時くらいから痛い． 突然ではなく，シャワーなど朝の準備をしてい る間にだんだん痛くなってきた． 20歳過ぎからたまにある． 今回が一番ひどいわけではない．",
+          "textEn": "I've been in pain since about 7am.It wasn't sudden, but the pain gradually started to get worse while I was getting ready for the morning, including taking a shower.It happens occasionally after I turned 20.This time isn't the worst."
+        },
+        {
+          "label": "P",
+          "cue": "provoking or relieving factors",
+          "textJa": "頭痛の前に眩しい感じがして視界がぼやける． ジグザグして見にくい部分がある． 月経前や天気が悪い時に痛む事があった．",
+          "textEn": "Before the headache, I feel a dazzling sensation and my vision becomes blurred.There are some zigzag parts that are difficult to see.I used to experience pain before menstruation or when the weather was bad."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "ズキンズキンと痛い．",
+          "textEn": "It's a throbbing pain."
+        },
+        {
+          "label": "R",
+          "cue": "location or radiation",
+          "textJa": "頭の右側が痛い． 前回も右側が痛んだ． 左側が痛かった時もあった．",
+          "textEn": "The right side of my head hurts.Last time I had pain on my right side.There were times when I had pain on my left side."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "食欲はなく，気持ち悪い感じがする． 眩しく感じ，病院の待合室もガヤガヤして 聞こえた．",
+          "textEn": "I have no appetite and feel sick.I felt bright and could hear the noise in the hospital waiting room."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "どんどん悪くはなっていない．",
+          "textEn": "It's not getting worse."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: At the age of 5, the patient underwent appendix surgery."
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [
+          "Family history: Mother has headaches.Drug-related: She does not take any medicines.In the past, when I had a headache, I took medicine and felt better."
+        ],
+        "socialHistory": [
+          "Preferences: I don't smoke.Occasional drinking.I drink three cups of espresso a day.",
+          "Note: There is a possibility that she is pregnant."
+        ]
+      },
+      "otherHistory": [
+        "Nothing was said during the medical examination."
+      ]
+    },
+    {
+      "id": "lower-back-back-pain-22",
+      "nightNumber": 22,
+      "titleJa": "腰・背部痛",
+      "titleEn": "Lower back/back pain",
+      "categoryId": "pain-by-location",
+      "categoryRoman": "I",
+      "categoryOrder": 1,
+      "symptomOrder": 5,
+      "symptomLabelJa": "腰・背部痛",
+      "symptomLabelEn": "Lower back/back pain",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Takeshi Nakamura",
+        "age": 56,
+        "gender": "male",
+        "demographicsJa": "56歳男性",
+        "demographicsEn": "56-year-old male",
+        "chiefComplaintJa": "胸背部痛",
+        "chiefComplaintEn": "chest back pain",
+        "vitalsJa": "バイタル：意識晴明，血圧（上肢）右194/104 mmHg，左198/110 mmHg， 脈92回 整，呼吸数 24回，SpO₂",
+        "vitalsEn": "Consciousness clear, blood pressure (upper extremity) 194/104 mmHg on the right side, 198/110 mmHg on the left side, pulse 92 beats, respiratory rate 24 beats, SpO₂"
+      },
+      "caseNotes": {
+        "summaryEn": "56-year-old male with chest back pain.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "事務仕事をしていたら突然胸背部痛があり， 意識を失った． 今回がはじめてである．",
+          "textEn": "While doing office work, I suddenly felt pain in my chest and back and lost consciousness.This is my first time."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "今も痛みが続いている．",
+          "textEn": "The pain continues even now."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Medical history: I was told that my blood pressure was high, but I have not seen a doctor."
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "joint-pain-21",
+      "nightNumber": 21,
+      "titleJa": "関節痛",
+      "titleEn": "joint pain",
+      "categoryId": "pain-by-location",
+      "categoryRoman": "I",
+      "categoryOrder": 1,
+      "symptomOrder": 6,
+      "symptomLabelJa": "関節痛",
+      "symptomLabelEn": "joint pain",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Mika Taniguchi",
+        "age": 42,
+        "gender": "female",
+        "demographicsJa": "42歳女性",
+        "demographicsEn": "42-year-old female",
+        "chiefComplaintJa": "関節痛，倦怠感",
+        "chiefComplaintEn": "Joint pain, fatigue",
+        "vitalsJa": "バイタル：意識晴明，血圧 134/80 mmHg，脈88回 整，呼吸数 18回，SpO₂ 97% room air，体温 36.0℃",
+        "vitalsEn": "Consciousness clear, blood pressure 134/80 mmHg, pulse 88 times regular, respiratory rate 18 times, SpO₂ 97% room air, body temperature 36.0℃"
+      },
+      "caseNotes": {
+        "summaryEn": "42-year-old female with Joint pain, fatigue.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "半年前くらいから手首や肘が痛む． 両側痛む． なんだかだるい．",
+          "textEn": "I've been having pain in my wrists and elbows for about six months now.Pain on both sides.I feel kind of tired."
+        },
+        {
+          "label": "P",
+          "cue": "provoking or relieving factors",
+          "textJa": "午前の方が痛い，朝に動かしにくい． 働いている時は朝より痛みがまし．",
+          "textEn": "It hurts more in the morning and is difficult to move in the morning.When I work, the pain is worse than in the morning."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "痛くてこわばる，物をにぎりにくい． 30分も続かない．",
+          "textEn": "Pain and stiffness, difficulty grasping things.It lasts less than 30 minutes."
+        },
+        {
+          "label": "R",
+          "cue": "location or radiation",
+          "textJa": "左右両方の手首，肘の関節が痛む． 痛くないが，ペットボトルの蓋が開けにくい． 指の中の方の関節が痛い時もある．",
+          "textEn": "I have pain in both my left and right wrists and elbow joints.It doesn't hurt, but it's hard to open the lid of a plastic bottle.Sometimes the inner joints of my fingers hurt."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "食事は食べており，体重も減っていない． 熱は測っていないが，熱っぽさはない． 寝汗はない．",
+          "textEn": "He is eating and has not lost weight.I haven't taken his temperature, but he doesn't feel feverish.No night sweats."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Medical history: I was told that my blood pressure was high."
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "consciousness-disorder-17",
+      "nightNumber": 17,
+      "titleJa": "意識障害",
+      "titleEn": "consciousness disorder",
+      "categoryId": "consciousness",
+      "categoryRoman": "II",
+      "categoryOrder": 2,
+      "symptomOrder": 1,
+      "symptomLabelJa": "意識障害",
+      "symptomLabelEn": "consciousness disorder",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Koji Saito",
+        "age": 35,
+        "gender": "male",
+        "demographicsJa": "35歳男性",
+        "demographicsEn": "35-year-old male",
+        "chiefComplaintJa": "意識障害",
+        "chiefComplaintEn": "consciousness disorder",
+        "vitalsJa": "バイタル：血圧 156/88 mmHg， 脈 104回/分 整，呼吸数 16回/分，SpO₂ 99%(マスク5L/分 酸素投与下)，",
+        "vitalsEn": "Blood pressure 156/88 mmHg, pulse 104 beats/min, respiratory rate 16/min, SpO₂ 99% (masked 5 L/min oxygen administration),"
+      },
+      "caseNotes": {
+        "summaryEn": "35-year-old male with consciousness disorder.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "care-28",
+      "nightNumber": 28,
+      "titleJa": "け い れ ん",
+      "titleEn": "Care",
+      "categoryId": "consciousness",
+      "categoryRoman": "II",
+      "categoryOrder": 2,
+      "symptomOrder": 2,
+      "symptomLabelJa": "け い れ ん",
+      "symptomLabelEn": "Care",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Naoki Suzuki",
+        "age": 66,
+        "gender": "male",
+        "demographicsJa": "66歳男性",
+        "demographicsEn": "66-year-old male",
+        "chiefComplaintJa": "意識障害，けいれん",
+        "chiefComplaintEn": "Impaired consciousness, convulsions",
+        "vitalsJa": "バイタル：JCS Ⅰ-３,血圧 140/90 mmHg，心拍数92/分 整，呼吸数 16/分，SpO₂ 99%（マスク6L/分 酸素",
+        "vitalsEn": "JCS Ⅰ-3, blood pressure 140/90 mmHg, heart rate 92/min, respiratory rate 16/min, SpO₂ 99% (mask 6L/min oxygen"
+      },
+      "caseNotes": {
+        "summaryEn": "66-year-old male with Impaired consciousness, convulsions.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "syncope-18",
+      "nightNumber": 18,
+      "titleJa": "失神",
+      "titleEn": "syncope",
+      "categoryId": "consciousness",
+      "categoryRoman": "II",
+      "categoryOrder": 2,
+      "symptomOrder": 3,
+      "symptomLabelJa": "失神",
+      "symptomLabelEn": "syncope",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Yusuke Kobayashi",
+        "age": 35,
+        "gender": "male",
+        "demographicsJa": "35歳男性",
+        "demographicsEn": "35-year-old male",
+        "chiefComplaintJa": "意識障害",
+        "chiefComplaintEn": "consciousness disorder",
+        "vitalsJa": "バイタル：血圧 132/68 mmHg， 脈 88回/分 整，呼吸数 18回/分，SpO₂ 95%(room air)，体温 35.6℃",
+        "vitalsEn": "Blood pressure 132/68 mmHg, pulse 88 beats/min, respiratory rate 18/min, SpO₂ 95% (room air), body temperature 35.6℃"
+      },
+      "caseNotes": {
+        "summaryEn": "35-year-old male with consciousness disorder.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "お風呂に行こうとしたのは覚えている． 気づいたら床に倒れており，呼びかけられて起 きた．",
+          "textEn": "I remember trying to go to the bathroom.When I woke up, I was lying on the floor, and I woke up when someone called out to me."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "気持ちの悪さや冷や汗はなかった． 怪我はしていない． 最近立ちくらみがある． 腹痛はない． 黒い便は出ていない． 体重は減っていない． 痙攣もしていなかった．（妻の回答）",
+          "textEn": "I didn't feel sick or have cold sweats.I wasn't hurt.I've been feeling lightheaded lately.I have no abdominal pain.There is no black stool.I haven't lost weight.There was no convulsion.(wife's answer)"
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "妻が呼びかけて顔をたたくとすぐに意識がもど った（2，3分）．",
+          "textEn": "My wife called out to me and patted me on the face, and I immediately regained consciousness (after a few minutes)."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "107G60〜62 Dr．山中・鎌田のラジオトーク 舌，口腔内粘膜に 損傷（−）",
+          "textEn": "107G60〜62 Dr.Yamanaka/Kamata radio talk Damage to tongue and oral mucosa (-)"
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "82歳男性，意識消失のため受診した． 本日飲酒しながら夕食をとった後，入浴のため立ち上がった際に突然意識消失し倒れた．妻が大声で 呼びかけるとすぐに意識清明に戻った． 最近椅子から立ち上がる際に立ちくらみを自覚していた． 高血圧に対してCa拮抗薬，腰痛に対して痛み止めを内服している．",
+          "textEn": "An 82-year-old man visited our hospital due to loss of consciousness.Today, after drinking and having dinner, when I stood up to take a bath, I suddenly lost consciousness and collapsed.As soon as my wife called out to him, he regained consciousness.Recently, I noticed that I felt dizzy when getting up from a chair.He is taking Ca channel blockers for hypertension and painkillers for lower back pain."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "体温36.8℃，脈拍88/分 整，血圧132/68 mmHg，呼吸数18/分, SpO₂ 95%(room air). 瞳孔径は両側3mmで対光反射は正常． 眼瞼結膜はやや蒼白．聴診では心音，呼吸音に異常を認めなかった． 舌と粘膜に損傷は認めなかった． A&P 以上から起立性低血圧が考えられるため，起立試験を行い起立時の血圧低下を観察する． 消化管出血，悪性腫瘍，不整脈も考えられるため，上部消化管内視鏡検査，直腸診や心電図の実施も 考慮する． 《アプローチ》心血管系などの重大な疾患を除外しつつ，起立性低血圧を考えよう 第18夜　失神 第18夜 失神 ロールプレイ 第18夜_失神 II.意識に関連した症候③ II. 意識に関連した症候③",
+          "textEn": "Body temperature was 36.8°C, pulse rate was 88/min, blood pressure was 132/68 mmHg, respiratory rate was 18/min, and SpO2 was 95% (room air). Pupil diameter was 3 mm on both sides, and light reflex was normal.The palpebral conjunctiva is slightly pale.Auscultation revealed no abnormalities in heart sounds or respiratory sounds.No damage was observed to the tongue or mucous membranes.A&P Since orthostatic hypotension is suspected based on the above, perform an orthostatic test and observe the drop in blood pressure when standing.Because gastrointestinal bleeding, malignant tumor, and arrhythmia are also possible, upper gastrointestinal endoscopy, rectal examination, and electrocardiogram should also be considered.[Approach] Let's consider orthostatic hypotension while excluding serious diseases such as cardiovascular system Night 18 Syncope Night 18 Syncope Role play Night 18_ Syncope II. Symptoms related to consciousness ③ II. Symptoms related to consciousness ③"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: High blood pressure.I had lower back pain and went to orthopedic surgery."
+        ],
+        "medications": [
+          "Medication history: Ca antagonist, pain reliever for lower back pain."
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Preferences: I don't smoke.Occasional drinking.Palpebral conjunctiva slightly pale (+) Heart murmur (-) #Orthostatic hypotension #Gastrointestinal bleeding #Malignant tumor #Arrhythmia"
+        ]
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "fever-1-5",
+      "nightNumber": 5,
+      "titleJa": "発熱①",
+      "titleEn": "Fever①",
+      "categoryId": "systemic",
+      "categoryRoman": "III",
+      "categoryOrder": 3,
+      "symptomOrder": 1,
+      "symptomLabelJa": "発熱",
+      "symptomLabelEn": "fever",
+      "symptomVariant": 1,
+      "patient": {
+        "name": "Kenta Watanabe",
+        "age": 79,
+        "gender": "male",
+        "demographicsJa": "79歳男性",
+        "demographicsEn": "79-year-old male",
+        "chiefComplaintJa": "発熱",
+        "chiefComplaintEn": "fever",
+        "vitalsJa": "バイタル：意識清明，血圧 96/54， 脈108回，呼吸数 32回，SpO₂ 91%(room air)，体温 38.5℃",
+        "vitalsEn": "Consciousness clear, blood pressure 96/54, pulse 108 times, respiratory rate 32 times, SpO₂ 91% (room air), body temperature 38.5℃"
+      },
+      "caseNotes": {
+        "summaryEn": "79-year-old male with fever.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "4日前までは元気だった． 3日前から体調が悪く，熱が出た．",
+          "textEn": "I was fine until 4 days ago.I have been feeling unwell for three days and have developed a fever."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "食欲がわかず，いつもの半分くらい．",
+          "textEn": "I have no appetite, about half of my usual appetite."
+        },
+        {
+          "label": "R",
+          "cue": "location or radiation",
+          "textJa": "頭痛なし．痛いところはない．腰は昔から痛い．",
+          "textEn": "No headache.There's no pain.My lower back has been hurting for a long time."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "すこし咳が出る．痰も出る． 喉は痛くない．鼻水は出ない．",
+          "textEn": "I have a slight cough.I also produce sputum.My throat doesn't hurt.No runny nose."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "だんだん悪くなり，昨日からは呼吸も苦しい．",
+          "textEn": "It's getting worse and worse, and since yesterday I've been having trouble breathing."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: I have been seeing a doctor since I was in my 50s due to strained back."
+        ],
+        "medications": [
+          "Medication history: When my lower back hurts, I take medicine given to me by an orthopedic surgeon."
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Preferences: I smoked until I was 30 years old.I drink about 1 cup of Japanese sake every night.",
+          "Note: No one around me has the same symptoms."
+        ]
+      },
+      "otherHistory": [
+        "I undergo a health checkup by the town every year.It was pointed out that my blood pressure was high.About 140/90."
+      ]
+    },
+    {
+      "id": "fever-2-6",
+      "nightNumber": 6,
+      "titleJa": "発熱②",
+      "titleEn": "Fever ②",
+      "categoryId": "systemic",
+      "categoryRoman": "III",
+      "categoryOrder": 3,
+      "symptomOrder": 2,
+      "symptomLabelJa": "発熱",
+      "symptomLabelEn": "fever",
+      "symptomVariant": 2,
+      "patient": {
+        "name": "Ryohei Kondo",
+        "age": 70,
+        "gender": "male",
+        "demographicsJa": "70歳男性",
+        "demographicsEn": "70-year-old male",
+        "chiefComplaintJa": "発熱",
+        "chiefComplaintEn": "fever",
+        "vitalsJa": "バイタル：血圧 124/80mmHg， 脈拍 72回/分 整，呼吸数 18回/分，SpO₂ 94%，体温 37.6℃",
+        "vitalsEn": "Blood pressure 124/80mmHg, pulse 72/min, respiratory rate 18/min, SpO₂ 94%, body temperature 37.6℃"
+      },
+      "caseNotes": {
+        "summaryEn": "Associated Symptoms - When you see a fever, you often suspect an infection (pneumonia, cholangitis, appendicitis, ileus, urinary tract inflammation, skin infection, etc.).⇨ Ask about symptoms specific to infectious diseases.(Pneumonia → cough, sputum) - If infection is ruled out, malignant tumor or collagen disease is suspected.▷ Malignant tumor → night sweats, weight loss ▷ Collagen disease → skin rash, arthralgia, abdominal pain ``Apart from fever, do you have a sore throat or cough?'' ``Do you have any pain in your stomach or back?'' ``Do you have a rash on your skin?'' ``Do you have a feeling of residual urine?'' ``Do you have joint pain?'' ``Have you lost weight?'' ``Do people tell you that you've lost weight?''\"Do you sweat so much at night that you have to change your underwear?\"",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "2週間前から発熱． 熱が出てからだるさを感じていた，その前は 普通だった．",
+          "textEn": "I had a fever for two weeks.I felt sluggish after getting a fever, but before that I was feeling normal."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "咳は出ない，喉も痛くない． 痛いところはない． 発疹，痒みはない． 残尿感はない． 関節痛はない． 少し食欲は減った． 体重は測っていない． 周りから痩せたと言われない． 寝汗はない． つかれやすい． 浮腫はない． 血尿はでていない．",
+          "textEn": "I don't have a cough and my throat doesn't hurt.There's no pain.There is no rash or itching.There is no feeling of residual urine.I have no joint pain.My appetite has decreased a little.I haven't measured my weight.People around me don't tell me that I've lost weight.No night sweats.I get tired easily.There is no edema.There was no hematuria."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: High blood pressure, high cholesterol.2-3 years ago, I was diagnosed with a problem with my mitral valve.Medication history: Flomox, Calonal.Blood pressure medicine and cholesterol medicine.I do not take any supplements or herbal medicine."
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "general-fatigue-16",
+      "nightNumber": 16,
+      "titleJa": "全身倦怠感",
+      "titleEn": "General fatigue",
+      "categoryId": "systemic",
+      "categoryRoman": "III",
+      "categoryOrder": 3,
+      "symptomOrder": 3,
+      "symptomLabelJa": "全身倦怠感",
+      "symptomLabelEn": "General fatigue",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Haruka Nishimura",
+        "age": 29,
+        "gender": "female",
+        "demographicsJa": "29歳女性",
+        "demographicsEn": "29-year-old female",
+        "chiefComplaintJa": "倦怠感 頭痛",
+        "chiefComplaintEn": "Fatigue Headache",
+        "vitalsJa": "バイタル：血圧 96/48 mmHg， 脈 76回/分 整，呼吸数 12回/分，SpO₂ 99%(room air)，体温 36.6℃",
+        "vitalsEn": "Blood pressure 96/48 mmHg, pulse 76/min, respiratory rate 12/min, SpO₂ 99% (room air), body temperature 36.6℃"
+      },
+      "caseNotes": {
+        "summaryEn": "29-year-old female with Fatigue Headache.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "2週間くらいだるい. 1ヶ月前から元気がない． 仕事をしていると症状が出る．",
+          "textEn": "I've been feeling sluggish for about two weeks. I haven't had any energy for a month.Symptoms occur while working."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "1ヶ月前から頭が重い感じ，首や肩がガチガチにな る．",
+          "textEn": "For the past month, my head has been feeling heavy and my neck and shoulders have become stiff."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "寒さを感じることはない．1日1回は排便する． 以前からやる気はあっても空回り，疲れてしまう． 仕事で書類を読んでも内容が入ってこない． よくイライラしてしまう． 死ぬ勇気はないが，だめな人間だと思ってしまう．",
+          "textEn": "I don't feel cold.Defecate once a day.Even though I have always been motivated, I end up feeling lazy and tired.Even when I read documents at work, I can't understand the content.I often get irritated.I don't have the courage to die, but I feel like a useless person."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "近医で頭のMRIと首のレントゲンを撮ったが異常 なかった． それでもこの2週間とてもだるく，家のこともでき ていない． 遅刻もしてしまった．",
+          "textEn": "I had an MRI of my head and an X-ray of my neck taken at a local doctor, but no abnormalities were found.Still, I've been feeling very tired for the past two weeks and haven't been able to do anything around the house.I was also late."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "110H31，32 Dr．山中・鎌田のラジオトーク 甲状腺腫大(−)",
+          "textEn": "110H31, 32 Dr.Yamanaka/Kamata radio talk Enlarged thyroid (−)"
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "A&P",
+          "textEn": "A&P"
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "29歳女性，全身倦怠感と頭痛を主訴に受診した． 1ヶ月前から頭重感を自覚し，この3週間で増悪した．倦怠感が改善せず，集中力低下や不眠の症状も あるため来院した． 近医で頭部MRIを撮影したが，異常は認められなかった．既往歴はなく，妊娠の可能性はない．",
+          "textEn": "A 29-year-old woman visited our hospital with complaints of general malaise and headache.He had noticed a feeling of heaviness in his head for a month, and it had worsened over the past three weeks.The patient visited our hospital because her fatigue did not improve and she also had symptoms of decreased concentration and insomnia.A head MRI was performed at a nearby hospital, but no abnormalities were found.There is no past medical history, and there is no possibility of pregnancy."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "身長158cm，体重46kg．意識清明． 体温37.1℃，脈拍76/分，血圧96/48 mmHg，呼吸数12/分． 身体診察で甲状腺腫大や口腔内の明らかな舌乳頭萎縮は認められなかった． A&P 不眠，倦怠感，集中力の低下などから抑うつが考えられるが， 鑑別として甲状腺機能低下症やビタミンB12欠乏も挙げられるため，採血でTSH, free T4とビタミンB12 を測定する． 採血結果が判明するまで時間がかかるため，ビタミンB12を投与し，後日来院してもらう． 第16夜　全身倦怠感 第16夜 全身倦怠感 ロールプレイ 第16夜_全身倦怠感 III.全身症状③ III. 全身症状③",
+          "textEn": "Height: 158cm, weight: 46kg.Clear consciousness.Body temperature: 37.1°C, pulse rate: 76/min, blood pressure: 96/48 mmHg, respiratory rate: 12/min.Physical examination revealed no enlarged thyroid gland or obvious atrophy of the tongue papillae in the oral cavity.A&P 不眠，倦怠感，集中力の低下などから抑うつが考えられるが， 鑑別として甲状腺機能低下症やビタミンB12欠乏も挙げられるため，採血でTSH, free T4とビタミンB12 を測定する．Since it takes time for the blood sample results to be known, the patient is given vitamin B12 and asked to return to the hospital at a later date.Night 16 - General malaise Night 16 - General malaise Role play Night 16_General malaise III. Systemic symptoms ③ III. Systemic symptoms ③"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Medical history: I have never been sick."
+        ],
+        "medications": [
+          "Medication history: I am taking painkillers for headaches."
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Preferences: I don't smoke.I don't drink alcohol at all.Food: I don't feel hungry, and I'm eating some food.I don't think I'm a picky eater.I haven't been able to enjoy my hobbies lately.",
+          "Sleep I can't fall asleep."
+        ]
+      },
+      "otherHistory": [
+        "Other: I had menstruation from 10 days ago to 6 days ago.There is no possibility of pregnancy.Tongue papillary atrophy (-) Oral erosion (-) #Depression #Hypothyroidism #Vitamin B12 deficiency"
+      ]
+    },
+    {
+      "id": "lymph-node-swelling-1-7",
+      "nightNumber": 7,
+      "titleJa": "リ ン パ節腫脹①",
+      "titleEn": "Lymph node swelling①",
+      "categoryId": "systemic",
+      "categoryRoman": "III",
+      "categoryOrder": 3,
+      "symptomOrder": 4,
+      "symptomLabelJa": "リ ン パ節腫脹",
+      "symptomLabelEn": "lymph node swelling",
+      "symptomVariant": 1,
+      "patient": {
+        "name": "Emi Fujimoto",
+        "age": 14,
+        "gender": "female",
+        "demographicsJa": "14歳女性",
+        "demographicsEn": "14-year-old female",
+        "chiefComplaintJa": "発熱，頸部リンパ節腫脹",
+        "chiefComplaintEn": "Fever, cervical lymph node swelling",
+        "vitalsJa": "バイタル：血圧 130/80mmHg，脈拍 92回/分 整，呼吸数 20回/分，SpO₂ 98%(room air), 体温 38.9℃，",
+        "vitalsEn": "Blood pressure 130/80mmHg, pulse 92/min, respiratory rate 20/min, SpO₂ 98% (room air), body temperature 38.9℃,"
+      },
+      "caseNotes": {
+        "summaryEn": "14-year-old female with Fever, cervical lymph node swelling.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "4日前から発熱がある． 今までにこのようなことは無かった．",
+          "textEn": "I have had a fever for the past 4 days.Nothing like this has ever happened before."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "食欲はいつもの半分くらい． 体重は減っていないと思う．",
+          "textEn": "My appetite is about half of normal.I don't think I've lost any weight."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "両方の瞼が重たく，目が開けにくい． 首にしこりがある気がする． 咳や痰，息苦しさは無い．",
+          "textEn": "Both eyelids are heavy and it is difficult to open the eyes.I feel like I have a lump on my neck.There is no cough, sputum, or difficulty breathing."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Note: No one around me has similar symptoms."
+        ]
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "lymph-node-swelling-2-8",
+      "nightNumber": 8,
+      "titleJa": "リ ン パ節腫脹②",
+      "titleEn": "Lymph node swelling②",
+      "categoryId": "systemic",
+      "categoryRoman": "III",
+      "categoryOrder": 3,
+      "symptomOrder": 5,
+      "symptomLabelJa": "リ ン パ節腫脹",
+      "symptomLabelEn": "lymph node swelling",
+      "symptomVariant": 2,
+      "patient": {
+        "name": "Nozomi Takagi",
+        "age": 60,
+        "gender": "female",
+        "demographicsJa": "60歳女性",
+        "demographicsEn": "60-year-old female",
+        "chiefComplaintJa": "腋窩リンパ節腫脹",
+        "chiefComplaintEn": "Axillary lymphadenopathy",
+        "vitalsJa": "バイタル：血圧 112/78mmHg， 脈拍 84回/分 整，呼吸数 16回/分，SpO₂ 99%(room air)，体温 37.8℃．",
+        "vitalsEn": "Blood pressure 112/78mmHg, pulse 84/min, respiratory rate 16/min, SpO₂ 99% (room air), body temperature 37.8℃."
+      },
+      "caseNotes": {
+        "summaryEn": "60-year-old female with Axillary lymphadenopathy.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "1ヶ月前から症状が出ている．",
+          "textEn": "Symptoms have been appearing for 1 month."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "痛みはない． しこりが大きくなった気がする．",
+          "textEn": "There's no pain.I feel like the lump has gotten bigger."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "食欲はある． この1ヶ月で体重は減ってはいない．",
+          "textEn": "I have an appetite.I haven't lost any weight in the past month."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "発症様式 1ヶ月以上と長いので，悪性のものを考え",
+          "textEn": "Since the onset pattern is long (more than 1 month), malignancy is considered."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "症状の性質， 程度 痛みが無いのも悪性を想起させる 「しこりを触ると痛みはありますか」 「しこりが大きくなってきた感じはありますか」",
+          "textEn": "Nature and severity of symptoms The absence of pain suggests malignancy. ``Does the lump hurt when you touch it?'' ``Do you feel that the lump is getting bigger?''"
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "114A60 Dr．山中・鎌田のラジオトーク 第8夜_リンパ節腫脹② III.全身症状⑤ III. 全身症状⑤",
+          "textEn": "114A60 Dr.Yamanaka/Kamata radio talk 8th night_Lymph node swelling ② III. Systemic symptoms ⑤ III. Systemic symptoms ⑤"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: None in particular.",
+          "Medical history: “Have you ever had any serious illness?”"
+        ],
+        "medications": [
+          "Medication history: Nothing particular.Family history: I heard that my father had tuberculosis in the past.My mother underwent surgery for breast cancer.Note: I had a mammogram five years ago. None of my colleagues or friends have contracted tuberculosis.I have three cats.I haven't touched the cat outside.Weight loss (-) Night sweats (-) Cervical lymph node swelling (+) Inguinal lymph node swelling (+) Breast mass (-) Milk secretion (-) No hepatosplenomegaly No skin rash Aggressive interview",
+          "Medication history: “Are you taking any medications?”"
+        ],
+        "allergies": [],
+        "familyHistory": [
+          "Family history Suspect breast cancer ``Has anyone in your family ever had tuberculosis?'' ``Has anyone in your family had breast cancer?'' Other ・Suspect breast cancer ・Suspect cat scratch disease ``Have you been screened for breast cancer?'' ``When was the last time you had a mammogram?'' ``Has anyone at work or friends gotten tuberculosis?'' ``Do you have a cat?'' ``Have you been scratched by a cat outside recently?'' Approach》We listen to the length of time the lump has been present, its size, pain, etc., and confirm whether it is malignant.● What do night sweats and weight loss remind you of... 26:07"
+        ],
+        "socialHistory": [
+          "→ Symptoms B of malignant lymphoma are [fever, weight loss, night sweats (night sweats)] ● Definitions of words and interview 27:03"
+        ]
+      },
+      "otherHistory": [
+        "Purpose of interview Doctor's interview",
+        "``How long have you had symptoms?''",
+        "Associated symptoms Reminiscent of tuberculosis or malignant lymphoma ``Do you have any appetite?'' ``Have you lost weight?'' ``Do you sweat so much that your underwear gets soaked when you sleep?''",
+        "Tuberculosis → Check your family history!",
+        "・Definition of night sweats: So much sweat that you have to change your underwear at night.",
+        "・Definition of weight loss Unintentional weight loss of 5% or more within 6 months to 1 year.● Swollen axillary lymph nodes in women...cancer!?28:32 It may be due to metastasis of breast cancer.Check your family history and whether or not you have had a medical checkup, and palpate your breasts.● Other identification 29:15",
+        "・Cat scratch disease: There is often swelling in the axilla, so check for pets and scratches!",
+        "・Differentiation based on tenderness Do not easily assume that if there is tenderness, it is an infection, and if there is no tenderness, it is a malignant disease. ○ Free talk ・Italy is a fun country!00:43 ・It's good to start clinical work while still a student 13:45 ・A case where the lymph nodes were not swollen and difficult to diagnose 43:00 ・Everything about Kikuchi disease 47:35"
+      ]
+    },
+    {
+      "id": "edema-9",
+      "nightNumber": 9,
+      "titleJa": "浮腫",
+      "titleEn": "edema",
+      "categoryId": "systemic",
+      "categoryRoman": "III",
+      "categoryOrder": 3,
+      "symptomOrder": 6,
+      "symptomLabelJa": "浮腫",
+      "symptomLabelEn": "edema",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Masato Fujii",
+        "age": 75,
+        "gender": "male",
+        "demographicsJa": "75歳男性",
+        "demographicsEn": "75-year-old male",
+        "chiefComplaintJa": "呼吸困難, 下腿浮腫",
+        "chiefComplaintEn": "Dyspnea, lower leg edema",
+        "vitalsJa": "バイタル：血圧 138/86mmHg, 脈拍 100回/分 整，呼吸数 24回/分，SpO₂ 88%(room air)， 体温37.2℃．",
+        "vitalsEn": "Blood pressure 138/86mmHg, pulse 100 beats/min, respiratory rate 24/min, SpO₂ 88% (room air), body temperature 37.2℃."
+      },
+      "caseNotes": {
+        "summaryEn": "75-year-old male with Dyspnea, lower leg edema.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "１週間前くらいに喉の痛みがありそれから体調が 悪い． 足の浮腫は初めてでここ2，3日で出現した．",
+          "textEn": "About a week ago, I had a sore throat and have been feeling unwell ever since.This is the first time I have had edema in my legs, and it has appeared in the past few days."
+        },
+        {
+          "label": "P",
+          "cue": "provoking or relieving factors",
+          "textJa": "呼吸は体を起こしている方が楽．",
+          "textEn": "Breathing is easier if you keep your body upright."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "熱は37.5℃くらい． 昨日から寝て1，2時間で息苦しさを感じあまり 寝られない．",
+          "textEn": "Fever is around 37.5℃.Since last night, I felt short of breath within an hour or two of going to sleep, so I couldn't sleep much."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "１週間前は喉は痛かったが咳はあまり出なかった. 下痢はない． 食事は取れていたが食欲は今はあまりない． 胸の痛みや動悸はなく，息苦しさのみ．",
+          "textEn": "A week ago, I had a sore throat, but I didn't cough much. I don't have diarrhea.I was able to eat, but I don't have much of an appetite right now.There was no chest pain or palpitations, only shortness of breath."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "最初は喉が痛く，微熱があった． 今日に至るまで段々と息切れするようになって きた． 足も浮腫んできた． 昨日からは息苦しさがあり眠れない． 既往歴 高血圧，高コレステロールを指摘された． 3年前くらいに心臓の弁膜症を指摘されたことが ある．",
+          "textEn": "At first, I had a sore throat and a slight fever.To this day, I have become increasingly short of breath.My feet have also become swollen.Since yesterday I have been having difficulty breathing and can't sleep.Past medical history High blood pressure and high cholesterol were noted.About three years ago, I was diagnosed with heart valve disease."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "75歳男性，呼吸困難と下腿浮腫を主訴に来院した． 1週間前から咽頭痛と微熱があり，その後動作時の呼吸困難や夜間の発作性呼吸困難，起座呼吸を認め ていた． 既往歴は高血圧，脂質異常があり，3年前に弁膜症を指摘されたことがある．",
+          "textEn": "A 75-year-old man came to our hospital with chief complaints of dyspnea and lower leg edema.The patient had had a sore throat and slight fever for 1 week, and subsequently had dyspnea during movement, paroxysmal dyspnea at night, and orthopnea.His medical history includes hypertension and lipid abnormalities, and he was diagnosed with valvular heart disease 3 years ago."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "意識清明，バイタルサインは血圧 138/86mmHg， 脈拍 100回/分 整，呼吸数 24回/分， SpO₂ 88%(room air)，体温 37.2℃． 身体診察では頸静脈怒張と両下肢に圧痕性浮腫を認めた． 聴診ではⅢ音，Ⅳ音を聴取し，心尖部を最強点とするⅣ/Ⅵの全収縮期雑音を聴取した． 呼吸音は両側の下肺野優位にcoarse cracklesを聴取した． 四肢末梢に冷感は認めなかった． 肝臓は触知しなかった． A&P 感染症としては症状が穏やかであり，以上の症状と身体所見から， MRを背景にした両心不全を第一に考える． 心電図，採血をおこない，心不全症状に対して利尿薬投与や酸素投与を行う．",
+          "textEn": "Consciousness was clear, vital signs were blood pressure 138/86 mmHg, pulse 100 beats/min, respiratory rate 24 breaths/min, SpO₂ 88% (room air), body temperature 37.2°C.Physical examination revealed jugular vein distention and pitting edema in both lower extremities.During auscultation, sounds III and IV were heard, and a holosystolic murmur of IV/VI was heard with the strongest point at the apex of the heart.Coarse crackles were heard in the lower lung fields on both sides of the breath.No cold sensation was observed in the peripheral extremities.The liver was not palpable.As an A&P infection, the symptoms are mild, and based on the above symptoms and physical findings, we first consider bilateral heart failure due to MR.An electrocardiogram and blood samples are performed, and diuretics and oxygen are administered to treat symptoms of heart failure."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [
+          "Medication history: I am taking one type of medication for high blood pressure."
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Notes: I like pickles, but I haven't been eating them too much lately.My normal blood pressure is around 110/60mmHg even though I am taking medication.Sore throat (+) Cold sensation in the extremities (-) Jugular vein distension (+) Pitching edema (+)"
+        ]
+      },
+      "otherHistory": [
+        "Coarse crackles (+) Sound III, sound IV Apical holosystolic murmur (+) Hepatomegaly (-)"
+      ]
+    },
+    {
+      "id": "weight-gain-26",
+      "nightNumber": 26,
+      "titleJa": "体重増加",
+      "titleEn": "weight gain",
+      "categoryId": "systemic",
+      "categoryRoman": "III",
+      "categoryOrder": 3,
+      "symptomOrder": 7,
+      "symptomLabelJa": "体重増加",
+      "symptomLabelEn": "weight gain",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Daichi Aoki",
+        "age": 22,
+        "gender": "male",
+        "demographicsJa": "22歳男性",
+        "demographicsEn": "22-year-old male",
+        "chiefComplaintJa": "体重増加",
+        "chiefComplaintEn": "weight gain",
+        "vitalsJa": "バイタル：血圧 110/70 mmHg， 脈88 回/分 整，呼吸数 16 回/分",
+        "vitalsEn": "Blood pressure 110/70 mmHg, pulse 88 beats/min, respiratory rate 16 beats/min"
+      },
+      "caseNotes": {
+        "summaryEn": "22-year-old male with weight gain.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "体重が増えてしまった．2週間前から顔や足が 浮腫むようになった．5日前から食欲は低下し ている．風邪などはひいていない．",
+          "textEn": "My weight has increased.Two weeks ago, my face and legs started to swell.Appetite has decreased since 5 days ago.I haven't caught a cold or anything."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "ここ2週間で20㎏も体重が増加してしまった．",
+          "textEn": "I have gained 20 kg in the past two weeks."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "泡だった尿が出るようになった．少し下痢気味 である．疲れやすくなった．",
+          "textEn": "Urine that used to be frothy now comes out.I have some diarrhea.I got tired easily."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "2週間前から尿の泡立ちを自覚していて，5日前 から尿の回数も減るようになった．今朝は朝か ら尿が出ていない．",
+          "textEn": "Two weeks ago, I noticed that my urine was foamy, and five days ago, I started urinating less frequently.I haven't urinated since this morning."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "115A26 Dr．山中・鎌田のラジオトーク",
+          "textEn": "115A26 Dr.Yamanaka/Kamata radio talk"
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "22歳男性，体重増加を主訴に来院した． 2週間前から，排尿時の尿の泡立ち，顔や全身のむくみを自覚していた．むくみが徐々に増悪し体重が 2週間で20㎏も増加した．ここ1週間で食欲が低下し，下痢が出るようになり全身の倦怠感も生じてき たため来院した．尿については5日前から回数が減り，本日はまだ排尿がない．",
+          "textEn": "A 22-year-old man came to our hospital with a chief complaint of weight gain.For the past 2 weeks, he had noticed foaming in his urine when he urinated and swelling of his face and whole body.The swelling gradually worsened and my weight increased by 20 kg in 2 weeks.Over the past week, the patient came to the hospital because her appetite had decreased, she started having diarrhea, and she was experiencing general fatigue.Regarding urination, his frequency has decreased since 5 days ago, and he has not urinated yet today."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "来院時の意識は清明，バイタルサインは血圧 110/70 mmHg， 脈 88 回/分 整，呼吸数 16 回/分，で特 に異常はない．身体所見は，心音呼吸音に異常はなく，腹部の肝腫大等は認めなかったが，両眼瞼浮 腫と四肢に圧痕性浮腫を認めた． A&P 突然の体重増加なので，心不全，腎障害，肝障害，甲状腺機能異常を疑い除外していく． まず血液検査で血算，生化学所見を診る．また尿検査を行い尿タンパクの有無を調べる． 第26夜　体重増加 第26夜 体重増加 《アプローチ》心，肝，腎，甲状腺の異常と薬剤性を考えよう． ロールプレイ 第26夜_体重増加 III.全身症状⑦ III. 全身症状⑦",
+          "textEn": "Upon arrival, the patient was conscious and clear, and his vital signs showed no abnormalities: blood pressure 110/70 mmHg, pulse 88 beats/min, and respiratory rate 16 breaths/min.Physical findings revealed no abnormality in heart sounds or breath sounds, and no abdominal hepatomegaly, but edema of both eyelids and pitting edema in the extremities were noted.A&P Because of the sudden weight gain, heart failure, kidney damage, liver damage, and abnormal thyroid function are suspected and excluded.First, a complete blood count and biochemical findings are examined with a blood test.A urine test will also be performed to check for protein in the urine.Night 26: Weight gain Night 26: Weight gain [Approach] Let's consider heart, liver, kidney, and thyroid abnormalities and drug-related causes.Role play Night 26_ Weight gain III. Systemic symptoms ⑦ III. Systemic symptoms ⑦"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [
+          "Medication history: I have not taken any medications.Abdominal flatness, soft Tenderness (-) Eyelid edema (+) Lower leg edema (+) Systemic pitting edema (+) ●If you see edema - Points for differentiation - Is it bilateral or unilateral? 28:28 └If it is unilateral, you should first suspect deep vein thrombosis.Furthermore, if the thrombus spreads and causes pulmonary artery embolism, this is a highly urgent disease that can be fatal and is therefore always included in the differential diagnosis.Cellulitis also basically causes unilateral edema.・Is it pitting or non-pitting? 29:30 └In the case of non-pitting edema, consider abnormal thyroid function.It occurs in both hyperthyroidism and hypothyroidism.Lymphedema is also a possibility."
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": [
+        "・Fast edema and slow edema 30:42 └Edema that returns from compression within 40 seconds is called fast edema, and is caused by hypoalbuminemia.In pathological conditions where venous pressure is increased, such as heart failure or venous insufficiency, the pressure does not return even after 40 seconds have passed after compression.",
+        "It becomes slow edema.●If you notice any edema, take a good look at your feet!31:32 ●Drug-induced edema 35:11 - Edema is caused by drugs such as ACE inhibitors, Ca antagonists, NSAIDs, and licorice.●There is more than one cause of edema!37:10 ◯Free talk ・Charm of traditional crafts 0:40 ・Everyday life at Okuaizu Home Medical Center 40:30 ●Things to check during physical examination 18:44",
+        "Heart Check for coarse crackles in the lungs, presence of a heart murmur, regular rhythm, presence of lower leg edema, etc.",
+        "Liver When liver failure occurs due to hepatitis or some kind of liver disorder, hepatomegaly occurs.Therefore, check by palpation.Also check for pounding pain in the liver.",
+        "Although the suspicion of kidney stones is low, the presence or absence of percussion pain in the kidney should be checked."
+      ]
+    },
+    {
+      "id": "19",
+      "nightNumber": 19,
+      "titleJa": "）",
+      "titleEn": ")",
+      "categoryId": "systemic",
+      "categoryRoman": "III",
+      "categoryOrder": 3,
+      "symptomOrder": 8,
+      "symptomLabelJa": "）",
+      "symptomLabelEn": ")",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Toru Sasaki",
+        "age": 67,
+        "gender": "male",
+        "demographicsJa": "67歳男性",
+        "demographicsEn": "67-year-old male",
+        "chiefComplaintJa": "体重減少",
+        "chiefComplaintEn": "weight loss",
+        "vitalsJa": "バイタル：身長 172㎝，体重 60㎏，血圧 106/46 mmHg， 脈100 回/分 整，呼吸数 20回/分，体温 36.7℃",
+        "vitalsEn": "Height: 172 cm, weight: 60 kg, blood pressure: 106/46 mmHg, pulse rate: 100 beats/min, respiratory rate: 20 breaths/min, body temperature: 36.7°C"
+      },
+      "caseNotes": {
+        "summaryEn": "67-year-old male with weight loss.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "3か月くらい前からいつもに比べて食欲の低下 を自覚し始めた．周囲の人からも「痩せた」， 「食べる量が減った」と言われるようになった．",
+          "textEn": "About 3 months ago, I started noticing a decrease in appetite compared to usual.People around me started telling me that I had lost weight and that I was eating less."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "食事中，おなかの痛みや気持ち悪さはないが食 欲がない．ここ1週間で体のだるさも自覚する ようになった．",
+          "textEn": "While eating, I have no stomach pain or discomfort, but I have no appetite.Over the past week, I have started to notice that my body feels sluggish."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "この3か月で，10㎏体重が減った．",
+          "textEn": "In the past three months, I have lost 10 kg."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: Nothing particular except for mild obesity."
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "I am not taking any pharmaceutical drugs.Preferences: I don't smoke.Since I was around 30 years old, I had been drinking 5 cups of sake almost every day.I've been drinking less for the past two days."
+        ]
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "loss-of-appetite-33",
+      "nightNumber": 33,
+      "titleJa": "食思不振",
+      "titleEn": "loss of appetite",
+      "categoryId": "systemic",
+      "categoryRoman": "III",
+      "categoryOrder": 3,
+      "symptomOrder": 9,
+      "symptomLabelJa": "食思不振",
+      "symptomLabelEn": "loss of appetite",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Aoi Matsuda",
+        "age": 47,
+        "gender": "female",
+        "demographicsJa": "47歳女性",
+        "demographicsEn": "47-year-old female",
+        "chiefComplaintJa": "食思不振",
+        "chiefComplaintEn": "loss of appetite",
+        "vitalsJa": "バイタル：意識清明，血圧 128/72mmHg， 脈拍 80 回/分 整，呼吸数18 回/分，SpO2 98%(room air)，体温36.0 ℃",
+        "vitalsEn": "Consciousness was clear, blood pressure was 128/72 mmHg, pulse was 80 beats/min, breathing rate was 18 breaths/min, SpO2 was 98% (room air), and body temperature was 36.0 °C."
+      },
+      "caseNotes": {
+        "summaryEn": "47-year-old female with loss of appetite.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "2ヶ月前から食欲がない．",
+          "textEn": "I have no appetite for the past 2 months."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "お腹が空かない．食べてお腹が痛くなることもな い．食べたものを戻したことはない． 食べる量は減っている．",
+          "textEn": "I'm not hungry.I don't get a stomach ache after eating it.I have never taken back what I ate.The amount I eat is decreasing."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "2ヶ月で体重が3kg減った． 黒い便は出ていない． 日常生活で息が苦しいなどはなかった． この2ヶ月は疲れやすさがあった． 熱は出ていない．下痢もしていない． お腹は痛くない．",
+          "textEn": "I lost 3 kg in 2 months.There is no black stool.There was no difficulty in breathing during daily life.The last two months have been very tiring.I don't have a fever.I haven't had any diarrhea.My stomach doesn't hurt."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "47歳女性，食思不振を主訴に受診した．2ヶ月前から食欲がなくなり，体重が3kg減少した． 腹痛や下痢，発熱などの随伴症状はない． 過去の健康診断で異常を指摘されたことはない．黒色便はみとめず，息切れなどの貧血症状もない．",
+          "textEn": "A 47-year-old woman visited our hospital with a chief complaint of anorexia.Two months ago, he lost his appetite and lost 3 kg.There are no accompanying symptoms such as abdominal pain, diarrhea, or fever.No abnormalities were noted during past medical examinations.There was no black stool, and there were no symptoms of anemia such as shortness of breath."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "身長156cm，体重46kg．意識清明． バイタルは，血圧 128/72mmHg， 脈拍 80回/分 整，呼吸数 18 回/分，SpO2 98%，体温 36.0℃． A&P 食思不振に加え，体重減少があるため，胃癌の可能性をまず除外したい． 妊娠やうつ症状，感染症による敗血症，感染性胃腸炎，腸閉塞でも食思不振が生じるため，圧痛の有無 や，肝叩打痛などの腹部所見を確認する．腹部に腫瘤性病変が触れないかも確認する． 糖尿病によるケトアシドーシスや低Na血症，尿毒症でもこのような症状が生じうる． 今後の検査として，血液検査，ピロリ菌の検査(必要であれば)，胃カメラ，腹部エコーやCTも行う． 第33夜　食思不振 第33夜 食思不振 頸部リンパ節腫脹 (−) 下腿浮腫(−) ● 食思不振の問診 20:54 ・一般的に食思不振症状が多いのは消化器病変である．特に胃に病変があると，食思不振がみられやすい． ・特に見逃したくない疾患は悪性腫瘍である． ⇨ 悪性腫瘍のスクリーニング検査(内視鏡検査や消化管造影検査)実施の有無を問診する． ・体重減少，2ヶ月間の食思不振の症状持続から悪性腫瘍を念頭において問診する． ・もし消化器病変があれば出血を起こす． ⇨ 貧血の症状の有無を問診する． ・胆嚢炎や虫垂炎など敗血症を起こす病態が食思不振につながることもある． ⇨ 痛みや発熱についても問診する． ● うつと食思不振 25:59 ・うつでも食思不振の症状が出る． ・女性はうつのリスクが高い．今回のような場合，うつのスクリーニングをかけることが多い． ⇨ 1ヶ月以上にわたって抑うつ気分はないか，今まで楽しかったことを楽しめなくなっていないか，の２項目 質問法でスクリーニングをかける． ・うつ病の患者は増えている．一番はじめの受診先が，精神科ではなく一般の内科外来であることが多い． ⇨ うつ症状がみられる人を見逃さずフォローする． ● 臨床での検査の流れ 36:37 ・緊急の場合，胃カメラよりもCT検査のほうがアクセスし易い． ⇨ 胸部から骨盤までCT撮影し，病変を確認する． 心音・呼吸音 異常なし 《アプローチ 》まずは悪性腫瘍を除外．精神疾患によるものも忘れずに．",
+          "textEn": "Height: 156cm, weight: 46kg.Clear consciousness.Vitals: blood pressure 128/72 mmHg, pulse 80 beats/min, respiratory rate 18 breaths/min, SpO2 98%, body temperature 36.0°C.A&P In addition to loss of appetite, I have lost weight, so I would first like to rule out the possibility of gastric cancer.Anorexia can also occur in pregnancy, depressive symptoms, sepsis due to infection, infectious gastroenteritis, and intestinal obstruction, so check for abdominal findings such as tenderness and liver pounding pain.Make sure that no mass lesion is palpable in the abdomen.Ketoacidosis, hyponatremia, and uremia due to diabetes can also cause these symptoms.Future tests include blood tests, Helicobacter pylori tests (if necessary), gastroscopy, abdominal ultrasound, and CT.Night 33: Anorexia Night 33: Anorexia Swollen cervical lymph nodes (-) Lower leg edema (-) ● Questionnaire about anorexia 20:54 ・In general, symptoms of anorexia are most often caused by gastrointestinal lesions.Anorexia is particularly likely to occur if there is a lesion in the stomach.・A disease that you do not want to overlook is malignant tumor.⇨ Ask whether or not screening tests for malignant tumors (endoscopy and gastrointestinal imaging tests) have been performed.- Based on weight loss and persistent symptoms of anorexia for 2 months, the patient should be examined with the possibility of malignancy in mind.・If there is a gastrointestinal lesion, bleeding will occur.⇨ Ask if there are any symptoms of anemia.- Pathological conditions that cause sepsis, such as cholecystitis and appendicitis, may also lead to loss of appetite.⇨ Ask about pain and fever.● Depression and anorexia 25:59 ・Depression can also cause symptoms of anorexia.・Women are at higher risk of depression.In cases like this one, we often screen for depression.⇨ Screening will be conducted using two questions: whether you have been feeling depressed for more than a month and whether you have stopped enjoying things you used to enjoy.・うつ病の患者は増えている．The first place for consultation is often a general internal medicine outpatient clinic rather than a psychiatry department.⇨ Follow up on people who are showing symptoms of depression.● Flow of clinical examination 36:37 - In an emergency, CT examination is easier to access than gastroscopy.⇨ CT scan is performed from the chest to the pelvis to confirm the lesion.Heart sounds/breath sounds No abnormalities [Approach] First, exclude malignant tumors.Don't forget about mental illness."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "115A65 第33夜_食思不振 III.全身症状⑨ III. 全身症状⑨",
+          "textEn": "115A65 33rd night _ Anorexia III. Systemic symptoms ⑨ III. Systemic symptoms ⑨"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: I have never had any illness.Health checkup The patient undergoes a health checkup once a year, and no particular abnormalities have been noted.I haven't had a gastrocamera done.I haven't done a fecal occult blood test either.Medication history: I do not take any medications on a regular basis.I occasionally take multivitamin tablets (for a long time now)."
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "There is no possibility of pregnancy.Others I didn't feel particularly unmotivated, but I felt like I wasn't getting any better even after sleeping.It's not that I don't want to go to work.I am unable to enjoy my hobby of watching soccer because I am tired and fall asleep.Palpebral conjunctiva, bulbar conjunctiva abnormality (-) #Stomach cancer Dr.Yamanaka/Kamata radio talk Abdomen flat/soft Liver/spleen not palpable"
+        ]
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "nausea-vomiting-15",
+      "nightNumber": 15,
+      "titleJa": "悪心・嘔吐",
+      "titleEn": "Nausea/vomiting",
+      "categoryId": "gastrointestinal",
+      "categoryRoman": "IV",
+      "categoryOrder": 4,
+      "symptomOrder": 1,
+      "symptomLabelJa": "悪心・嘔吐",
+      "symptomLabelEn": "Nausea/vomiting",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Kazuki Matsumoto",
+        "age": 63,
+        "gender": "male",
+        "demographicsJa": "63歳男性",
+        "demographicsEn": "63-year-old male",
+        "chiefComplaintJa": "腹痛，嘔吐",
+        "chiefComplaintEn": "Abdominal pain, vomiting",
+        "vitalsJa": "バイタル：血圧 178/94， 脈 58回/分 整，呼吸数 20回/分，体温36.5℃",
+        "vitalsEn": "Blood pressure 178/94, pulse 58 beats/min, respiratory rate 20 breaths/min, body temperature 36.5℃"
+      },
+      "caseNotes": {
+        "summaryEn": "63-year-old male with Abdominal pain, vomiting.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "3時間前から臍のあたりがキリキリと痛くなり， 張るようになった．",
+          "textEn": "Three hours ago, I started to feel a sharp pain around my navel and it started to tighten."
+        },
+        {
+          "label": "P",
+          "cue": "provoking or relieving factors",
+          "textJa": "横になると張りが楽になる．",
+          "textEn": "The tension becomes easier when you lie down."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "3回嘔吐した．",
+          "textEn": "I vomited three times."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "下痢はない． 歩くと嫌な感じがするが，響く感じは無い．",
+          "textEn": "No diarrhea.It feels unpleasant when I walk, but it doesn't resonate."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Preferences: Drinks about 2 cups a day.",
+          "Diet: I don't eat raw food.I haven't eaten out.Note: When I had similar symptoms in the past, they healed naturally.No one around me has similar symptoms."
+        ]
+      },
+      "otherHistory": [
+        "Medical Examination I was once told that I had liver cirrhosis caused by alcohol.I was told that my blood pressure was high.I am not taking any pharmaceutical drugs.In the past, when I had a headache, I took medicine and felt better."
+      ]
+    },
+    {
+      "id": "melena-abdominal-pain-19",
+      "nightNumber": 19,
+      "titleJa": "下血＋腹痛",
+      "titleEn": "Melena + abdominal pain",
+      "categoryId": "gastrointestinal",
+      "categoryRoman": "IV",
+      "categoryOrder": 4,
+      "symptomOrder": 2,
+      "symptomLabelJa": "下血＋腹痛",
+      "symptomLabelEn": "Melena + abdominal pain",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Rina Yamazaki",
+        "age": 72,
+        "gender": "female",
+        "demographicsJa": "72歳女性",
+        "demographicsEn": "72-year-old female",
+        "chiefComplaintJa": "下血，腹痛",
+        "chiefComplaintEn": "Melena, abdominal pain",
+        "vitalsJa": "バイタル：意識晴明，血圧 142/92 mmHg， 脈96回 整，呼吸数 20回，SpO₂ 96% room air，体温 37.2℃",
+        "vitalsEn": "Consciousness clear, blood pressure 142/92 mmHg, pulse 96 times regular, respiratory rate 20 times, SpO₂ 96% room air, body temperature 37.2℃"
+      },
+      "caseNotes": {
+        "summaryEn": "72-year-old female with Melena, abdominal pain.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "22時くらいに寝ようとしたら，30分くらい して痛くなった． このようなことは初めて． 今日の昼までは普通だった，夕方からだる い感じがした．",
+          "textEn": "When I tried to go to bed around 10pm, it started hurting about 30 minutes later.This is the first time something like this has happened.I felt normal until noon today, but I started feeling sluggish in the evening."
+        },
+        {
+          "label": "P",
+          "cue": "provoking or relieving factors",
+          "textJa": "楽になる姿勢はない．",
+          "textEn": "There is no comfortable posture."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "お腹が痛くなった後は5回ほど水っぽい下痢 をした．最後は真っ赤な血がでたので病院 に来た． 痛みはキリキリする痛みで，だんだんと痛 くなってきた． 痛みのあるときと楽な時とでは波がある． 一番辛い痛みを10点とすると，今の痛みは5 点．家でトイレに入っている時は8点だった．",
+          "textEn": "After feeling sick to my stomach, I had watery diarrhea about 5 times.In the end, I came to the hospital because I was bleeding bright red blood.The pain was sharp and was gradually getting worse.There are fluctuations between times of pain and times of ease.If the worst pain is given a score of 10, the current pain is given a score of 5.When I went to the bathroom at home, my score was 8."
+        },
+        {
+          "label": "R",
+          "cue": "location or radiation",
+          "textJa": "左の下の方が痛む． 背中の方に響く痛みはない．",
+          "textEn": "The lower left side hurts.There is no pain in my back."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: The patient has been seeing his family doctor for high blood pressure and diabetes."
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Meals: I ate rice normally.I ate croquettes today.I don't eat raw or ready-made foods."
+        ]
+      },
+      "otherHistory": [
+        "Drug history: I am not taking any medications.Allergy history: There are no abnormalities in cholesterol levels or allergies.",
+        "During the medical checkup, I was told that my blood sugar was high.No particular abnormalities were noted on stool examination."
+      ]
+    },
+    {
+      "id": "blood-vomit-20",
+      "nightNumber": 20,
+      "titleJa": "吐血",
+      "titleEn": "Blood vomit",
+      "categoryId": "gastrointestinal",
+      "categoryRoman": "IV",
+      "categoryOrder": 4,
+      "symptomOrder": 3,
+      "symptomLabelJa": "吐血",
+      "symptomLabelEn": "Blood vomit",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Shota Kuroda",
+        "age": 62,
+        "gender": "male",
+        "demographicsJa": "62歳男性",
+        "demographicsEn": "62-year-old male",
+        "chiefComplaintJa": "吐血",
+        "chiefComplaintEn": "Blood vomit",
+        "vitalsJa": "",
+        "vitalsEn": ""
+      },
+      "caseNotes": {
+        "summaryEn": "62-year-old male with Blood vomit.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "diarrhea-2",
+      "nightNumber": 2,
+      "titleJa": "下痢",
+      "titleEn": "diarrhea",
+      "categoryId": "gastrointestinal",
+      "categoryRoman": "IV",
+      "categoryOrder": 4,
+      "symptomOrder": 4,
+      "symptomLabelJa": "下痢",
+      "symptomLabelEn": "diarrhea",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Yuji Hasegawa",
+        "age": 26,
+        "gender": "male",
+        "demographicsJa": "26歳男性",
+        "demographicsEn": "26-year-old male",
+        "chiefComplaintJa": "下痢，血便",
+        "chiefComplaintEn": "Diarrhea, bloody stool",
+        "vitalsJa": "バイタル：血圧 108/64，脈76回 整，呼吸数 18回，SpO₂ 99%，体温 37.1℃",
+        "vitalsEn": "Blood pressure 108/64, pulse 76 regular, respiratory rate 18, SpO₂ 99%, body temperature 37.1℃"
+      },
+      "caseNotes": {
+        "summaryEn": "26-year-old male with Diarrhea, bloody stool.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "3ヶ月前から，この1，2週間でひどくなった．",
+          "textEn": "It started 3 months ago and has gotten worse in the past week or two."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "茶色っぽい粘液便で，血が少し混じっている． 水っぽい下痢は出ない． 黒い便ではない．",
+          "textEn": "The stool is brownish and mucus, with some blood mixed in.No watery diarrhea.It's not black stool."
+        },
+        {
+          "label": "R",
+          "cue": "location or radiation",
+          "textJa": "臍の周りや下腹部が痛い．",
+          "textEn": "Pain around the navel and lower abdomen."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "お腹は痛い． 熱は測っていない，だるさはあったが仕事には 行っていた． 体重が少し減り，周りからも痩せたと言われる． 立ちくらみはないが，だるさがある． いつもより息が切れる感じがする． 便意を感じてトイレに行っても何もでない．",
+          "textEn": "My stomach hurts.I did not take my temperature, and although I felt sluggish, I went to work.I have lost some weight, and people around me say that I have lost weight.I don't feel lightheaded, but I do feel sluggish.I feel more out of breath than usual.When I feel the urge to go to the toilet, nothing happens."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "下痢で目が覚めることはない．",
+          "textEn": "I never wake up with diarrhea."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history Although I was told to be careful about my cholesterol during a health checkup, I have not received any particular treatment."
+        ],
+        "medications": [
+          "Medication history: I have not taken any medications.I am not taking antibiotics.preference"
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Smoking: 10 cigarettes/day from around 20 years old.",
+          "Travel history: I have not been overseas in the past year.I haven't been camping or going to hot springs recently.",
+          "I have no sex with men."
+        ]
+      },
+      "otherHistory": [
+        "Alcohol: Approximately two 500ml cans a day.I haven't been drinking since I started feeling sick.",
+        "Work history: Works in the printing industry, doing clerical work and transporting things."
+      ]
+    },
+    {
+      "id": "constipation-4",
+      "nightNumber": 4,
+      "titleJa": "便秘",
+      "titleEn": "constipation",
+      "categoryId": "gastrointestinal",
+      "categoryRoman": "IV",
+      "categoryOrder": 4,
+      "symptomOrder": 5,
+      "symptomLabelJa": "便秘",
+      "symptomLabelEn": "constipation",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Haruto Ono",
+        "age": 50,
+        "gender": "male",
+        "demographicsJa": "50歳男性",
+        "demographicsEn": "50-year-old male",
+        "chiefComplaintJa": "便秘，下痢",
+        "chiefComplaintEn": "constipation, diarrhea",
+        "vitalsJa": "バイタル：血圧118 /72，脈80回 整，呼吸数 16回，SpO₂ 99%，体温 36.5℃",
+        "vitalsEn": "Blood pressure 118/72, pulse 80/regular, respiratory rate 16, SpO₂ 99%, body temperature 36.5℃"
+      },
+      "caseNotes": {
+        "summaryEn": "A 50-year-old man came to our hospital complaining of recurrent diarrhea and constipation.The patient had been aware of diarrhea and constipation for three weeks.I had never experienced similar symptoms before.There is no particular medical history.My mother was diagnosed with colon cancer when she was 60 years old.",
+        "objectiveEn": "Vital signs were blood pressure 118/72, pulse 80 beats, respiratory rate 16 beats, SpO₂ 99%, and body temperature 36.5°C, and no abnormalities were observed in the vital signs.Intestinal peristalsis sounds were slightly increased.Palpation revealed an elastic hard mass slightly to the left of the midline of the lower abdomen.The surface of the tumor was smooth and mobile, and no tenderness was observed when the tumor was pressed.The liver and spleen were not touched.Upon rectal examination, no mass was palpable, and the stool was mucus and bloody.A&P rectal examination revealed mucus and blood in the stool, so colorectal cancer was most likely.Differential diagnoses include irritable bowel syndrome, autonomic neuropathy due to diabetes, drug-induced symptoms, and hypothyroidism.Irritable bowel syndrome is ruled out because the patient had a sudden onset 3 weeks ago and constipation is the main symptom, and there is no dry mouth or polyuria, which would suggest diabetes.Since there are no oral medications, the possibility of drug-induced symptoms is low.In the future, abdominal X-rays and abdominal CT will be taken to confirm the location of the mass and the presence or absence of intestinal obstruction.Also, check for progress of anemia and electrolyte abnormalities by taking a blood sample.#Colon cancer #Irritable bowel syndrome #Diabetes #Drug-induced #Hypothyroidism #Electrolyte abnormality",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "3週間前に下痢をしてから便秘と下痢を繰り返 している． 今までにこのようなことはなかった．",
+          "textEn": "Since I had diarrhea 3 weeks ago, I have had repeated episodes of constipation and diarrhea.Nothing like this has ever happened before."
+        },
+        {
+          "label": "R",
+          "cue": "location or radiation",
+          "textJa": "臍のあたりが痛い．",
+          "textEn": "It hurts around my navel."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Medical history: I have not had constipation since I was young.I've never been sick."
+        ],
+        "medications": [
+          "Medication history: I have not taken any medications."
+        ],
+        "allergies": [],
+        "familyHistory": [
+          "Family history: My mother had colon cancer when she was 60 years old."
+        ],
+        "socialHistory": [
+          "Preferences Smoking I don't smoke.",
+          "Food: I don't often drink sweet soft drinks."
+        ]
+      },
+      "otherHistory": [
+        "I think I had diarrhea about 4 times a day.I haven't really checked the color or thinness of the stool.The pain comes in waves, and sometimes it doesn't hurt.There are no vibrations.",
+        "I don't feel nauseous.",
+        "Stomach bloat: I don't feel refreshed because I haven't passed stool.",
+        "Gas is coming out.",
+        "I haven't taken my temperature, but I don't have any cold symptoms.",
+        "Weight: Although I don't do any particular exercise, I have lost 5 kg in one year.",
+        "I'm not particularly thirsty.",
+        "The frequency of urination has not increased.",
+        "I undergo a health check every year.",
+        "Fecal occult blood test was performed only once out of two times.",
+        "Alcohol: I drink about one go of shochu a day.For about 30 years."
+      ]
+    },
+    {
+      "id": "abdominal-distension-32",
+      "nightNumber": 32,
+      "titleJa": "腹部膨満",
+      "titleEn": "abdominal distension",
+      "categoryId": "gastrointestinal",
+      "categoryRoman": "IV",
+      "categoryOrder": 4,
+      "symptomOrder": 6,
+      "symptomLabelJa": "腹部膨満",
+      "symptomLabelEn": "abdominal distension",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Issei Okada",
+        "age": 66,
+        "gender": "male",
+        "demographicsJa": "66歳男性",
+        "demographicsEn": "66-year-old male",
+        "chiefComplaintJa": "腹部膨満",
+        "chiefComplaintEn": "abdominal distension",
+        "vitalsJa": "バイタル：意識清明，血圧 146/60mmHg，脈拍 76 回/分 整，体温 36.7℃",
+        "vitalsEn": "Consciousness clear, blood pressure 146/60mmHg, pulse 76 beats/min, body temperature 36.7℃"
+      },
+      "caseNotes": {
+        "summaryEn": "66-year-old male with abdominal distension.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "3週間前から，ベルトがきつくなってきた， そこからどんどんお腹が膨れてきた． 今までお腹が膨れたことはない．",
+          "textEn": "Three weeks ago, my belt started to get tighter, and my stomach started to swell.I have never felt bloated."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "体重は1ヶ月で5kg増えた． 倦怠感があるが，他の症状はない． すぐにお腹が張るが，少しずつは食べられてい る． 既往歴 25歳のときに十二指腸潰瘍から出血し，輸血を受 けた． 20年前に肝炎と診断され，近医にかかっている． 健康診断 定期的に健康診断を受けている． 近医でも数ヶ月おきに肝機能のフォローを受けて いる．",
+          "textEn": "My weight increased by 5 kg in one month.I feel tired but have no other symptoms.My stomach quickly becomes bloated, but I am able to eat little by little.Medical history: At the age of 25, the patient suffered from bleeding from a duodenal ulcer and received a blood transfusion.He was diagnosed with hepatitis 20 years ago and has been seeing a nearby doctor.Health checkup I undergo regular health checkups.Even at my local doctor, I receive follow-up checks on my liver function every few months."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "66歳男性，３週間前からの腹部膨満を主訴に受診した． 40年前に十二指腸潰瘍の出血の際に輸血を受け，20年前に慢性肝炎と診断され，近医に通院している． この1ヶ月で体重が5kg増加している． 生肉の摂食や，新しい薬剤の内服歴は無い．",
+          "textEn": "A 66-year-old man visited our hospital with the chief complaint of abdominal distension for three weeks.He received a blood transfusion 40 years ago for bleeding from a duodenal ulcer, and 20 years ago he was diagnosed with chronic hepatitis and visited a nearby hospital.My weight has increased by 5 kg in the past month.There is no history of eating raw meat or taking any new drugs."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "身長166cm，体重60kg．意識清明． バイタルは，血圧 146/60 mmHg， 脈拍 76回/分 整，体温 36.7℃ 身体診察では眼球結膜に黄染を認めた． 前胸部のクモ状血管腫，手掌紅斑を認め，腹部は膨隆し，脾臓を触知した．肝臓は触知しない．下腿に は浮腫を認めた． A&P 既往歴と身体所見から，慢性肝炎の非代償性肝硬変への移行がもっとも考えられる． 肝胆道系酵素を含めた採血，腹部超音波検査，腹部CTを施行し，肝臓の大きさや肝癌の有無を確認す る．浮腫に対しては利尿薬やアルブミン製剤の使用を検討する． 第32夜　腹部膨満 第32夜 腹部膨満 クモ状血管腫 手掌紅斑(+) 両側下腿浮腫(+) 特発性細菌性腹膜炎 腹腔内臓器の炎症や腫瘍，腸管穿孔がないにもかかわらず，感染性の腹水を有する病態． 大部分は非代償性肝硬変を背景とする．敗血症性ショックに至る危険があり，早期診断・治療が重要である． 〔検査・診断〕 腹水中の好中球数が重要である． 《腹水穿刺》好中球↑(250/μL以上) 《細菌培養》陰性(菌が同定されない) ※ 近年は同定される例も多い． 《細胞診》癌性を否定 《血液》炎症反応 《腹部CT》続発性腹膜炎の除外 《アプローチ 》肝脾腫，腹水，イレウスなど原因を多角的に考える．",
+          "textEn": "Height: 166cm, weight: 60kg.Clear consciousness.Vitals were normal: blood pressure 146/60 mmHg, pulse 76 beats/min, body temperature 36.7°C. Physical examination revealed yellowing of the bulbar conjunctiva.A spider-like hemangioma on the anterior chest and erythema on the palms were observed, the abdomen was distended, and the spleen was palpated.The liver is not palpable.Edema was observed in the lower legs.A&P Based on the past history and physical findings, the most likely explanation is that chronic hepatitis has developed into decompensated cirrhosis.Blood samples including hepatobiliary enzymes, abdominal ultrasound, and abdominal CT are performed to confirm the size of the liver and the presence of liver cancer.Consider using diuretics and albumin preparations for edema.32nd night: Abdominal distension 32nd night: Abdominal distention Spider-like hemangioma Erythema on the palms (+) Bilateral lower leg edema (+) Idiopathic bacterial peritonitis A condition in which infectious ascites occurs despite the absence of inflammation, tumor, or intestinal perforation of the abdominal organs.Most cases have a background of decompensated liver cirrhosis.There is a risk of developing septic shock, so early diagnosis and treatment are important.[Test/Diagnosis] The number of neutrophils in ascites is important.[Ascites puncture] Neutrophils ↑ (250/μL or more) [Bacterial culture] Negative (no bacteria identified) *In recent years, many cases have been identified.[Cytology] Denies cancer. [Blood] Inflammatory reaction. [Abdominal CT] Excludes secondary peritonitis. [Approach] Consider causes from multiple angles, including hepatosplenomegaly, ascites, and ileus."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "100C7-9 第32夜_腹部膨満 IV.消化器に関連した症候⑥ IV. 消化器に関連した症候⑥",
+          "textEn": "100C7-9 32nd night_Abdominal distension IV. Symptoms related to the digestive system ⑥ IV. Symptoms related to the digestive system ⑥"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [
+          "Medication history: I am not taking any medicines or supplements."
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Meal: I don't eat wild game.Yellowing of bulbar conjunctiva (+) #cirrhosis Dr.Yamanaka/Kamata radio talk Abdominal distension Liver not palpable (no hepatomegaly) Spleen dullness expanded Spleen palpable"
+        ]
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "jaundice-31",
+      "nightNumber": 31,
+      "titleJa": "黄疸",
+      "titleEn": "jaundice",
+      "categoryId": "gastrointestinal",
+      "categoryRoman": "IV",
+      "categoryOrder": 4,
+      "symptomOrder": 7,
+      "symptomLabelJa": "黄疸",
+      "symptomLabelEn": "jaundice",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Kana Sugiyama",
+        "age": 55,
+        "gender": "female",
+        "demographicsJa": "55歳女性",
+        "demographicsEn": "55-year-old female",
+        "chiefComplaintJa": "黄疸",
+        "chiefComplaintEn": "jaundice",
+        "vitalsJa": "バイタル：意識清明，血圧 116/60mmHg，脈拍 64回/分 整，呼吸数 18回/分，体温 36.3℃",
+        "vitalsEn": "Consciousness clear, blood pressure 116/60mmHg, pulse 64 beats/min, respiratory rate 18/min, body temperature 36.3℃"
+      },
+      "caseNotes": {
+        "summaryEn": "55-year-old female with jaundice.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "1週間前に白目が黄色いと言われた． 1ヶ月前くらいから体がだるい．",
+          "textEn": "A week ago, I was told that the whites of my eyes were yellow.I've been feeling tired for about a month."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "だるさがある． 熱は測っていないが，熱っぽさはない． 既往歴 1年前に潰瘍性大腸炎と診断され，治療中． 内視鏡検査時にB型，C型肝炎の検査してもらった が大丈夫と言われたため心配していない． 服薬歴 1年前から潰瘍性大腸炎に対してステロイドで治療 していた．半年前から抗TNF-α抗体薬の治療が始 まった．",
+          "textEn": "I feel sluggish.I haven't taken his temperature, but he doesn't feel feverish.Past medical history: The patient was diagnosed with ulcerative colitis 1 year ago and is currently undergoing treatment.I was tested for hepatitis B and C during the endoscopy and was told that it was safe, so I am not worried.Medication history: The patient had been treated with steroids for ulcerative colitis for 1 year.Treatment with anti-TNF-α antibody drugs was started six months ago."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "112A50 Dr．山中・鎌田のラジオトーク 腹部は平坦・軟 腹部の圧痛(−) 肝臓・脾臓は 触知しない",
+          "textEn": "112A50 Dr.Yamanaka/Kamata radio talk Abdomen is flat and soft Abdominal tenderness (-) Liver and spleen are not palpable"
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "55歳女性，黄疸を主訴に受診した． 1年前に血便と腹痛があり．潰瘍性大腸炎と診断された．はじめは副腎皮質ステロイドで治療していた が，効果がなく，半年前から抗TNF-α抗体薬を服用していた．潰瘍性大腸炎の症状は軽快していたが ， 1週間前に黄疸が出現した． 潰瘍性大腸炎に対する治療薬以外の薬剤は内服していない．母と兄がB型肝炎のキャリアである． 潰瘍性大腸炎の治療を開始した際はHBs抗原は陰性だった． 喫煙歴はなく，飲酒は機会飲酒．",
+          "textEn": "A 55-year-old woman visited our hospital with a chief complaint of jaundice.One year ago, I had bloody stools and abdominal pain.The patient was diagnosed with ulcerative colitis.Initially, the patient was treated with corticosteroids, but this was ineffective, and he began taking anti-TNF-α antibody drugs for the past six months.The symptoms of ulcerative colitis had improved, but jaundice developed one week ago.The patient is not taking any medications other than those for ulcerative colitis.My mother and brother are hepatitis B carriers.When treatment for ulcerative colitis was started, HBs antigen was negative.He has no history of smoking, and only drinks occasionally."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "身長152cm，体重45kg．意識清明． バイタルは，血圧 116/60mmHg， 脈拍 64回/分 整，呼吸数 18回/分，体温 36.3℃ 身体診察で眼球結膜に黄染を認めた．腹部診察で特記すべき所見はなかった． A&P 母と兄がB型肝炎キャリアであり，抗TNF-α抗体薬投与歴があるため，de novo肝炎が最も考えられる． 今後の検査としては，血算，生化学(特に肝機能を確認)，超音波やCT検査を施行する． 第31夜　黄疸 第31夜 黄疸 《アプローチ 》肝障害をきたしうる病歴を見逃さない． 下腿浮腫（−） ◯ フリートーク ・Dr.鎌田，イタリアで脱臼骨折 01:08 ・海外のアセトアミノフェンの価格 38:18",
+          "textEn": "Height: 152cm, weight: 45kg.Clear consciousness.Vitals were blood pressure 116/60 mmHg, pulse 64 beats/min, respiratory rate 18 breaths/min, and body temperature 36.3°C. Physical examination revealed yellowing of the bulbar conjunctiva.There were no noteworthy findings on abdominal examination.A&P: De novo hepatitis is most likely because the mother and brother are hepatitis B carriers and have a history of taking anti-TNF-α antibody drugs.Future tests include blood count, biochemistry (particularly to check liver function), ultrasound, and CT.Night 31: Jaundice Night 31: Jaundice <<Approach>> Do not overlook any medical history that may cause liver damage.Lower leg edema (-) ◯ Free talk ・Dr. Kamata, dislocated fracture in Italy 01:08 ・Overseas price of acetaminophen 38:18"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [
+          "Family history: Mother and brother are hepatitis B carriers."
+        ],
+        "socialHistory": [
+          "Meal: I don't eat mushrooms.",
+          "Preferences: I only drink alcohol at gatherings.I don't smoke.Anemia in the palpebral conjunctiva (-) Yellow staining in the bulbar conjunctiva (+) #de novo hepatitis B"
+        ]
+      },
+      "otherHistory": [
+        "De novo hepatitis B Hepatitis caused by HBV reactivation in a person with a past HBV infection (HBs antigen negative and HBc antibody or HBs antibody positive).- It may be seen when steroids, anti-rheumatic drugs, biological preparations, immunosuppressive drugs, and anticancer drugs are used, so tests for HB-related markers and liver function should be performed before using these drugs.If the patient has a history of HBV infection (or is positive for a trace amount of HBV), follow-up tests should be performed even during drug administration, considering the risk of reactivation.- Appropriate response and treatment are important as the disease is more likely to become fulminant and the mortality rate is higher than normal acute hepatitis B.31st night_Jaundice IV. Symptoms related to the digestive system ⑦ IV. Symptoms related to the digestive system ⑦"
+      ]
+    },
+    {
+      "id": "palpitations-11",
+      "nightNumber": 11,
+      "titleJa": "動悸",
+      "titleEn": "palpitations",
+      "categoryId": "cardiopulmonary",
+      "categoryRoman": "V",
+      "categoryOrder": 5,
+      "symptomOrder": 1,
+      "symptomLabelJa": "動悸",
+      "symptomLabelEn": "palpitations",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Sora Takahashi",
+        "age": 78,
+        "gender": "male",
+        "demographicsJa": "78歳男性",
+        "demographicsEn": "78-year-old male",
+        "chiefComplaintJa": "動悸",
+        "chiefComplaintEn": "palpitations",
+        "vitalsJa": "バイタル：血圧 152/90， 脈76回/分 不整，呼吸数 16回/分，SpO₂ 98%(room air)，体温 36.2℃",
+        "vitalsEn": "Blood pressure 152/90, pulse 76/min irregular, respiratory rate 16/min, SpO₂ 98% (room air), body temperature 36.2℃"
+      },
+      "caseNotes": {
+        "summaryEn": "78-year-old male with palpitations.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "3日前から症状が出ている． 家の片付けをしていた時に症状が出た． このようなことは初めて．",
+          "textEn": "Symptoms have been occurring for 3 days.The symptoms appeared while I was cleaning up the house.This is the first time something like this has happened."
+        },
+        {
+          "label": "P",
+          "cue": "provoking or relieving factors",
+          "textJa": "長いこと動悸が続いていたがそのうち感じなく なった． 今日はまたドキドキしている．",
+          "textEn": "I had palpitations for a long time, but eventually stopped feeling them.My heart is pounding again today."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "脈が乱れる感じ．",
+          "textEn": "I feel like my pulse is irregular."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "いつもと違う感じがするが，疲れやすいなどは ない．",
+          "textEn": "I feel different than usual, but I don't feel tired easily."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "今も動悸が続いている．",
+          "textEn": "I still have palpitations."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Medical history: There is a history of hypertension.I have never been told that I have heart failure or diabetes."
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": [
+        "Health checkup I go to my family doctor once a year.",
+        "Other I am cleaning up my surroundings due to the end of my life, but I am not particularly stressed."
+      ]
+    },
+    {
+      "id": "vomiting-blood-20",
+      "nightNumber": 20,
+      "titleJa": "吐血）",
+      "titleEn": "vomiting blood)",
+      "categoryId": "cardiopulmonary",
+      "categoryRoman": "V",
+      "categoryOrder": 5,
+      "symptomOrder": 2,
+      "symptomLabelJa": "吐血）",
+      "symptomLabelEn": "vomiting blood)",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Moe Ishikawa",
+        "age": 27,
+        "gender": "female",
+        "demographicsJa": "27歳女性",
+        "demographicsEn": "27-year-old female",
+        "chiefComplaintJa": "胸痛，呼吸困難",
+        "chiefComplaintEn": "Chest pain, difficulty breathing",
+        "vitalsJa": "バイタル：血圧 112/64 mmHg， 脈 120回/分 整，呼吸数 32回/分，SpO₂ 88%(room air)，体温 38.0℃",
+        "vitalsEn": "Blood pressure 112/64 mmHg, pulse 120/min, respiratory rate 32/min, SpO₂ 88% (room air), body temperature 38.0℃"
+      },
+      "caseNotes": {
+        "summaryEn": "27-year-old female with Chest pain, difficulty breathing.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "昨日から右の胸が痛い． 事務仕事を終えて帰宅し，食事の準備をしてい る時に突然痛くなった．",
+          "textEn": "My right chest hurts since yesterday.I came home from office work and was preparing a meal when I suddenly felt pain."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "右胸の前の方が痛い． 息を吸う時に痛い． 大きく息を吸えない．",
+          "textEn": "The front of my right chest hurts.It hurts when I breathe.I can't take a deep breath."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "咳はあまり出ない． 息苦しい．",
+          "textEn": "I don't cough much.It's hard to breathe."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "様子を見ようと思ったが，よくならなかった． このようなことは初めてです．",
+          "textEn": "I tried to see what was going on, but it didn't get any better.This is the first time something like this has happened."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "117F 71-73 Dr．山中・鎌田のラジオトーク 頚静脈怒張(＋)",
+          "textEn": "117F 71-73 Dr.Yamanaka/Kamata radio talk jugular vein tension (+)"
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "27歳女性，右前胸部痛を主訴に受診した． 昨日，突然の右前胸部痛を自覚し，その後，吸気時の胸膜刺激痛が発生した． 胸部痛の程度や息苦しさが増し，来院した． 既往歴はなく，3-4ヶ月前からピルを内服している．",
+          "textEn": "A 27-year-old woman visited our hospital with the chief complaint of right anterior chest pain.Yesterday, I noticed sudden right anterior chest pain, followed by pleural stimulation pain during inspiration.The patient visited the hospital because of increasing chest pain and difficulty breathing.He has no past medical history and has been taking pills for the past 3-4 months."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "身長163cm，体重60kg．意識清明．",
+          "textEn": "Height: 163cm, weight: 60kg.Clear consciousness."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Medical history: I have never been sick."
+        ],
+        "medications": [
+          "Medication history: I have been taking the pill for 3-4 months."
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Preferences: I don't smoke.I only drink alcohol once in a while.",
+          "Life history I work in an office.Eyelid/bulbar conjunctiva abnormality (-) #pulmonary embolism #pulmonary infarction"
+        ]
+      },
+      "otherHistory": [
+        "Blood pressure 112/64 mmHg, pulse 120 beats/min, respiratory rate 32 breaths/min, SpO₂ 88% (room air), body temperature 38.0°C.Physical examination revealed distended jugular veins.Auscultation revealed no abnormalities in breath sounds, but an increase in the sound II was observed.Edema was observed in the right lower leg.Pulmonary embolism is most likely due to the thrombotic tendency caused by taking the A&P pill and the physical findings.Since acute coronary syndrome is a differential diagnosis, an electrocardiogram is taken.Diagnosis is performed by blood sampling, blood gas, electrocardiogram, echocardiogram, and chest imaging tests.",
+        "Heart sound II hyperencephalon",
+        "Breathing sounds Pleural friction sound (-) Edema in the right lower leg (+) ◯ Free talk - How to enjoy summer 1:03 - Dr. Kamata on a long-term flight 35:10 29th night: Difficulty breathing ① 29th night: Dyspnea ① [Approach] Don't overlook the risk factors for pulmonary embolism.Acute epiglottitis, suffocation, bronchial asthma, acute respiratory distress syndrome (ARDS), pneumonia, chronic obstructive pulmonary disease (COPD), interstitial lung disease, pulmonary tuberculosis, tension pneumothorax, spontaneous pneumothorax, heart failure, anaphylaxis Night 29_Difficulty breathing ① V. Symptoms related to breathing/circulation ② V. Symptoms related to breathing/circulation ②"
+      ]
+    },
+    {
+      "id": "difficulty-breathing-2-30",
+      "nightNumber": 30,
+      "titleJa": "呼吸困難②",
+      "titleEn": "Difficulty breathing②",
+      "categoryId": "cardiopulmonary",
+      "categoryRoman": "V",
+      "categoryOrder": 5,
+      "symptomOrder": 3,
+      "symptomLabelJa": "呼吸困難",
+      "symptomLabelEn": "difficulty breathing",
+      "symptomVariant": 2,
+      "patient": {
+        "name": "Taichi Kato",
+        "age": 75,
+        "gender": "male",
+        "demographicsJa": "75歳男性",
+        "demographicsEn": "75-year-old male",
+        "chiefComplaintJa": "労作時の呼吸困難",
+        "chiefComplaintEn": "Difficulty breathing on exertion",
+        "vitalsJa": "バイタル：血圧 142/56 mmHg， 脈 92回/分 整，呼吸数 24回/分，SpO₂ 90%(room air)，体温 36.6℃",
+        "vitalsEn": "Blood pressure 142/56 mmHg, pulse 92 beats/min, respiratory rate 24 breaths/min, SpO₂ 90% (room air), body temperature 36.6℃"
+      },
+      "caseNotes": {
+        "summaryEn": "75-year-old male with Difficulty breathing on exertion.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "2-3年前から歩いたりすると呼吸が苦しい． 徐々に息苦しくなってきた． 今までにこのようなことが1度あったが，1週間く らいで良くなった．",
+          "textEn": "For the past 2-3 years, I have had difficulty breathing when walking.It gradually became difficult to breathe.This has happened once before, but it got better after about a week."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "咳と痰が出る． 胸の痛みはない．",
+          "textEn": "I have a cough and phlegm.I have no chest pain."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "去年くらいから階段や坂道を上る時に途中で休ま ないと歩けなくなった． 1週間前からいつもより息苦しくなった．",
+          "textEn": "Since last year, I have been unable to walk up stairs or hills without taking a break.A week ago, I started having more difficulty breathing than usual."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "Dr．山中・鎌田のラジオトーク 頚静脈怒張（−）",
+          "textEn": "Dr.Radio talk by Yamanaka and Kamata: Jugular vein distension (-)"
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "75歳男性，呼吸困難を主訴に受診した． 数年前から労作時呼吸困難を自覚し，1年前からは坂道や階段を上る際に，途中で休みながらではないと 上れなくなった． 1週間前から呼吸困難，膿性痰，咳嗽が出現し，改善しないため来院した． 高血圧の既往歴がある．50年間，1日40本の喫煙歴がある．飲酒は機会飲酒．",
+          "textEn": "A 75-year-old man visited our hospital with a chief complaint of dyspnea.Several years ago, I became aware of dyspnea on exertion, and since a year ago, I have been unable to climb hills or stairs without taking a break.The patient had been experiencing difficulty breathing, purulent sputum, and cough for a week, and as the symptoms did not improve, he visited our hospital.There is a history of hypertension.He has a history of smoking 40 cigarettes a day for 50 years.Drinking is opportunistic drinking."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "身長163cm，体重65kg．意識清明． バイタルは，血圧 142/56 mmHg， 脈 92回/分 整，呼吸数 24回/分，SpO₂ 90%(room air)，体温 36.6℃． 身体診察で頚静脈の怒張は認めなかったが，胸鎖乳突筋の肥厚を認めた． 聴診では心音に異常はなく，呼吸音でwheezeを聴取し，肺野全体で呼吸音の減弱を認めた． A&P 慢性経過の呼吸困難が1週間で急性増悪したことから，COPDの細菌感染による急性増悪が第一に考えら れる． 検査としては，血液検査，血液ガス，胸部X線・CTを施行する．",
+          "textEn": "Height: 163cm, weight: 65kg.Clear consciousness.Vitals were blood pressure 142/56 mmHg, pulse 92 beats/min, respiratory rate 24 breaths/min, SpO₂ 90% (room air), and body temperature 36.6°C.Physical examination revealed no distention of the jugular veins, but thickening of the sternocleidomastoid muscle.Auscultation revealed no abnormalities in heart sounds, but wheezes were heard in the breath sounds, which were found to be attenuated throughout the lung fields.A&P Since the chronic course of dyspnea worsened acutely within 1 week, acute exacerbation due to bacterial infection of COPD is most likely.Tests include blood tests, blood gases, and chest X-rays and CT."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: When I was 60 years old, I was told that I had high blood pressure."
+        ],
+        "medications": [
+          "Medication history: I am taking medication for high blood pressure.allergy"
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Note: No one around me has a cold.",
+          "Preferences: I have been smoking 40 cigarettes a day since I was 25 years old.I only drink alcohol once a week.Eyelid/bulbar conjunctival abnormality (-) #Acute exacerbation of COPD"
+        ]
+      },
+      "otherHistory": [
+        "I have no allergies.",
+        "Sternocleidomastoid muscle hypertrophy",
+        "Heart sounds No abnormality",
+        "wheeze Breath sounds decreased throughout the lung field 30th night: Dyspnea ② 30th night: Dyspnea ② [Approach] Be careful of acute exacerbation of chronic disease.30th night_Difficulty breathing ② 117F 62-64 V. Symptoms related to breathing/circulation ③ V. Symptoms related to breathing/circulation ③"
+      ]
+    },
+    {
+      "id": "cough-39",
+      "nightNumber": 39,
+      "titleJa": "咳嗽",
+      "titleEn": "cough",
+      "categoryId": "cardiopulmonary",
+      "categoryRoman": "V",
+      "categoryOrder": 5,
+      "symptomOrder": 4,
+      "symptomLabelJa": "咳嗽",
+      "symptomLabelEn": "cough",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Yuto Ando",
+        "age": 43,
+        "gender": "male",
+        "demographicsJa": "43歳男性",
+        "demographicsEn": "43-year-old male",
+        "chiefComplaintJa": "咳嗽",
+        "chiefComplaintEn": "cough",
+        "vitalsJa": "バイタル：意識清明，異常なし",
+        "vitalsEn": "Clear consciousness, no abnormalities"
+      },
+      "caseNotes": {
+        "summaryEn": "43-year-old male with cough.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "6週間前から風邪の症状があった． 4週間前から咳が出るようになり，ヒューヒュー ゼーゼーする感じがある．",
+          "textEn": "I had cold symptoms for 6 weeks.I started coughing 4 weeks ago, and it feels like wheezing."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "日中よりも夜中や朝早くに咳がよく出る． 冷たい空気を吸い込むと咳が出やすい． 話をするときに咳が出やすくなることはない． 動きで咳が出やすくなることはない． 既往歴 半年前に血圧が高いと指摘された． 胃カメラで胃潰瘍がみつかった． 結核の人との接触はない，家族に結核の人もいな い．",
+          "textEn": "Cough occurs more often at night or early in the morning than during the day.I tend to cough when I breathe in cold air.I don't find it easier to cough when I talk.Movement does not make you cough more easily.Past medical history Six months ago, it was noted that the patient had high blood pressure.A gastric camera revealed a gastric ulcer.I have no contact with anyone with tuberculosis, and no one in my family has tuberculosis."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "108C23 Dr．山中・鎌田のラジオトーク 心音に異常なし 両側肺野で wheezeを聴取",
+          "textEn": "108C23 Dr.Yamanaka/Kamata radio talk: No abnormality in heart sounds; wheeze heard in both lung fields"
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "43歳男性，長引く咳嗽を主訴に受診した． 6週間前に風邪症状があり，それらの症状が軽快後，4週間前から咳嗽が持続している． 咳嗽だけでなく，喘鳴も自覚していた． 症状は特に夜間と朝早くに悪化する． 既往歴は胃潰瘍と高血圧で，胃薬とCa拮抗薬を内服している．ACE阻害薬の内服歴はない．",
+          "textEn": "A 43-year-old man visited our hospital with a chief complaint of persistent cough.I had cold symptoms 6 weeks ago, and after those symptoms subsided, I had a persistent cough for 4 weeks.In addition to coughing, he was also aware of wheezing.Symptoms are especially worse at night and early in the morning.His past medical history is gastric ulcer and hypertension, and he is taking oral gastric medicine and Ca channel blocker.There is no history of taking ACE inhibitors."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "バイタルに異常はみとめなかった． 聴診では両側肺野にwheezeを聴取した． A&P 感冒後から長引く咳嗽があり，症状に日内変動をみとめ，喘鳴を聴取することから，気管支喘息が最も 考えられる． 結核や肺炎を除外するために胸部X線を撮影し，肺炎や結核を示唆する画像所見がないことを確認する． 第39夜　咳嗽 第39夜 咳嗽 《アプローチ 》咳嗽の日内変動は気管支喘息の特徴である． ◯ フリートーク ・田舎での診療の楽しみ 01:12 ・咳止めは効かない？ 33:36 第39夜_咳嗽 V.呼吸・循環に関連した症候④ V. 呼吸・循環に関連した症候④",
+          "textEn": "No abnormalities were found in his vitals.Auscultation revealed wheeze in both lung fields.A&P: Bronchial asthma is most likely because the patient has had a persistent cough since after a cold, and there is diurnal variation in symptoms, and wheezing can be heard.To rule out tuberculosis or pneumonia, a chest X-ray is taken to confirm that there are no imaging findings suggestive of pneumonia or tuberculosis.Night 39: Cough Night 39: Cough [Approach] Diurnal fluctuations in cough are a characteristic of bronchial asthma.◯ Free talk ・Enjoyment of medical treatment in the countryside 01:12 ・Do cough suppressants work?33:36 Night 39_Cough V. Symptoms related to breathing/circulation ④ V. Symptoms related to breathing/circulation ④"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [
+          "Medication history: The patient is taking stomach medications and Ca channel blockers to lower blood pressure."
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Preferences: I have smoked one pack of cigarettes a day for over 20 years.#bronchial asthma"
+        ]
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "bloody-sputum-hemoptysis-10",
+      "nightNumber": 10,
+      "titleJa": "血痰・喀血",
+      "titleEn": "bloody sputum/hemoptysis",
+      "categoryId": "cardiopulmonary",
+      "categoryRoman": "V",
+      "categoryOrder": 5,
+      "symptomOrder": 5,
+      "symptomLabelJa": "血痰・喀血",
+      "symptomLabelEn": "bloody sputum/hemoptysis",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Ren Miura",
+        "age": 78,
+        "gender": "male",
+        "demographicsJa": "78歳男性",
+        "demographicsEn": "78-year-old male",
+        "chiefComplaintJa": "微熱，血痰",
+        "chiefComplaintEn": "Slight fever, bloody sputum",
+        "vitalsJa": "バイタル：血圧112 /68， 心拍数 72回，呼吸数 16回，SpO₂ 97%(room air)，体温 37.6℃．",
+        "vitalsEn": "Blood pressure 112/68, heart rate 72 times, respiratory rate 16 times, SpO₂ 97% (room air), body temperature 37.6℃."
+      },
+      "caseNotes": {
+        "summaryEn": "78-year-old male with Slight fever, bloody sputum.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: Until retirement, he underwent medical checkups.He was diagnosed with high blood pressure and hyperglycemia."
+        ],
+        "medications": [
+          "Medication history: I am taking medication for high blood pressure.Preferences: I used to smoke until 10 years ago.20 videos/day when young, around 10 videos/day after retirement"
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Work history: Worked as a high school mathematics teacher",
+          "Travel history: I traveled a lot when I was young.I haven't traveled abroad in the past three years.",
+          "Note: I have never been told that I have tuberculosis.There were no people around me with tuberculosis."
+        ]
+      },
+      "otherHistory": [
+        "misc O/T Sputum since 2 months ago, slight fever of about 37.0℃ since 1 month, bloody sputum since 1 week.This is the first time I have experienced such symptoms.",
+        "I'm losing weight. I've lost about 5 kg in 2 months, going from 60 kg to 55 kg.sweat while sleeping"
+      ]
+    },
+    {
+      "id": "dizziness-14",
+      "nightNumber": 14,
+      "titleJa": "めまい",
+      "titleEn": "dizziness",
+      "categoryId": "neuro-psych",
+      "categoryRoman": "VI",
+      "categoryOrder": 6,
+      "symptomOrder": 1,
+      "symptomLabelJa": "めまい",
+      "symptomLabelEn": "dizziness",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Sayaka Morita",
+        "age": 60,
+        "gender": "female",
+        "demographicsJa": "60歳女性",
+        "demographicsEn": "60-year-old female",
+        "chiefComplaintJa": "めまい",
+        "chiefComplaintEn": "dizziness",
+        "vitalsJa": "バイタル：血圧 132/78， 脈 84回/分 整，呼吸数 16回/分，SpO₂ 98%(room air)，体温 36.6℃",
+        "vitalsEn": "Blood pressure 132/78, pulse 84/min, respiratory rate 16/min, SpO₂ 98% (room air), body temperature 36.6℃"
+      },
+      "caseNotes": {
+        "summaryEn": "60-year-old female with dizziness.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "朝，起き上がった時にめまいがした． 昨日と今日，めまいがあった． このようなめまいは今までになかった．",
+          "textEn": "I felt dizzy when I woke up in the morning.I felt dizzy yesterday and today.I have never experienced dizziness like this before."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "1分くらい続いた． 天井がぐるぐる回るようなめまいだった．",
+          "textEn": "It lasted about a minute.I felt dizzy and felt like the ceiling was spinning."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "耳鳴りや，聞こえにくさはない． 手足はきちんと力を入れられる． 頭は痛くない．",
+          "textEn": "There is no tinnitus or difficulty hearing.You can put proper strength into your limbs.My head doesn't hurt."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "今はめまいはない．",
+          "textEn": "I don't feel dizzy now."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "60歳女性，めまいを主訴に来院した． 昨日と今朝，起床時に起き上がろうとしたところ，天井がぐるぐる回るようなめまいが出現した．め まいは約1分間持続し，安静によっておさまった．難聴はなく，消化管出血を疑う所見もない．喫煙 歴はない．",
+          "textEn": "A 60-year-old woman came to our hospital with a chief complaint of dizziness.Yesterday and this morning, when I woke up and tried to get up, I felt dizzy and felt like the ceiling was spinning.The dizziness lasted about 1 minute and subsided with rest.There was no hearing loss, and there were no findings suggestive of gastrointestinal bleeding.There is no history of smoking."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "来院時の意識は清明，バイタルは血圧 132/78， 脈 84回/分 整，呼吸数 16回/分，SpO₂ 98%(room air)，体温 36.6℃で特に異常はなく，神経学的所見にも異常はない．歩行も可能である． A&P めまいの持続時間が1分と短く，安静によって治まる． また蝸牛症状はなく，脳神経症状も認めないため，末梢性めまいが考えられる． 末梢性めまいの中でも特に良性発作性頭位めまい症（BPPV）がもっとも考えられる． Dix-Hallpike法を行い，改善の有無を確認する．BPPVと診断できれば，Epley法で治療をおこなう． 上肢Barre徴候(−) Mingazzini徴候(−) 消化管出血(−) 顔面左右対称 顔面知覚異常(−) 構音障害(−) ロールプレイ #良性発作性頭位めまい症(BPPV)",
+          "textEn": "Upon arrival, the patient was conscious, his vital signs were 132/78, pulse 84 beats/min, respiratory rate 16/min, SpO₂ 98% (room air), and body temperature 36.6°C, and there were no abnormalities in his neurological findings.Walking is also possible.A&P Dizziness lasts only 1 minute and subsides with rest.There are no cochlear symptoms or cranial nerve symptoms, so peripheral vertigo is suspected.Among peripheral vertigo, benign paroxysmal positional vertigo (BPPV) is most likely.Perform the Dix-Hallpike method to check whether there is any improvement.If BPPV is diagnosed, treatment is performed using the Epley method.Upper extremity Barre sign (−) Mingazzini sign (−) Gastrointestinal bleeding (−) Facial symmetry Facial paresthesia (−) Dysarthria (−) Role play #Benign paroxysmal positional vertigo (BPPV)"
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "109C28，29Dr．山中・鎌田のラジオトーク 第14夜_めまい VI.神経・精神に関連した症候① VI. 神経・精神に関連した症候①",
+          "textEn": "109C28, 29Dr.Yamanaka/Kamata Radio Talk 14th Night_Dizziness VI. Symptoms related to nerves and psyche ① VI. Symptoms related to nerves and psyche ①"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: At the age of 28, the patient developed pyelonephritis."
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Eating I'm hungry, but I can't eat much because I'm afraid of getting dizzy.",
+          "Preferences: I don't smoke.Occasional drinking.",
+          "Notes: I defecated yesterday, but it was the same as usual.● Exclusion of presyncope 17:11 ・Many patients come to the hospital complaining of feeling dizzy or feeling faint.- First, rule out presyncope due to dehydration or bleeding.・Gastrointestinal bleeding and cardiovascular disease (aortic dissection and myocardial infarction) are important for emergency presyncope.● Exclude central vertigo 18:43 ・For central vertigo, hemorrhage/infarction in the cerebellum or brainstem is the most dangerous and risk factor.Check to see if you have arteriosclerosis or lifestyle-related diseases.・Check if you have walked to the examination room ⇨ Check for cerebellar symptoms.-Central vertigo can be ruled out because the duration of the dizziness is short and subsides with rest.● When central vertigo is suspected 41:00 ・Infarction includes infarction of the internal carotid artery system and vertebrobasilar artery system.Infarctions that cause dizziness often occur in the vertebrobasilar artery system.・Since cerebral infarctions where the only symptom is dizziness are rare, check for other neurological findings.- In the case of disorders of the vertebrobasilar artery system, gait disturbance, dysarthria, diplopia, homonymous hemianopsia, cross-sensory disturbance, and dysphagia are often observed.-It is important to examine the infarction of the vertebrobasilar artery system, as it is quite possible that the imaging test on the same day will be negative.● Correctly detect nystagmus 47:16 ・Check nystagmus using Frenzel glasses.・If vertical nystagmus or gaze-induced nystagmus occurs, suspect central vertigo → immediately obtain CT/MRI.● Diagnosis of cerebellar infarction 51:23 - Cerebellar ataxia can be easily confirmed by stressing the patient with leg-to-leg walking, finger-tapping, and finger-nose-finger tests.○ Free talk ・Awesome person I met at the outpatient clinic the other day 1:00 ・Use Frenzel to check for nystagmus ~ Don't overlook nystagmus ~ 47:30 ・How to identify cerebellar infarction 51:20"
+        ]
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "muscle-weakness-27",
+      "nightNumber": 27,
+      "titleJa": "筋力低下",
+      "titleEn": "muscle weakness",
+      "categoryId": "neuro-psych",
+      "categoryRoman": "VI",
+      "categoryOrder": 6,
+      "symptomOrder": 2,
+      "symptomLabelJa": "筋力低下",
+      "symptomLabelEn": "muscle weakness",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Hayato Nakajima",
+        "age": 32,
+        "gender": "male",
+        "demographicsJa": "32歳男性",
+        "demographicsEn": "32-year-old male",
+        "chiefComplaintJa": "筋力低下",
+        "chiefComplaintEn": "muscle weakness",
+        "vitalsJa": "バイタル：血圧 138/82 mmHg， 脈拍88/分 整，呼吸数 20/分，SpO₂ 99%(room air), 体温 36.2℃",
+        "vitalsEn": "Blood pressure 138/82 mmHg, pulse 88/min, respiratory rate 20/min, SpO₂ 99% (room air), body temperature 36.2℃"
+      },
+      "caseNotes": {
+        "summaryEn": "32-year-old male with muscle weakness.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "一昨日から足に力が入らず，動かしづらい． 昨日の午後から腕に力が入らなくなった．今 日は手も足も動かせない． 10日前から微熱があったが，3日くらいで良 くなった．",
+          "textEn": "Since the day before yesterday, I have not had any strength in my legs and it is difficult to move them.I haven't felt any strength in my arm since yesterday afternoon.I can't move my arms or legs today.I had a slight fever for 10 days, but it got better in about 3 days."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "咳や下痢はなかった． 息苦しさはない． 物が二重に見えることはない． 意識が朦朧になることもない．",
+          "textEn": "There was no cough or diarrhea.I don't feel stuffy.Objects do not appear twice.There is no need to become unconscious."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: No abnormalities have been detected during medical examinations."
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Meals: I often cook and eat by myself.I ate it recently.",
+          "Preferences: I only drink alcohol when I have the chance.I don't smoke.Note: No one around me has similar symptoms.I haven't been to the mountains.There is no sexual activity between people of the same sex."
+        ]
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "gait-disorder-35",
+      "nightNumber": 35,
+      "titleJa": "歩行障害",
+      "titleEn": "Gait disorder",
+      "categoryId": "neuro-psych",
+      "categoryRoman": "VI",
+      "categoryOrder": 6,
+      "symptomOrder": 3,
+      "symptomLabelJa": "歩行障害",
+      "symptomLabelEn": "Gait disorder",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Chika Hoshino",
+        "age": 75,
+        "gender": "female",
+        "demographicsJa": "75歳女性",
+        "demographicsEn": "75-year-old female",
+        "chiefComplaintJa": "歩行障害",
+        "chiefComplaintEn": "Gait disorder",
+        "vitalsJa": "バイタル：JCS Ⅰ-2 ，血圧 114/68mmHg， 脈拍60回/分 整，呼吸数16 回/分，SpO2 98%(room air)，体温36.2℃",
+        "vitalsEn": "JCS Ⅰ-2, blood pressure 114/68mmHg, pulse rate 60 times/min, respiratory rate 16 times/min, SpO2 98% (room air), body temperature 36.2℃"
+      },
+      "caseNotes": {
+        "summaryEn": "75-year-old female with Gait disorder.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "2週間前くらいから会話が少なくなり，家の中でも つまずくことがあった．いつもに比べてボーッと している． 2ヶ月前に車に接触して倒れた事があった．",
+          "textEn": "About two weeks ago, we started talking less and even at home I was stumbling.I feel more dazed than usual.Two months ago, I was hit by a car and fell down."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "大きな怪我はない． いつもに比べて喋りが少ない，言葉を自分から発 さない．ボーッとしている．",
+          "textEn": "There were no major injuries.He speaks less than usual, and does not utter words on his own.I'm in a daze."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "75歳女性，歩行障害を主訴に受診した． 2ヶ月前に車と接触して頭部と肩に打撲をした．2週間前から歩行困難になり，つまずくことがあったり， 発語が少なくなり，意識レベルが低下している．",
+          "textEn": "A 75-year-old woman visited our hospital with a chief complaint of gait disturbance.Two months ago, I was hit by a car and suffered bruises on my head and shoulders.For the past two weeks, the patient has had difficulty walking, sometimes stumbles, speaks less, and has a decreased level of consciousness."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "身長156cm，体重62kg",
+          "textEn": "Height 156cm, weight 62kg"
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "103B56-58",
+          "textEn": "103B56-58"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Medical history: I had been told that my pulse was slow.#Chronic subdural hematomaDr.Yamanaka/Kamata radio talk Abdomen flat/soft No tenderness"
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": [
+        "Vitals Consciousness level JCSⅠ-2, blood pressure 114/68 mmHg, pulse rate 60 beats/min, respiratory rate 16 breaths/min, SpO2 98% (room air), body temperature 36.2°C Physical examination revealed a Levine 3/6 systolic murmur at the apex of the heart.A&P Since there was a history of trauma 2 months ago, we considered the possibility of chronic subdural hematoma.In addition, mild cerebral infarction such as lacunar infarction and sepsis are also possible.In the future, blood tests and plain CT of the head will be performed.Night 35 Walking disorder Night 35 Walking disorder Decrease in spontaneity Decrease in spontaneous speech",
+        "Heart sounds Levine 3/6 systolic murmur at the apex",
+        "Breathing sounds No abnormalities ◯ Free talk ・Study method during student days 01:47 ・Case examined by Dr. Kamata 37:32 《Approach》Be careful of chronic trauma and chronic subdural hematoma.",
+        "Pupil: Same size, perfect circle",
+        "Light reflex is rapid No abnormalities in palpebral conjunctiva and bulbar conjunctiva Unilateral upper and lower limb weakness Dry skin No edema on face and lower legs Infectious diseases such as cerebral infarction and sepsis Night 35_Gait disturbance VI. Symptoms related to nerves/psychiatry ③ VI. Symptoms related to nerves/psychiatry ③"
+      ]
+    },
+    {
+      "id": "sensory-impairment-36",
+      "nightNumber": 36,
+      "titleJa": "感覚障害",
+      "titleEn": "sensory impairment",
+      "categoryId": "neuro-psych",
+      "categoryRoman": "VI",
+      "categoryOrder": 6,
+      "symptomOrder": 4,
+      "symptomLabelJa": "感覚障害",
+      "symptomLabelEn": "sensory impairment",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Minato Murakami",
+        "age": 68,
+        "gender": "male",
+        "demographicsJa": "68歳男性",
+        "demographicsEn": "68-year-old male",
+        "chiefComplaintJa": "感覚障害",
+        "chiefComplaintEn": "sensory impairment",
+        "vitalsJa": "バイタル：血圧 128/72mmHg， 脈拍65回/分 整，呼吸数18 回/分，SpO2 97%(room air)，体温 36.2℃",
+        "vitalsEn": "Blood pressure 128/72mmHg, pulse 65/min, respiratory rate 18/min, SpO2 97% (room air), body temperature 36.2℃"
+      },
+      "caseNotes": {
+        "summaryEn": "68-year-old male with sensory impairment.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "半年くらい前から視力が下がった感じがした． 3日前からさらに視界が霞んで見えなくなった． 2年くらい前から足の裏が痺れる感じがして，熱い 砂の上を歩いているような感覚．",
+          "textEn": "About six months ago, I felt like my eyesight was getting worse.Three days ago, my vision became even more blurry and I couldn't see.About two years ago, I started feeling numbness in the soles of my feet, and it felt like I was walking on hot sand."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "両目とも見にくいが，右のほうが症状が強い． 足のしびれは両足． 手にしびれはなく，足だけしびれる．",
+          "textEn": "It is difficult to see in both eyes, but the symptoms are more severe in the right eye.Numbness in both legs.I don't have numbness in my hands, only my feet."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "体重は8kgくらい増えた．最近は大きくは変わって いないが，太り気味． 便秘や下痢気味になることが多い． 勃起は2-3年ない． 喉が乾きやすく，夜中も2-3回トイレに行く．",
+          "textEn": "My weight increased by about 8 kg.I haven't changed much lately, but I'm starting to gain weight.I often feel constipated or have diarrhea.No erection for 2-3 years.My throat gets dry easily and I have to go to the bathroom 2-3 times during the night."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "68歳男性． 2年前からの両足底のしびれと，3日前からの右眼の霧視を主訴に来院した． 20年前から尿糖を指摘されていたが，通院や健康診断は中断していた．",
+          "textEn": "68 year old male.The patient came to our hospital with chief complaints of numbness in the soles of both feet for the past 2 years and blurred vision in the right eye for the past 3 days.Although he had been diagnosed with urine sugar for 20 years, he had stopped visiting the hospital and receiving medical examinations."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "身長172cm，体重72kg",
+          "textEn": "Height: 172cm, weight: 72kg"
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "117E43-44 アルコール，ビタミンB群欠乏，ギランバレー 症候群，悪性腫瘍 第36夜_感覚障害 VI.神経・精神に関連した症候④ VI. 神経・精神に関連した症候④",
+          "textEn": "117E43-44 Alcohol, vitamin B group deficiency, Guillain-Barre syndrome, malignant tumor Night 36_Sensory disorder VI. Symptoms related to nerves and psychiatry ④ VI. Symptoms related to nerves and psychiatry ④"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: No illness."
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": [
+        "When I had a health check 20 years ago, I was told that I had sugar in my urine.I have not had any medical examinations since then.Meals I got divorced 10 years ago and am alone, so I often get by with bento boxes from convenience stores.3 or 2 meals.Preferences: I have smoked about 15 cigarettes a day for about 50 years.When I was young, I smoked a pack.As for alcohol, I drink one 350 cc bottle of beer or one go of shochu every day.#DiabetesDr.Yamanaka/Kamata radio talk No abnormal findings in chest and abdomen",
+        "Vitals: Blood pressure 128/72 mmHg, pulse 65 beats/min, respiratory rate 18 breaths/min, SpO2 97% (room air), body temperature 36.2°C Physical examination revealed no abnormal findings in the chest and abdomen.Fundus examination revealed soft vitiligo and new blood vessels in the fundus of both eyes.Vitreous hemorrhage was observed in the right eye.Drinking is 350ml of beer or 1 cup of shochu.I smoked 15 cigarettes for 48 years.A&P Diabetes is possible.In addition to blood tests, a urine test will be performed.Night 36: Sensory disorder Night 36: Sensory disorder Soft vitiligo and new blood vessels on the fundus of both eyes Vitreous hemorrhage in the right eye ◯ Free talk - Recommended overseas travel destinations 00:41 - Actual cases of diabetes 39:58 [Approach] Observe the neurological findings characteristic of diabetes."
+      ]
+    },
+    {
+      "id": "difficulty-swallowing-34",
+      "nightNumber": 34,
+      "titleJa": "嚥下困難",
+      "titleEn": "difficulty swallowing",
+      "categoryId": "neuro-psych",
+      "categoryRoman": "VI",
+      "categoryOrder": 6,
+      "symptomOrder": 5,
+      "symptomLabelJa": "嚥下困難",
+      "symptomLabelEn": "difficulty swallowing",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Misaki Adachi",
+        "age": 72,
+        "gender": "female",
+        "demographicsJa": "72歳女性",
+        "demographicsEn": "72-year-old female",
+        "chiefComplaintJa": "嚥下困難",
+        "chiefComplaintEn": "difficulty swallowing",
+        "vitalsJa": "バイタル：血圧 132/72mmHg， 脈拍60回/分 整，呼吸数18 回/分，SpO2 96%(room air)，体温 36.4℃",
+        "vitalsEn": "Blood pressure 132/72mmHg, pulse 60/min, respiratory rate 18/min, SpO2 96% (room air), body temperature 36.4℃"
+      },
+      "caseNotes": {
+        "summaryEn": "72-year-old female with difficulty swallowing.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "2ヶ月前から飲み込みにくい． 肉の塊を食べるときにつっかえる感じがした． 2ヶ月前までこのようなことはなかった．",
+          "textEn": "I have had difficulty swallowing for the past 2 months.I felt stuck when eating a chunk of meat.This never happened until two months ago."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "胸の前あたりがつっかえる感じがした． 硬いものを食べるとつっかえる感じがする． 飲み物はつっかえることなく飲める．",
+          "textEn": "I felt a tightness in the front of my chest.I feel stuck when I eat something hard.I can drink drinks without getting stuck."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "体重は測っていないが，友人に痩せたと言われた． 喋りにくくなったことや，体が動かなくなったこ とはない．",
+          "textEn": "I haven't measured my weight, but a friend told me that I've lost weight.I have never had difficulty speaking or being unable to move my body."
+        },
+        {
+          "label": "T",
+          "cue": "time course",
+          "textJa": "いまも飲み込みにくさが気になる．",
+          "textEn": "I am still concerned about the difficulty in swallowing."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "72歳女性，嚥下困難を主訴に受診した． 2ヶ月前から固形物の飲み込みにくさを自覚している． 周囲の人から痩せたことを指摘されている．",
+          "textEn": "A 72-year-old woman visited our hospital with the chief complaint of difficulty swallowing.For the past 2 months, I have noticed difficulty swallowing solid foods.People around me point out that I have lost weight."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "110I61 第34夜_嚥下困難 VI.神経・精神に関連した症候⑤ VI. 神経・精神に関連した症候⑤",
+          "textEn": "110I61 34th night_Difficulty swallowing VI. Symptoms related to nerves/psychiatry ⑤ VI. Symptoms related to nerves/psychiatry ⑤"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: No illness.I have never had radiation therapy."
+        ],
+        "medications": [
+          "Medication History: Three years ago, I was told that my blood pressure was high, so I have been avoiding salt intake and exercising, but I am not taking any medications.Preferences: I smoke about 5 cigarettes a day.When I was young, I smoked a pack.I drink Japanese sake every day.I turn red when I drink alcohol.allergy"
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": [
+        "I took a health check 3 years ago, but haven't had one since.",
+        "Hay Fever.#Esophageal cancer (advanced cancer) Dr.Yamanaka/Kamata radio talk Abdomen flat/soft No tenderness",
+        "Vitals: Blood pressure 132/72 mmHg, pulse 60 beats/min, respiratory rate 18 breaths/min, SpO2 96% (room air), body temperature 36.4°C Physical examination revealed no abnormalities in the eyelids or bulbar conjunctiva, and no superficial lymph nodes were palpated.I have a history of smoking since I was young, and currently smoke 5 cigarettes a day.I also drink alcohol every day.A&P I would like to rule out esophageal cancer first.In addition to blood tests, upper gastrointestinal endoscopy is performed.Night 34 Difficulty swallowing Night 34 Difficulty swallowing Esophageal endoscopy Elevated lesions (+) Superficial lymph nodes are not palpable ◯ Free talk ・What makes a good doctor 00:39 ・How to overcome adversity 11:59 ・Liquor situation in Myanmar 28:19 ・Life as a trainee in Myanmar 35:07 《Approach》An aggressive interview that leads to a diagnosis among a wide variety of causes.Dysphagia Symptoms caused by impaired swallowing movement due to organic or functional factors.Patients experience difficulty swallowing, a feeling of being stuffed, or a feeling of tightness in the chest.It may also be accompanied by pain when swallowing.[Cause/Classification] 1.Oropharyngeal dysphagia (difficulty swallowing, easy to swallow)",
+        "a.Organic disorders: pharyngeal cancer, tonsillitis, Zenker diverticulum, Plummer-Vinson syndrome, etc.",
+        "b.Functional disorders Cerebrovascular disease, Parkinson's disease, amyotrophic lateral sclerosis, myasthenia gravis, muscular dystrophy, botulism, tetanus, etc. 2.Esophageal dysphagia (feeling like something is stuck)",
+        "a.Organic disorders Esophageal cancer, reflux esophagitis, Plummer-Vinson syndrome (esophageal web), hiatal hernia, gastric cancer, aortic aneurysm, thymoma, etc.",
+        "b.Functional disorders: achalasia, scleroderma, esophageal spasm, etc."
+      ]
+    },
+    {
+      "id": "cognitive-impairment-38",
+      "nightNumber": 38,
+      "titleJa": "認知障害",
+      "titleEn": "cognitive impairment",
+      "categoryId": "neuro-psych",
+      "categoryRoman": "VI",
+      "categoryOrder": 6,
+      "symptomOrder": 6,
+      "symptomLabelJa": "認知障害",
+      "symptomLabelEn": "cognitive impairment",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Nanami Ueno",
+        "age": 65,
+        "gender": "female",
+        "demographicsJa": "65歳女性",
+        "demographicsEn": "65-year-old female",
+        "chiefComplaintJa": "健忘，ご主人とともに来院",
+        "chiefComplaintEn": "Amnesia, visited the hospital with her husband",
+        "vitalsJa": "バイタル：JCSⅠ-1，体温35.4℃，血圧94/48mmHg，脈拍52回/分 整，呼吸数12回，SpO2 93%(room air)",
+        "vitalsEn": "JCSⅠ-1, body temperature 35.4℃, blood pressure 94/48mmHg, pulse rate 52 times/min, respiratory rate 12 times, SpO2 93% (room air)"
+      },
+      "caseNotes": {
+        "summaryEn": "65-year-old female with Amnesia, visited the hospital with her husband.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "3ヶ月くらい前から疲れるし心配事もあるからと言 ってあまり家を出たがらない． 疲れやすいとよく言うが，あまり困っていない． 元々昔の友だちの名前が出てこないことはあった が，目立ってきたのは2週間くらい前からで，ぼん やりしている．電気の消し忘れや印鑑の置き場所 がわからなくなる．",
+          "textEn": "For about 3 months now, I don't want to leave the house because I'm tired and have worries.I often say that I get tired easily, but it doesn't really bother me.I used to have trouble remembering the names of my old friends, but it started to become more noticeable about two weeks ago, and it's becoming vague.I forget to turn off the lights and don't know where I left my seal."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "動作が鈍くなった．昨晩誰もいないのに大きな声 で言い合いをしていた． やる気が起こらず無気力な感じ．ここ2週間くらい 寒がるようになった 頭痛はなさそう，便秘は酷くなった． 体重は増えているかもしれないが不明． 死にたいとは言っていない．",
+          "textEn": "Movement has become sluggish.Last night, we were arguing loudly even though no one was there.I don't feel like doing anything and feel lethargic.For the past two weeks, I've started getting cold.I don't seem to have a headache, but my constipation has gotten worse.She may have gained weight, but it is unknown.I didn't say I wanted to die."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "特に既往のない65歳女性，主訴は健忘，3ヶ月前からの引きこもりと倦怠感，2週間前からの物忘れと 動作緩慢，昨晩からの幻視幻聴の疑いで外来を受診．",
+          "textEn": "A 65-year-old woman with no particular medical history presented to the outpatient clinic with the chief complaint of amnesia, withdrawal and fatigue since 3 months ago, forgetfulness and slowness of movement since 2 weeks ago, and suspected visual and auditory hallucinations since last night."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "顔面に浮腫 両下腿に浮腫 110A21 ■ その他の認知障害の鑑別 慢性硬膜下血腫，正常圧水頭症，ビタミン 欠乏，てんかん 第38夜_認知障害 VI.神経・精神に関連した症候⑥ VI. 神経・精神に関連した症候⑥",
+          "textEn": "Edema on the face Edema on both lower legs 110A21 ■ Differential diagnosis of other cognitive disorders Chronic subdural hematoma, normal pressure hydrocephalus, vitamin deficiency, epilepsy Night 38_Cognitive impairment VI. Symptoms related to nerves/psychiatry ⑥ VI. Symptoms related to nerves/psychiatry ⑥"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Meals: Some amount of food is being eaten.",
+          "Sleep I am sleeping well, but lately I have been feeling dizzy after eating. #Hypothyroidism Dr.Yamanaka/Kamata radio talk No abdominal abnormalities"
+        ]
+      },
+      "otherHistory": [
+        "Vitals Consciousness level JCS1-1, height 154cm, weight 67kg, weight gain of 3kg over 1 year.Blood pressure was 94/48 mmHg, pulse was normal at 52 beats, respiratory rate was 12 beats, and SpO₂ was 93%.Physical examination revealed edema on the face and bilateral lower legs, no abnormalities in heart sounds and breath sounds, and no abnormalities in the abdomen.Neurological findings showed a decrease in manual muscle strength test scores of 4/5 in the proximal limbs, bulging of the quadriceps muscle belly, a delayed relaxation phase of the Achilles tendon reflex, and a negative Babinski reflex.The Hasegawa evaluation scale shows a decline of 18/30, and the MMSE shows a decline of 20/30.A&P The most likely cause is hypothyroidism.Differential diagnoses include chronic subdural hematoma, normal pressure hydrocephalus, vitamin deficiency, epilepsy, depression and delirium, and MCI amnestic type mild cognitive impairment.Tests include thyroid hormone deficiency due to hypothyroidism, vitamin deficiencies (particularly B group vitamin B12 and folic acid), normal pressure hydrocephalus, and subdural hematoma, so a CT scan of the head is performed.Night 38 Cognitive disorder Night 38 Cognitive disorder Decreased activity",
+        "Heart sounds and breathing sounds No abnormalities ◯ Free talk ・The last moments of a patient at a home visit 01:47 ・An interesting story about hypothyroidism 37:32 《Approach》First, exclude treatable dementia."
+      ]
+    },
+    {
+      "id": "anxiety-depression-37",
+      "nightNumber": 37,
+      "titleJa": "不安・抑うつ",
+      "titleEn": "Anxiety/depression",
+      "categoryId": "neuro-psych",
+      "categoryRoman": "VI",
+      "categoryOrder": 6,
+      "symptomOrder": 7,
+      "symptomLabelJa": "不安・抑うつ",
+      "symptomLabelEn": "Anxiety/depression",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Risa Kawai",
+        "age": 33,
+        "gender": "female",
+        "demographicsJa": "33歳女性",
+        "demographicsEn": "33-year-old female",
+        "chiefComplaintJa": "何もする気にならない",
+        "chiefComplaintEn": "I don't feel like doing anything",
+        "vitalsJa": "バイタル：意識清明，血圧120/76mmHg，脈拍72回 整，呼吸数18回/分，SpO2 99%(room air)，体温 36.5℃",
+        "vitalsEn": "Consciousness clear, blood pressure 120/76 mmHg, pulse 72 beats, respiratory rate 18 breaths/min, SpO2 99% (room air), body temperature 36.5℃"
+      },
+      "caseNotes": {
+        "summaryEn": "33-year-old female with I don't feel like doing anything.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "1年ほど前から何もする気が起きない．",
+          "textEn": "I haven't felt like doing anything for about a year now."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "外に出たくなかったのでほぼ在宅，将来に希望が 持てない，趣味も興味がわかなくなった，やらな ければならないとわかっている事が出来ない．疲 れやすくなった．寝れない．8kg体重が落ちて 45kg．食欲なし．集中も続かない．",
+          "textEn": "I don't want to go out, so I stay at home most of the time. I don't have any hope for the future. I've lost interest in hobbies. I can't do the things I know I need to do.I got tired easily.I can't sleep.I lost 8kg to 45kg.No appetite.I can't even concentrate."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "動悸時に汗，頭痛 細かいことが気になる，人前でのスピーチが苦手， 鍵の確認を何度もする 既往歴 大きい病気ではないが，ここ2年ぐらい怖くなるこ とが多い．きっかけは車の運転中で，いきなり息 苦しさと心臓のドキドキを感じ，気が遠のいてこ のまま死ぬのではないかと思った．思い出すと怖 くなる． 家の近くのクリニックを受診し大丈夫といわれた が，似たようなドキドキや息苦しさ，めまい，冷 や汗などが不安で，色々な科を受診した． しかし，そちらでも大丈夫といわれた．症状は続 き怖くて生活に必要な外出もできなくなった． 月経の前によく体調を崩し，動悸やめまいがする．",
+          "textEn": "Sweat during heart palpitations, headache. Worried about small details, not good at speaking in front of people, repeatedly checking keys. Medical history: It's not a serious illness, but over the past two years or so I've been feeling scared a lot.It all started while I was driving a car when I suddenly felt short of breath and my heart was pounding, and I thought I was going to pass out and die.I get scared when I remember it.I visited a clinic near my home and was told that I was fine, but I was worried about similar symptoms such as heart pounding, shortness of breath, dizziness, and cold sweats, so I visited various departments.However, I was told that it would be okay.The symptoms continued, and I was so scared that I was unable to go out for daily necessities.I often feel unwell before menstruation, experiencing palpitations and dizziness."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "33歳女性，何もする気になれないことを主訴に受診した． 2年くらい前から突然息が苦しくなったり，動悸がして，死んでしまうのではないかという不安に襲わ れた．色々な科を回っても特に原因が明らかではない．1年くらい前から抑うつや，今まで楽しめてい たことが楽しめなくなった．倦怠感，食欲低下，体重減少，不眠がある．",
+          "textEn": "A 33-year-old woman visited the hospital with the chief complaint of not feeling like doing anything.About two years ago, I suddenly started having trouble breathing, had palpitations, and was worried that I might die.Even after visiting various departments, the cause is still not clear.About a year ago, I became depressed and could no longer enjoy the things I used to enjoy.Patients experience fatigue, decreased appetite, weight loss, and insomnia."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "異常なし A&P うつ病と，よく合併する不安障害を疑う．鑑別診断としては，甲状腺機能亢進症，不整脈，褐色細胞腫 がある． 血液検査，甲状腺機能検査のためにTSHを検査する． 第37夜　不安・抑うつ 第37夜 不安・抑うつ 意識正常 甲状腺異常なし胸部異常なし ◯ フリートーク ・冬の会津の雪 00:35 ・学生が知っておいたほうがいいこと 37:57 《アプローチ 》「今まで楽しかったことが楽しめない」を見逃さない．",
+          "textEn": "No abnormalities A&P Suspected depression and anxiety disorder, which often co-occurs.Differential diagnoses include hyperthyroidism, arrhythmia, and pheochromocytoma.Test TSH for blood tests and thyroid function tests.Night 37: Anxiety/Depression Night 37: Anxiety/Depression Normal consciousness No thyroid abnormalities No chest abnormalities ◯ Free talk - Snow in Aizu in winter 00:35 - Things students should know 37:57 [Approach] Don't overlook \"I can't enjoy the things I used to enjoy.\""
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "103G65-67 頭部異常なし 四肢異常なし 第37夜_不安・抑うつ VI.神経・精神に関連した症候⑦ VI. 神経・精神に関連した症候⑦",
+          "textEn": "103G65-67 No head abnormality No limb abnormality 37th night_Anxiety/Depression VI. Nervous/psychological related symptoms ⑦ VI. Nervous/psychological related symptoms ⑦"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [
+          "No medication history"
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": [
+          "Life history: I had a cheerful personality, had many friends, and had no problems at work.Dr.Yamanaka/Kamata radio talk No abdominal abnormalities"
+        ]
+      },
+      "otherHistory": []
+    },
+    {
+      "id": "rash-41",
+      "nightNumber": 41,
+      "titleJa": "発疹",
+      "titleEn": "rash",
+      "categoryId": "other-common",
+      "categoryRoman": "VII",
+      "categoryOrder": 7,
+      "symptomOrder": 1,
+      "symptomLabelJa": "発疹",
+      "symptomLabelEn": "rash",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Miyu Furutani",
+        "age": 70,
+        "gender": "female",
+        "demographicsJa": "70歳女性",
+        "demographicsEn": "70-year-old female",
+        "chiefComplaintJa": "発疹",
+        "chiefComplaintEn": "rash",
+        "vitalsJa": "バイタル：血圧 120/80mmHg， 心拍数100回/分 整，呼吸数16回/分，体温 37.8℃，SpO2 98%(room air)",
+        "vitalsEn": "Blood pressure 120/80mmHg, heart rate 100 times/min, respiratory rate 16 times/min, body temperature 37.8℃, SpO2 98% (room air)"
+      },
+      "caseNotes": {
+        "summaryEn": "70-year-old female with rash.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "3日前から皮膚の症状が出た．5日前から喉の痛み と頭痛があったため市販の感冒薬を飲んだ． 3日前から熱が出て，関節が痛くなり，全身の皮膚 が赤くなり，口の中もただれるようになった． このようなことははじめて．",
+          "textEn": "I started having skin symptoms three days ago.I had a sore throat and headache for the past 5 days, so I took an over-the-counter cold medicine.Three days ago, I started having a fever, my joints started to hurt, the skin all over my body turned red, and my mouth started to hurt.This is the first time something like this has happened."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "目も赤くなった．皮膚は痒くない．",
+          "textEn": "My eyes also turned red.The skin is not itchy."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "全身の皮疹と口腔内の痛みを主訴に来院した70歳女性． 5日前から頭痛と咽頭痛があり，市販の感冒薬を内服した． 3日前から発熱，関節痛，目の充血，口腔内の痛み・びらん，顔面・体幹・四肢の皮疹が生じた．",
+          "textEn": "A 70-year-old woman came to our hospital complaining of skin rash all over her body and pain in her mouth.The patient had been suffering from a headache and sore throat for 5 days, and took an over-the-counter cold medicine.Three days ago, he developed fever, arthralgia, redness of the eyes, pain and erosion in the oral cavity, and skin rash on the face, trunk, and extremities."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "102A33 口腔内 びらん(＋)",
+          "textEn": "102A33 Intraoral erosion(+)"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history Although the patient was diagnosed with high blood pressure and high cholesterol, he was not taking any medication."
+        ],
+        "medications": [
+          "Medication history: I have taken this drug before.Life history: She lives with her husband, but has no symptoms.No contact with children.I received the coronavirus vaccine one month ago.#Drug rash Dr.Yamanaka/Kamata radio talk"
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": [
+        "O Vitals Blood pressure 120/80mmHg, heart rate 100 beats/min, respiratory rate 16 breaths/min, body temperature 37.8°C, SpO2 98% A&P Since there is mucosal erosion, it is most likely that he is suffering from severe drug eruption such as SJS or TEN.Check the distribution of the rash over the whole body and check for the presence of Nikolsky phenomenon.Also check the mucous membranes in the oral cavity, conjunctiva, and genitals.Blood tests are performed to check liver and kidney function.It is necessary to stop taking the drug that caused the drug eruption.Treatment focuses on supportive care, including appropriate fluid replacement.Night 41: Rash Night 41: Rash ◯ Free talk - Important things in future medical care 01:19 [Approach] Be aware that familiar drugs can cause drug eruptions.",
+        "Conjunctival hyperemia (+) Whole body rash (+) Night 41_ Rash VII. Other common symptoms ① VII. Other common symptoms ①"
+      ]
+    },
+    {
+      "id": "hematuria-24",
+      "nightNumber": 24,
+      "titleJa": "血尿",
+      "titleEn": "hematuria",
+      "categoryId": "other-common",
+      "categoryRoman": "VII",
+      "categoryOrder": 7,
+      "symptomOrder": 2,
+      "symptomLabelJa": "血尿",
+      "symptomLabelEn": "hematuria",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Ryusei Uchida",
+        "age": 35,
+        "gender": "male",
+        "demographicsJa": "35歳男性",
+        "demographicsEn": "35-year-old male",
+        "chiefComplaintJa": "血尿",
+        "chiefComplaintEn": "hematuria",
+        "vitalsJa": "バイタル：血圧 132/60 mmHg，脈72回 整．",
+        "vitalsEn": "Blood pressure 132/60 mmHg, pulse 72 beats."
+      },
+      "caseNotes": {
+        "summaryEn": "35-year-old male with hematuria.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "昨日マラソン大会に出て初めて完走し，走り 終わって３時間後くらいに急に赤黒い尿が出 た．こういったことは初めて． 最近の体調管理は万全で，特に問題なかった．",
+          "textEn": "I ran a marathon yesterday and completed it for the first time, and about 3 hours after I finished running, I suddenly started passing dark red urine.This is the first time something like this has happened.I have been taking good care of my health recently and have had no particular problems."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "両足が筋肉痛でものすごく痛い．",
+          "textEn": "My legs are sore and my muscles are sore."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Medical history: I have never been to a hospital.I have never had a serious illness."
+        ],
+        "medications": [
+          "Medication history: I do not take any medications on a regular basis."
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": [
+        "Health checkup Nothing was pointed out during the health checkup."
+      ]
+    },
+    {
+      "id": "oliguria-23",
+      "nightNumber": 23,
+      "titleJa": "乏尿",
+      "titleEn": "oliguria",
+      "categoryId": "other-common",
+      "categoryRoman": "VII",
+      "categoryOrder": 7,
+      "symptomOrder": 3,
+      "symptomLabelJa": "乏尿",
+      "symptomLabelEn": "oliguria",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Keito Mochizuki",
+        "age": 52,
+        "gender": "male",
+        "demographicsJa": "52歳男性",
+        "demographicsEn": "52-year-old male",
+        "chiefComplaintJa": "乏尿",
+        "chiefComplaintEn": "oliguria",
+        "vitalsJa": "バイタル：血圧 124/84 mmHg，呼吸数 20回，SpO₂ 99%，体温 36.7℃",
+        "vitalsEn": "Blood pressure 124/84 mmHg, respiratory rate 20 times, SpO₂ 99%, body temperature 36.7℃"
+      },
+      "caseNotes": {
+        "summaryEn": "52-year-old male with oliguria.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "家で電球を変えようと脚立に乗っている時， 足を滑らせて股間を強打した． 昨日までは普通に尿は出ていた．",
+          "textEn": "While standing on a stepladder to change a light bulb at home, I slipped and hit my groin.I was urinating normally until yesterday."
+        },
+        {
+          "label": "P",
+          "cue": "provoking or relieving factors",
+          "textJa": "お酒も風邪薬も飲んでいない．",
+          "textEn": "I don't drink alcohol or take cold medicine."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "痛みは落ち着いているが，僅かに痛く，下 っ腹が張ったような感じがある．",
+          "textEn": "The pain has subsided, but there is a slight ache and a bloated feeling in the lower abdomen."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "睾丸は腫れてはいないが，おしっこが出る 所から少量出血した．",
+          "textEn": "My testicles were not swollen, but there was a small amount of bleeding from where my urine came out."
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [
+          "Past medical history: Slightly high cholesterol.allergy"
+        ],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": [
+        "History: No allergies."
+      ]
+    },
+    {
+      "id": "urinary-incontinence-40",
+      "nightNumber": 40,
+      "titleJa": "尿失禁",
+      "titleEn": "urinary incontinence",
+      "categoryId": "other-common",
+      "categoryRoman": "VII",
+      "categoryOrder": 7,
+      "symptomOrder": 4,
+      "symptomLabelJa": "尿失禁",
+      "symptomLabelEn": "urinary incontinence",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Ken Tanaka",
+        "age": 68,
+        "gender": "male",
+        "demographicsJa": "68歳男性",
+        "demographicsEn": "68-year-old male",
+        "chiefComplaintJa": "尿失禁",
+        "chiefComplaintEn": "urinary incontinence",
+        "vitalsJa": "バイタル：血圧 144/88mmHg， 心拍数68回/分 整，体温 36.4℃",
+        "vitalsEn": "Blood pressure 144/88mmHg, heart rate 68 beats/min normal, body temperature 36.4℃"
+      },
+      "caseNotes": {
+        "summaryEn": "68-year-old male with urinary incontinence.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "1ヶ月ほど前から尿が漏れるようになった． それまでは尿が漏れることはなかった．",
+          "textEn": "About a month ago, I started leaking urine.Until then, there was no leakage of urine."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "気付かないうちに尿が漏れている． 2年ほど前から夜寝ている間に2回ほどトイレに行 くようになった． 残尿感はない．出そうとすれば出るが，以前と比 べると出しにくい． ちょぼちょぼ尿がでてしまう．",
+          "textEn": "Urine leaks without you noticing.About two years ago, I started going to the bathroom twice during the night while I was sleeping.There is no feeling of residual urine.If I try to get it out, it will come out, but it is harder to get it out than before.I urinate a little."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "便は普通に出る． 抑うつや物忘れはない． 水はあまり飲んでいない，喉が乾いて困ることは ない． 既往歴 10年前から糖尿病． 心臓や腎臓の病気を指摘されたことはない． いびきも指摘されたことはない．",
+          "textEn": "The stool passes normally.There is no depression or forgetfulness.I don't drink much water, and I don't have any problems with being thirsty.Past history: Diabetes since 10 years ago.No heart or kidney disease was pointed out.Snoring has never been noted either."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "10年前からの糖尿病に対し血糖降下薬で治療中の68歳男性．尿失禁を主訴に来院した．2年前から就寝 後に2回ほどトイレに行くようになり，受診1ヶ月前から尿失禁をきたしている．残尿感，排尿困難，宿 便はない．既往歴は糖尿病のみでうつ病や認知症，心不全，腎不全，睡眠時無呼吸症候群などはない．",
+          "textEn": "A 68-year-old man was being treated with hypoglycemic drugs for diabetes for 10 years.A patient came to our hospital with the chief complaint of urinary incontinence.Two years ago, the patient started going to the toilet twice after going to bed, and had been experiencing urinary incontinence for one month before visiting the hospital.There was no feeling of residual urine, difficulty urinating, or fecal impaction.His past medical history was only diabetes, but no depression, dementia, heart failure, renal failure, or sleep apnea syndrome."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "身長160cm，体重66kg",
+          "textEn": "Height 160cm, weight 66kg"
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "102B54-56 下腿浮腫なし 直聴診 小鶏卵大の前立腺を触知 硬結は触れず，圧痛なし 第40夜_尿失禁 VII.その他の よ く あ る症候④ VII. その他のよくある症候④",
+          "textEn": "102B54-56 No lower leg edema Direct auscultation Palpable egg-sized prostate No induration felt, no tenderness 40th night_urinary incontinence VII. Other common symptoms④ VII. Other common symptoms④"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [
+          "Medication History The patient was diagnosed with diabetes 10 years ago, and has been taking medication to lower blood sugar ever since.#neurogenic bladder, #prostatic hypertrophy, #prostate cancer Dr.Yamanaka/Kamata Radio Talk Abdomen Elastic Soft A fist-sized mass was palpated in the lower abdomen."
+        ],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": [
+        "Vitals: Blood pressure 144/88 mmHg, pulse 68 beats/min, body temperature 36.4°C Physical examination revealed no edema in the lower legs, and a fist-sized mass was palpable in the lower abdomen.Direct auscultation revealed a prostate gland the size of a hen's egg, but no induration or tenderness was felt.A&P Diabetic neurogenic bladder is most likely.In addition, since there is a possibility that the condition may be associated with benign prostatic hyperplasia or prostate cancer, PSA is measured with a blood test.In addition, it is useful to confirm the presence of enlarged prostate by abdominal ultrasound and to measure urinary flow.Night 40 Urinary Incontinence Night 40 Urinary Incontinence ◯ Free talk - The power of \"home\" for patients 00:38 - The appeal of community medicine 10:28 [Approach] Remember that there are many causes."
+      ]
+    },
+    {
+      "id": "menstrual-abnormalities-42",
+      "nightNumber": 42,
+      "titleJa": "月経異常",
+      "titleEn": "menstrual abnormalities",
+      "categoryId": "other-common",
+      "categoryRoman": "VII",
+      "categoryOrder": 7,
+      "symptomOrder": 5,
+      "symptomLabelJa": "月経異常",
+      "symptomLabelEn": "menstrual abnormalities",
+      "symptomVariant": null,
+      "patient": {
+        "name": "Hina Yasuda",
+        "age": 35,
+        "gender": "female",
+        "demographicsJa": "35歳女性",
+        "demographicsEn": "35-year-old female",
+        "chiefComplaintJa": "月経痛，過多月経",
+        "chiefComplaintEn": "Menstrual pain, menorrhagia",
+        "vitalsJa": "",
+        "vitalsEn": ""
+      },
+      "caseNotes": {
+        "summaryEn": "35-year-old female with Menstrual pain, menorrhagia.",
+        "objectiveEn": "",
+        "planEn": ""
+      },
+      "presentIllness": [
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "3年くらいから月経時の痛みが強くなってきた． 市販の痛み止めを内服していたが，半年前から薬 が効かなくなり，日常生活に支障がでるようにな った．",
+          "textEn": "For about 3 years, the pain during menstruation has been getting worse.I had been taking over-the-counter painkillers, but the drugs stopped working six months ago, and my daily life began to be affected."
+        },
+        {
+          "label": "Q",
+          "cue": "symptom quality or severity",
+          "textJa": "28日周期で8日間くらい続く． 月経時は寝込んでしまう． 月経の量も多く，夜用のナプキンを昼から付けて いても漏れてしまうことがある．",
+          "textEn": "It lasts about 8 days in a 28-day cycle.I fall asleep during menstruation.I have heavy menstrual flow, and even if I wear a night napkin during the day, I may experience some leakage."
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "月経の週は，階段を上ったときなどつらい． 性 前回の月経はアプリで記録している． 月経時に腰全体が痛い．月経が終われば痛みはな い．性交痛はない． 子供は２人いる．８歳と６歳． #子宮腺筋症，#子宮内膜症，#子宮筋腫，#異所性妊娠，#PID Dr．山中・鎌田のラジオトーク 子宮 15cmに腫大 硬く，可動性良好 付属器は触れない",
+          "textEn": "During the week of menstruation, I find it difficult to climb stairs.Gender: Last menstrual period is recorded using an app.My whole lower back hurts during menstruation.There is no pain after menstruation ends.There is no pain during sexual intercourse.I have two children.8 years old and 6 years old.#adenomyosis, #endometriosis, #uterine fibroid, #ectopic pregnancy, #PID Dr.Yamanaka/Kamata radio talk Uterus Swollen to 15 cm Hard and movable Appendages cannot be touched"
+        },
+        {
+          "label": "S",
+          "cue": "associated symptoms",
+          "textJa": "35歳女性．3年前からの月経痛と過多月経を主訴に来院した． 月経周期は28日 整，持続8日間． 約3年前から約半年前にかけて月経痛が増悪し，現在は痛み止めも効かなくなっていた． 経産婦で子供は2人．",
+          "textEn": "35 year old female.A patient visited our hospital complaining of menstrual pain and excessive menstruation for the past 3 years.The menstrual cycle is 28 days long and lasts 8 days.From about three years ago to about six months ago, my menstrual pain worsened, and painkillers were no longer working.I am a multiparous woman with two children."
+        },
+        {
+          "label": "O",
+          "cue": "symptom onset and context",
+          "textJa": "子宮は15cmに腫大．硬く，可動性良好．",
+          "textEn": "The uterus was swollen to 15 cm.Hard and has good mobility."
+        },
+        {
+          "label": "MRI",
+          "cue": "detail",
+          "textJa": "子宮筋層内に点状の高信号を認めた． A&P 子宮腺筋症，子宮内膜症，子宮筋腫，異所性妊娠，PIDが鑑別に挙げられる． 身体診察は内診を行い，子宮頸部の圧痛，子宮の可動性，腫大の有無を確認する． 貧血が進んでいるため，血液検査を，細菌尿やhCGを確認するために尿検査を行う． 診断のためには画像による評価が必要になるため，エコーやMRIを行う． 第42夜　月経異常 第42夜 月経異常 《アプローチ 》月経の性状と出産の有無から鑑別を進める．",
+          "textEn": "Point-like hyperintensities were observed within the myometrium.A&P The differential diagnosis includes adenomyosis, endometriosis, uterine fibroids, ectopic pregnancy, and PID.Physical examination includes a pelvic examination to check for cervical tenderness, uterine mobility, and swelling.Because the anemia is advanced, a blood test and a urine test are performed to check for bacteriuria and hCG.Diagnosis requires evaluation using images, so ultrasound and MRI are performed.42nd night: Menstrual abnormality 42nd night: Menstrual abnormality [Approach] Proceed with differential diagnosis based on the characteristics of menstruation and the presence or absence of childbirth."
+        },
+        {
+          "label": "QB",
+          "cue": "detail",
+          "textJa": "115F37 病 態 症 状 診 断 子宮内膜症 卵巣 好発部位 Douglas窩 仙骨子宮靭帯 など 子宮内膜組織が異所性に発生 子宮筋腫子宮腺筋症 子宮内膜組織が筋層内に浸潤 経産婦や子宮内操作の既往 リスク ① 筋層内筋腫 (約70%) 子宮平滑筋に発生する良性腫瘍 ③ 粘膜下筋腫 (約5〜10%) ※ 子宮内膜症の卵巣病変を ※ チョコレート囊胞という 月経痛，慢性骨盤痛，性交痛，排便痛 不妊など 過多月経，月経痛，不妊など月経痛，過多月経，不妊など 巨大化すると圧迫症状 (頻尿，排尿障害，便秘 など)",
+          "textEn": "115F37 Pathology Symptoms Diagnosis Endometriosis Ovarian Common site Douglas fossa Sacral uterine ligament, etc. Endometrial tissue occurs ectopically Uterine fibroids Uterine adenomyosis Endometrial tissue infiltrates into the muscle layer Multiparous women and history of intrauterine manipulation Risk ① Intramuscular fibroid (approximately 70%) Benign tumor that develops in uterine smooth muscle ③Submucosal fibroids (approx. 5-10%) *Ovarian lesions caused by endometriosis *Chocolate cysts Menstrual pain, chronic pelvic pain, sexual pain, defecation pain, infertility, etc. Menstrual pain, menstrual pain, infertility, etc. Menstrual pain, excessive menstruation, infertility, etc. When enlarged, pressure symptoms (frequent urination, urinary dysfunction, constipation, etc.)"
+        }
+      ],
+      "history": {
+        "pastMedicalHistory": [],
+        "medications": [],
+        "allergies": [],
+        "familyHistory": [],
+        "socialHistory": []
+      },
+      "otherHistory": [
+        "Internal examination/rectal examination Uterine retroversion, limited mobility",
+        "Internal examination/rectal examination Tenderness in Douglas fossa",
+        "Internal examination: Swollen, elastic, hard uterus ■ Estrogen-dependent diseases that often occur during sexual maturity (Quoted from Q –Assist Internal Medicine/Surgery ``Obstetrics and Gynecology'') ② Subserosal fibroids (approximately 10-20%) * 60-70% are multiple (however, ② has the risk of pedicle torsion) * Symptoms ③ are the strongest, and ② are rare.42nd night_menstrual abnormalities VII.Other common symptoms⑤ VII.Other common symptoms⑤"
+      ]
+    }
+  ],
+  "instructions": [
+    "Stay fully in character as the patient; never mention simulations or AI.",
+    "Respond in natural English (or provide a short Japanese sentence first only if explicitly requested).",
+    "Keep answers concise (1–3 sentences) but feel free to elaborate for open-ended questions.",
+    "Do not invent new medical facts beyond the scenario. If unsure, admit it as the patient would.",
+    "Politely ask for clarification if the clinician's question is unclear."
+  ],
+  "personalities": {
+    "I": "Clearly uncomfortable from pain but cooperative and appreciative of clear explanations.",
+    "II": "May be groggy or worried about episodes; speaks slowly but answers honestly.",
+    "III": "Feverish and fatigued yet polite, answering in short sentences.",
+    "IV": "Anxious about digestive symptoms but still courteous and forthcoming.",
+    "V": "Short of breath or light-headed; tries to conserve energy with brief answers.",
+    "VI": "Concerned about neurologic changes, occasionally pauses to find words.",
+    "VII": "Mildly anxious about new symptoms but generally calm and cooperative."
+  }
+}

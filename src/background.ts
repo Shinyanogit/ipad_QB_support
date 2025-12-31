@@ -28,6 +28,20 @@ webext.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
   }
 });
 
+webext.runtime?.onConnect?.addListener((port) => {
+  if (port.name !== "qb-chat") return;
+  port.onMessage.addListener((message) => {
+    if (!message || message.type !== "QB_CHAT_STREAM_REQUEST") return;
+    handleChatStream(port, message).catch((error: Error) => {
+      port.postMessage({
+        type: "QB_CHAT_STREAM_ERROR",
+        requestId: message.requestId ?? "unknown",
+        error: error.message,
+      });
+    });
+  });
+});
+
 async function handleCdpClick(tabId: number, x: number, y: number) {
   await attachDebugger(tabId);
   await sendMouseEvent(tabId, "mouseMoved", x, y, 0);
@@ -117,4 +131,120 @@ async function handleChatRequest(message: {
   const text = data.choices?.[0]?.message?.content?.trim();
   if (!text) throw new Error("Empty response from API.");
   return { text, usage: data.usage ?? null };
+}
+
+async function handleChatStream(
+  port: chrome.runtime.Port,
+  message: {
+    requestId: string;
+    apiKey?: string;
+    model?: string;
+    input?: unknown;
+    instructions?: string;
+    previousResponseId?: string | null;
+  }
+) {
+  const requestId = message.requestId;
+  const apiKey = typeof message.apiKey === "string" ? message.apiKey.trim() : "";
+  if (!apiKey) throw new Error("API key is not set.");
+  const model =
+    typeof message.model === "string" && message.model ? message.model : "gpt-4o-mini";
+  const input = message.input ?? [];
+  const instructions =
+    typeof message.instructions === "string" ? message.instructions.trim() : "";
+  const previousResponseId =
+    typeof message.previousResponseId === "string" && message.previousResponseId
+      ? message.previousResponseId
+      : null;
+
+  const controller = new AbortController();
+  port.onDisconnect.addListener(() => controller.abort());
+
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      instructions: instructions || undefined,
+      input,
+      previous_response_id: previousResponseId ?? undefined,
+      stream: true,
+      temperature: 0.2,
+      store: true,
+    }),
+    signal: controller.signal,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API Error: ${response.status} - ${errorText}`);
+  }
+
+  if (!response.body) throw new Error("No response stream.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let responseId: string | null = null;
+  let usage: Record<string, unknown> | null = null;
+
+  const flush = (chunk: string, isFinal = false) => {
+    buffer += chunk;
+    const parts = buffer.split("\n\n");
+    if (!isFinal) {
+      buffer = parts.pop() ?? "";
+    } else {
+      buffer = "";
+    }
+    for (const part of parts) {
+      const lines = part.split("\n");
+      const dataLines = lines
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.replace(/^data:\s?/, "").trim())
+        .filter(Boolean);
+      if (!dataLines.length) continue;
+      const data = dataLines.join("");
+      if (data === "[DONE]") {
+        port.postMessage({ type: "QB_CHAT_STREAM_DONE", requestId, responseId, usage });
+        return;
+      }
+      let payload: any;
+      try {
+        payload = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      if (payload?.type === "response.output_text.delta") {
+        const delta =
+          typeof payload.delta === "string"
+            ? payload.delta
+            : typeof payload.text === "string"
+            ? payload.text
+            : "";
+        if (delta) {
+          port.postMessage({ type: "QB_CHAT_STREAM_DELTA", requestId, delta });
+        }
+      }
+      if (payload?.type === "response.completed") {
+        responseId = payload.response?.id ?? payload.id ?? responseId;
+        usage = payload.response?.usage ?? payload.usage ?? usage;
+      }
+      if (payload?.type === "response.created") {
+        responseId = payload.response?.id ?? payload.id ?? responseId;
+      }
+      if (payload?.error?.message) {
+        throw new Error(payload.error.message);
+      }
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    flush(decoder.decode(value, { stream: true }));
+  }
+  flush(decoder.decode(), true);
+  port.postMessage({ type: "QB_CHAT_STREAM_DONE", requestId, responseId, usage });
 }

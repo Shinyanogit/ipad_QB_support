@@ -11,5 +11,8 @@
     "@types/chrome": "^0.0.266",
     "esbuild": "^0.23.0",
     "typescript": "^5.5.4"
+  },
+  "dependencies": {
+    "firebase": "^12.7.0"
   }
 }

@@ -58,11 +58,13 @@ export function extractQuestionSnapshot(doc: Document, url: string): QuestionSna
   if (!container) return null;
   const info = extractQuestionInfo(doc, url);
   const questionText = extractQuestionText(container);
+  const imageUrls = extractQuestionImageUrls(container, url);
   const optionTexts = extractOptionTexts(container);
   return {
     id: info?.id ?? questionIdFromUrl(url),
     url,
     questionText,
+    imageUrls,
     optionTexts,
     progressText: info?.progressText ?? null,
     pageRef: info?.pageRef ?? null,
@@ -185,6 +187,30 @@ function extractOptionTexts(container: HTMLElement): string[] {
     if (!results.includes(text)) results.push(text);
   }
   return results.slice(0, 8);
+}
+
+function extractQuestionImageUrls(container: HTMLElement, url: string): string[] {
+  const images = Array.from(container.querySelectorAll<HTMLImageElement>("img"));
+  const results: string[] = [];
+  for (const image of images) {
+    const src = image.getAttribute("src") ?? "";
+    if (!src) continue;
+    if (image.closest(SELECTORS.options)) continue;
+    if (image.closest(".question-footer")) continue;
+    if (image.closest(".question-nav")) continue;
+    if (image.closest(".widget-search")) continue;
+    if (image.closest(".widget-note")) continue;
+    if (image.closest(".contents__right")) continue;
+    if (src.includes("no_image")) continue;
+    let resolved: string;
+    try {
+      resolved = new URL(src, url).toString();
+    } catch {
+      continue;
+    }
+    if (!results.includes(resolved)) results.push(resolved);
+  }
+  return results.slice(0, 4);
 }
 
 function collectCandidates(root?: ParentNode | null): HTMLElement[] {
