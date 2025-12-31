@@ -467,18 +467,22 @@ body.qb-support-chat-dock > #app {
   overscroll-behavior: contain;
 }
 
-body.qb-support-chat-dock > #app img,
 body.qb-support-chat-dock .question-content img,
 body.qb-support-chat-dock .resultcontent img {
-  width: auto !important;
-  max-width: 100%;
+  width: 12em;
+  max-width: 12em;
+  min-width: 12em;
   height: auto;
+  object-fit: contain;
 }
 
-body.qb-support-chat-dock .question-content img,
-body.qb-support-chat-dock .resultcontent img {
-  max-width: min(100%, var(--qb-support-img-base-width, 100%));
+.question-content img,
+.resultcontent img {
+  width: 12em;
+  max-width: 12em;
+  min-width: 12em;
   height: auto;
+  object-fit: contain;
 }
 
 body.qb-support-chat-dock #app,

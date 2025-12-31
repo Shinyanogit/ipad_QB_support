@@ -50,6 +50,7 @@ const CHAT_DOCK_CLASS = "qb-support-chat-dock";
 const CHAT_RESIZER_ID = "qb-support-chat-resizer";
 const CHAT_TEMPLATE_ID = "qb-support-chat-templates";
 const CHAT_TOGGLE_SHORTCUT = "Ctrl+O";
+const CHAT_INPUT_TOGGLE_SHORTCUT = "Ctrl+Enter";
 const CHAT_NEW_SHORTCUT = "Ctrl+N";
 const CHAT_TEMPLATE_MAX = 5;
 const CHAT_DOCK_MIN_WIDTH = 320;
@@ -1824,6 +1825,7 @@ function setChatDockWidth(width: number) {
 function startChatResize(event: PointerEvent) {
   if (!settings.chatOpen || !chatResizer) return;
   if (!document.body.classList.contains(CHAT_DOCK_CLASS)) return;
+  captureQuestionImageBaseSizes();
   chatResizeActive = true;
   chatResizer.setPointerCapture(event.pointerId);
   event.preventDefault();
@@ -1859,6 +1861,23 @@ function focusChatInput() {
   window.setTimeout(() => {
     chatInput?.focus();
   }, 0);
+}
+
+function toggleChatInputFocus() {
+  ensureChatUI();
+  if (!chatInput) return;
+  const isActive = document.activeElement === chatInput;
+  if (isActive) {
+    chatInput.blur();
+    return;
+  }
+  if (!settings.chatOpen) {
+    void saveSettings({ ...settings, chatOpen: true }).then(() => {
+      focusChatInput();
+    });
+    return;
+  }
+  focusChatInput();
 }
 
 function attachChatHandlers() {
@@ -2573,7 +2592,7 @@ function refreshQuestionInfo() {
   } else if (currentSnapshot) {
     currentSnapshot = null;
   }
-  if (!settings.chatOpen && window === window.top) {
+  if (window === window.top) {
     captureQuestionImageBaseSizes();
   }
   updateHintQuickButton();
@@ -2689,16 +2708,15 @@ function attachEventHandlers() {
           ? getShortcutBaseKey(settings.optionKeys[optionIndex])
           : "";
       const isTyping = isTypingTarget(event.target);
+      if (isTyping && !event.ctrlKey) return;
       const templateShortcut = getChatTemplateShortcut(event);
       if (templateShortcut && window === window.top && (!isTyping || event.ctrlKey)) {
-        event.preventDefault();
-        event.stopPropagation();
+        consumeShortcutEvent(event);
         void sendTemplateMessage(templateShortcut);
         return;
       }
       if (isShortcutMatch(event, CHAT_NEW_SHORTCUT) && window === window.top) {
-        event.preventDefault();
-        event.stopPropagation();
+        consumeShortcutEvent(event);
         resetChatHistory("会話をリセットしました");
         void saveSettings({ ...settings, chatOpen: true });
         return;
@@ -2707,8 +2725,7 @@ function attachEventHandlers() {
         isShortcutMatch(event, "Ctrl+S") &&
         window === window.top
       ) {
-        event.preventDefault();
-        event.stopPropagation();
+        consumeShortcutEvent(event);
         if (!chatSettingsPanel) {
           ensureChatUI();
         }
@@ -2721,7 +2738,11 @@ function attachEventHandlers() {
         }
         return;
       }
-      if (isTyping && !event.ctrlKey && !isOptionKey && !isNavKey) return;
+      if (isShortcutMatch(event, CHAT_INPUT_TOGGLE_SHORTCUT) && window === window.top) {
+        consumeShortcutEvent(event);
+        toggleChatInputFocus();
+        return;
+      }
       if (!isQuestionPage()) {
         if (shouldLogKey) {
           console.log("[QB_SUPPORT][frame-skip]", {
@@ -2735,15 +2756,13 @@ function attachEventHandlers() {
       }
 
       if (isShortcutMatch(event, CHAT_TOGGLE_SHORTCUT) && window === window.top) {
-        event.preventDefault();
-        event.stopPropagation();
+        consumeShortcutEvent(event);
         void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
         return;
       }
 
       if (isShortcutMatch(event, settings.shortcut)) {
-        event.preventDefault();
-        event.stopPropagation();
+        consumeShortcutEvent(event);
         if (debug) {
           console.debug("[QB_SUPPORT][toggle]", {
             prevented: true,
@@ -3102,6 +3121,12 @@ function debounce<T extends (...args: never[]) => void>(fn: T, delay: number) {
     if (timer) window.clearTimeout(timer);
     timer = window.setTimeout(() => fn(...args), delay);
   };
+}
+
+function consumeShortcutEvent(event: KeyboardEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {

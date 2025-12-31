@@ -12269,6 +12269,7 @@
   var CHAT_RESIZER_ID = "qb-support-chat-resizer";
   var CHAT_TEMPLATE_ID = "qb-support-chat-templates";
   var CHAT_TOGGLE_SHORTCUT = "Ctrl+O";
+  var CHAT_INPUT_TOGGLE_SHORTCUT = "Ctrl+Enter";
   var CHAT_NEW_SHORTCUT = "Ctrl+N";
   var CHAT_TEMPLATE_MAX = 5;
   var CHAT_DOCK_MIN_WIDTH = 320;
@@ -13819,6 +13820,7 @@
   function startChatResize(event) {
     if (!settings.chatOpen || !chatResizer) return;
     if (!document.body.classList.contains(CHAT_DOCK_CLASS)) return;
+    captureQuestionImageBaseSizes();
     chatResizeActive = true;
     chatResizer.setPointerCapture(event.pointerId);
     event.preventDefault();
@@ -13849,6 +13851,22 @@
     window.setTimeout(() => {
       chatInput?.focus();
     }, 0);
+  }
+  function toggleChatInputFocus() {
+    ensureChatUI();
+    if (!chatInput) return;
+    const isActive = document.activeElement === chatInput;
+    if (isActive) {
+      chatInput.blur();
+      return;
+    }
+    if (!settings.chatOpen) {
+      void saveSettings({ ...settings, chatOpen: true }).then(() => {
+        focusChatInput();
+      });
+      return;
+    }
+    focusChatInput();
   }
   function attachChatHandlers() {
     if (!chatPanel || chatPanel.dataset.handlers === "true") return;
@@ -14478,7 +14496,7 @@
     } else if (currentSnapshot) {
       currentSnapshot = null;
     }
-    if (!settings.chatOpen && window === window.top) {
+    if (window === window.top) {
       captureQuestionImageBaseSizes();
     }
     updateHintQuickButton();
@@ -14580,23 +14598,21 @@
         const isOptionKey = optionIndex >= 0;
         const optionBaseKey = isOptionKey && settings.optionKeys[optionIndex] ? getShortcutBaseKey(settings.optionKeys[optionIndex]) : "";
         const isTyping = isTypingTarget(event.target);
+        if (isTyping && !event.ctrlKey) return;
         const templateShortcut = getChatTemplateShortcut(event);
         if (templateShortcut && window === window.top && (!isTyping || event.ctrlKey)) {
-          event.preventDefault();
-          event.stopPropagation();
+          consumeShortcutEvent(event);
           void sendTemplateMessage(templateShortcut);
           return;
         }
         if (isShortcutMatch(event, CHAT_NEW_SHORTCUT) && window === window.top) {
-          event.preventDefault();
-          event.stopPropagation();
+          consumeShortcutEvent(event);
           resetChatHistory("\u4F1A\u8A71\u3092\u30EA\u30BB\u30C3\u30C8\u3057\u307E\u3057\u305F");
           void saveSettings({ ...settings, chatOpen: true });
           return;
         }
         if (isShortcutMatch(event, "Ctrl+S") && window === window.top) {
-          event.preventDefault();
-          event.stopPropagation();
+          consumeShortcutEvent(event);
           if (!chatSettingsPanel) {
             ensureChatUI();
           }
@@ -14609,7 +14625,11 @@
           }
           return;
         }
-        if (isTyping && !event.ctrlKey && !isOptionKey && !isNavKey) return;
+        if (isShortcutMatch(event, CHAT_INPUT_TOGGLE_SHORTCUT) && window === window.top) {
+          consumeShortcutEvent(event);
+          toggleChatInputFocus();
+          return;
+        }
         if (!isQuestionPage()) {
           if (shouldLogKey) {
             console.log("[QB_SUPPORT][frame-skip]", {
@@ -14622,14 +14642,12 @@
           return;
         }
         if (isShortcutMatch(event, CHAT_TOGGLE_SHORTCUT) && window === window.top) {
-          event.preventDefault();
-          event.stopPropagation();
+          consumeShortcutEvent(event);
           void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
           return;
         }
         if (isShortcutMatch(event, settings.shortcut)) {
-          event.preventDefault();
-          event.stopPropagation();
+          consumeShortcutEvent(event);
           if (debug) {
             console.debug("[QB_SUPPORT][toggle]", {
               prevented: true,
@@ -14947,6 +14965,11 @@
       if (timer) window.clearTimeout(timer);
       timer = window.setTimeout(() => fn(...args), delay);
     };
+  }
+  function consumeShortcutEvent(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
   }
   function isTypingTarget(target) {
     if (!target || !(target instanceof HTMLElement)) return false;
