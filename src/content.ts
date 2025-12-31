@@ -48,6 +48,7 @@ const CHAT_ROOT_ID = "qb-support-chat-root";
 const CHAT_TOGGLE_ID = "qb-support-chat-toggle";
 const CHAT_DOCK_CLASS = "qb-support-chat-dock";
 const CHAT_RESIZER_ID = "qb-support-chat-resizer";
+const CHAT_OVERLAY_HANDLE_ID = "qb-support-chat-overlay-handle";
 const CHAT_TEMPLATE_ID = "qb-support-chat-templates";
 const CHAT_TOGGLE_SHORTCUT = "Ctrl+O";
 const CHAT_INPUT_TOGGLE_SHORTCUT = "Ctrl+Enter";
@@ -125,6 +126,7 @@ let templateAddButton: HTMLButtonElement | null = null;
 let templateRemoveButton: HTMLButtonElement | null = null;
 let hintQuickButton: HTMLButtonElement | null = null;
 let chatResizer: HTMLDivElement | null = null;
+let chatOverlayHandle: HTMLButtonElement | null = null;
 let chatHistory: ChatMessage[] = [];
 let chatRequestPending = false;
 let chatComposing = false;
@@ -132,7 +134,7 @@ let chatLayoutBound = false;
 let chatDockWidth = 0;
 let chatResizeActive = false;
 let lastChatOpen = false;
-let lastChatDocked = false;
+let lastChatLayout: "dock" | "overlay" | "overlay-bottom" | null = null;
 let chatLastResponseId: string | null = null;
 let activeChatRequestId: string | null = null;
 let activeChatPort: chrome.runtime.Port | null = null;
@@ -1337,6 +1339,7 @@ function ensureChatUI() {
 
   ensureChatToggle();
   ensureChatResizer();
+  ensureChatOverlayHandle();
   ensureChatTemplates();
   attachChatSettingsHandlers();
   populateChatSettingsPanel();
@@ -1355,6 +1358,23 @@ function ensureChatResizer() {
     startChatResize(event);
   });
   document.body.appendChild(chatResizer);
+}
+
+function ensureChatOverlayHandle() {
+  const existing = document.getElementById(CHAT_OVERLAY_HANDLE_ID);
+  if (existing) {
+    chatOverlayHandle = existing as HTMLButtonElement;
+    return;
+  }
+  chatOverlayHandle = document.createElement("button");
+  chatOverlayHandle.id = CHAT_OVERLAY_HANDLE_ID;
+  chatOverlayHandle.type = "button";
+  chatOverlayHandle.className = "qb-support-chat-overlay-handle";
+  chatOverlayHandle.setAttribute("aria-label", "チャットを開閉");
+  chatOverlayHandle.addEventListener("click", () => {
+    void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
+  });
+  document.body.appendChild(chatOverlayHandle);
 }
 
 function ensureChatToggle() {
@@ -1773,27 +1793,40 @@ function applyChatDockLayout() {
   if (window !== window.top) return;
   const body = document.body;
   if (!body || !chatRoot) return;
-  const showDock = settings.chatOpen;
+  const isBottomOverlay = shouldUseBottomOverlay();
+  const showDock = settings.chatOpen && !isBottomOverlay;
+  const layoutMode = isBottomOverlay ? "overlay-bottom" : showDock ? "dock" : "overlay";
 
-  chatRoot.dataset.mode = showDock ? "dock" : "overlay";
+  document.documentElement.dataset.qbChatLayout = layoutMode;
+  chatRoot.dataset.mode = layoutMode;
   body.style.marginRight = "";
   body.style.transition = "";
   document.documentElement.style.overflowX = "";
   body.classList.toggle(CHAT_DOCK_CLASS, showDock);
   if (chatResizer) {
-    chatResizer.dataset.active = settings.chatOpen ? "true" : "false";
+    chatResizer.dataset.active = showDock ? "true" : "false";
+  }
+  if (chatOverlayHandle) {
+    chatOverlayHandle.dataset.active = isBottomOverlay ? "true" : "false";
+    chatOverlayHandle.dataset.open = settings.chatOpen ? "true" : "false";
   }
   if (showDock) {
     const dockWidth = getDockWidth();
     setChatDockWidth(dockWidth);
   }
 
-  const shouldFocus = showDock && settings.chatOpen && (!lastChatOpen || !lastChatDocked);
+  const shouldFocus = settings.chatOpen && (!lastChatOpen || lastChatLayout !== layoutMode);
   lastChatOpen = settings.chatOpen;
-  lastChatDocked = showDock;
+  lastChatLayout = layoutMode;
   if (shouldFocus) {
     focusChatInput();
   }
+}
+
+function shouldUseBottomOverlay(): boolean {
+  const width = window.innerWidth || 0;
+  const height = window.innerHeight || 1;
+  return width / height <= 1.2;
 }
 
 function getDockWidth(): number {
@@ -1852,7 +1885,7 @@ function startChatResize(event: PointerEvent) {
 function updateChatToggleLabel() {
   if (!chatToggle) return;
   const open = settings.chatOpen;
-  chatToggle.textContent = open ? ">" : "<";
+  chatToggle.textContent = open ? "▼" : "▲";
   chatToggle.setAttribute("aria-label", open ? "チャットを閉じる" : "チャットを開く");
 }
 

@@ -12267,6 +12267,7 @@
   var CHAT_TOGGLE_ID = "qb-support-chat-toggle";
   var CHAT_DOCK_CLASS = "qb-support-chat-dock";
   var CHAT_RESIZER_ID = "qb-support-chat-resizer";
+  var CHAT_OVERLAY_HANDLE_ID = "qb-support-chat-overlay-handle";
   var CHAT_TEMPLATE_ID = "qb-support-chat-templates";
   var CHAT_TOGGLE_SHORTCUT = "Ctrl+O";
   var CHAT_INPUT_TOGGLE_SHORTCUT = "Ctrl+Enter";
@@ -12314,6 +12315,7 @@
   var templateRemoveButton = null;
   var hintQuickButton = null;
   var chatResizer = null;
+  var chatOverlayHandle = null;
   var chatHistory = [];
   var chatRequestPending = false;
   var chatComposing = false;
@@ -12321,7 +12323,7 @@
   var chatDockWidth = 0;
   var chatResizeActive = false;
   var lastChatOpen = false;
-  var lastChatDocked = false;
+  var lastChatLayout = null;
   var chatLastResponseId = null;
   var activeChatRequestId = null;
   var activeChatPort = null;
@@ -13382,6 +13384,7 @@
     document.body.appendChild(chatRoot);
     ensureChatToggle();
     ensureChatResizer();
+    ensureChatOverlayHandle();
     ensureChatTemplates();
     attachChatSettingsHandlers();
     populateChatSettingsPanel();
@@ -13399,6 +13402,22 @@
       startChatResize(event);
     });
     document.body.appendChild(chatResizer);
+  }
+  function ensureChatOverlayHandle() {
+    const existing = document.getElementById(CHAT_OVERLAY_HANDLE_ID);
+    if (existing) {
+      chatOverlayHandle = existing;
+      return;
+    }
+    chatOverlayHandle = document.createElement("button");
+    chatOverlayHandle.id = CHAT_OVERLAY_HANDLE_ID;
+    chatOverlayHandle.type = "button";
+    chatOverlayHandle.className = "qb-support-chat-overlay-handle";
+    chatOverlayHandle.setAttribute("aria-label", "\u30C1\u30E3\u30C3\u30C8\u3092\u958B\u9589");
+    chatOverlayHandle.addEventListener("click", () => {
+      void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
+    });
+    document.body.appendChild(chatOverlayHandle);
   }
   function ensureChatToggle() {
     const existing = document.getElementById(CHAT_TOGGLE_ID);
@@ -13774,25 +13793,37 @@
     if (window !== window.top) return;
     const body = document.body;
     if (!body || !chatRoot) return;
-    const showDock = settings.chatOpen;
-    chatRoot.dataset.mode = showDock ? "dock" : "overlay";
+    const isBottomOverlay = shouldUseBottomOverlay();
+    const showDock = settings.chatOpen && !isBottomOverlay;
+    const layoutMode = isBottomOverlay ? "overlay-bottom" : showDock ? "dock" : "overlay";
+    document.documentElement.dataset.qbChatLayout = layoutMode;
+    chatRoot.dataset.mode = layoutMode;
     body.style.marginRight = "";
     body.style.transition = "";
     document.documentElement.style.overflowX = "";
     body.classList.toggle(CHAT_DOCK_CLASS, showDock);
     if (chatResizer) {
-      chatResizer.dataset.active = settings.chatOpen ? "true" : "false";
+      chatResizer.dataset.active = showDock ? "true" : "false";
+    }
+    if (chatOverlayHandle) {
+      chatOverlayHandle.dataset.active = isBottomOverlay ? "true" : "false";
+      chatOverlayHandle.dataset.open = settings.chatOpen ? "true" : "false";
     }
     if (showDock) {
       const dockWidth = getDockWidth();
       setChatDockWidth(dockWidth);
     }
-    const shouldFocus = showDock && settings.chatOpen && (!lastChatOpen || !lastChatDocked);
+    const shouldFocus = settings.chatOpen && (!lastChatOpen || lastChatLayout !== layoutMode);
     lastChatOpen = settings.chatOpen;
-    lastChatDocked = showDock;
+    lastChatLayout = layoutMode;
     if (shouldFocus) {
       focusChatInput();
     }
+  }
+  function shouldUseBottomOverlay() {
+    const width = window.innerWidth || 0;
+    const height = window.innerHeight || 1;
+    return width / height <= 1.2;
   }
   function getDockWidth() {
     const min = CHAT_DOCK_MIN_WIDTH;
@@ -13843,7 +13874,7 @@
   function updateChatToggleLabel() {
     if (!chatToggle) return;
     const open = settings.chatOpen;
-    chatToggle.textContent = open ? ">" : "<";
+    chatToggle.textContent = open ? "\u25BC" : "\u25B2";
     chatToggle.setAttribute("aria-label", open ? "\u30C1\u30E3\u30C3\u30C8\u3092\u9589\u3058\u308B" : "\u30C1\u30E3\u30C3\u30C8\u3092\u958B\u304F");
   }
   function focusChatInput() {

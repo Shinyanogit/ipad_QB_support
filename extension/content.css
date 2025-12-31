@@ -564,6 +564,23 @@ body.qb-support-chat-dock .desc {
   pointer-events: auto;
 }
 
+#qb-support-chat-root[data-mode="overlay-bottom"] {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 90vh;
+  width: 100%;
+  pointer-events: none;
+  transform: translateY(100%);
+  transition: transform 0.24s ease;
+}
+
+#qb-support-chat-root[data-mode="overlay-bottom"][data-open="true"] {
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
 #qb-support-chat-root[data-mode="dock"] {
   position: sticky;
   top: 0;
@@ -591,6 +608,25 @@ body.qb-support-chat-dock .desc {
 }
 
 #qb-support-chat-resizer[data-active="true"] {
+  display: block;
+}
+
+#qb-support-chat-overlay-handle {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 10vh;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  display: none;
+  z-index: 2147483004;
+}
+
+#qb-support-chat-overlay-handle[data-active="true"] {
   display: block;
 }
 
@@ -1248,6 +1284,19 @@ html[data-qb-theme="dark"] .desc--referencelink * {
 #qb-support-chat-toggle[data-open="true"] {
   background: #006057;
   color: #ffffff;
+}
+
+html[data-qb-chat-layout="overlay-bottom"] #qb-support-chat-toggle {
+  left: 50%;
+  right: auto;
+  top: auto;
+  bottom: 12px;
+  transform: translateX(-50%) translateY(0);
+  transition: transform 0.24s ease;
+}
+
+html[data-qb-chat-layout="overlay-bottom"] #qb-support-chat-toggle[data-open="true"] {
+  transform: translateX(-50%) translateY(calc(-90vh));
 }
 
 html[data-qb-theme="light"] #qb-support-chat-toggle {
