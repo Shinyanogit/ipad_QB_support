@@ -88,17 +88,21 @@
     if (!apiKey) throw new Error("API key is not set.");
     const model = typeof message.model === "string" && message.model ? message.model : "gpt-4o-mini";
     const messages = Array.isArray(message.messages) ? message.messages : [];
+    const supportsTemperature = model === "gpt-5.2";
+    const payload = {
+      model,
+      messages
+    };
+    if (supportsTemperature) {
+      payload.temperature = 0.2;
+    }
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`
       },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        messages
-      })
+      body: JSON.stringify(payload)
     });
     if (!response.ok) {
       const errorText = await response.text();
@@ -119,21 +123,24 @@
     const previousResponseId = typeof message.previousResponseId === "string" && message.previousResponseId ? message.previousResponseId : null;
     const controller = new AbortController();
     port.onDisconnect.addListener(() => controller.abort());
+    const payload = {
+      model,
+      instructions: instructions || void 0,
+      input,
+      previous_response_id: previousResponseId ?? void 0,
+      stream: true,
+      store: true
+    };
+    if (model === "gpt-5.2") {
+      payload.temperature = 0.2;
+    }
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`
       },
-      body: JSON.stringify({
-        model,
-        instructions: instructions || void 0,
-        input,
-        previous_response_id: previousResponseId ?? void 0,
-        stream: true,
-        temperature: 0.2,
-        store: true
-      }),
+      body: JSON.stringify(payload),
       signal: controller.signal
     });
     if (!response.ok) {
@@ -163,27 +170,27 @@
           port.postMessage({ type: "QB_CHAT_STREAM_DONE", requestId, responseId, usage });
           return;
         }
-        let payload;
+        let payload2;
         try {
-          payload = JSON.parse(data);
+          payload2 = JSON.parse(data);
         } catch {
           continue;
         }
-        if (payload?.type === "response.output_text.delta") {
-          const delta = typeof payload.delta === "string" ? payload.delta : typeof payload.text === "string" ? payload.text : "";
+        if (payload2?.type === "response.output_text.delta") {
+          const delta = typeof payload2.delta === "string" ? payload2.delta : typeof payload2.text === "string" ? payload2.text : "";
           if (delta) {
             port.postMessage({ type: "QB_CHAT_STREAM_DELTA", requestId, delta });
           }
         }
-        if (payload?.type === "response.completed") {
-          responseId = payload.response?.id ?? payload.id ?? responseId;
-          usage = payload.response?.usage ?? payload.usage ?? usage;
+        if (payload2?.type === "response.completed") {
+          responseId = payload2.response?.id ?? payload2.id ?? responseId;
+          usage = payload2.response?.usage ?? payload2.usage ?? usage;
         }
-        if (payload?.type === "response.created") {
-          responseId = payload.response?.id ?? payload.id ?? responseId;
+        if (payload2?.type === "response.created") {
+          responseId = payload2.response?.id ?? payload2.id ?? responseId;
         }
-        if (payload?.error?.message) {
-          throw new Error(payload.error.message);
+        if (payload2?.error?.message) {
+          throw new Error(payload2.error.message);
         }
       }
     };

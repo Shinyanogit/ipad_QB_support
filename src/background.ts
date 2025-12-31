@@ -105,6 +105,15 @@ async function handleChatRequest(message: {
   const model =
     typeof message.model === "string" && message.model ? message.model : "gpt-4o-mini";
   const messages = Array.isArray(message.messages) ? message.messages : [];
+  const supportsTemperature = model === "gpt-5.2";
+
+  const payload: Record<string, unknown> = {
+    model,
+    messages,
+  };
+  if (supportsTemperature) {
+    payload.temperature = 0.2;
+  }
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -112,11 +121,7 @@ async function handleChatRequest(message: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      messages,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -160,21 +165,25 @@ async function handleChatStream(
   const controller = new AbortController();
   port.onDisconnect.addListener(() => controller.abort());
 
+  const payload: Record<string, unknown> = {
+    model,
+    instructions: instructions || undefined,
+    input,
+    previous_response_id: previousResponseId ?? undefined,
+    stream: true,
+    store: true,
+  };
+  if (model === "gpt-5.2") {
+    payload.temperature = 0.2;
+  }
+
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      model,
-      instructions: instructions || undefined,
-      input,
-      previous_response_id: previousResponseId ?? undefined,
-      stream: true,
-      temperature: 0.2,
-      store: true,
-    }),
+    body: JSON.stringify(payload),
     signal: controller.signal,
   });
 

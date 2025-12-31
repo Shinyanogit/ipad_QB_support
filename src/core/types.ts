@@ -22,6 +22,7 @@ export interface QuestionSnapshot {
 }
 
 export type ChatDock = "left" | "right";
+export type ThemePreference = "system" | "light" | "dark";
 export type ExplanationLevel = "highschool" | "med-junior" | "med-senior";
 
 export interface ChatTemplateSetting {
@@ -48,6 +49,11 @@ export interface Settings {
   chatApiKey: string;
   chatModel: string;
   chatTemplates: ChatTemplateSetting[];
+  chatTemplateCount: number;
+  commonPrompt: string;
+  hintConstraintPrompt: string;
   explanationLevel: ExplanationLevel;
   explanationPrompts: Record<ExplanationLevel, string>;
+  themePreference: ThemePreference;
+  pageAccentEnabled: boolean;
 }

@@ -4,6 +4,7 @@ import type {
   ExplanationLevel,
   PanelPosition,
   Settings,
+  ThemePreference,
 } from "./types";
 
 const MODIFIER_LABELS = ["Ctrl", "Alt", "Shift", "Meta"] as const;
@@ -163,8 +164,13 @@ export const defaultSettings: Settings = {
   chatApiKey: "",
   chatModel: "gpt-5.2",
   chatTemplates: DEFAULT_CHAT_TEMPLATES,
+  chatTemplateCount: 3,
+  commonPrompt: "",
+  hintConstraintPrompt: "※400文字以内で回答してください。",
   explanationLevel: "med-junior",
   explanationPrompts: DEFAULT_EXPLANATION_PROMPTS,
+  themePreference: "system",
+  pageAccentEnabled: true,
 };
 
 export function normalizeSettings(
@@ -175,7 +181,7 @@ export function normalizeSettings(
     typeof input.noteHeaderVisible === "boolean" ? input.noteHeaderVisible : undefined;
   const optionKeys =
     Array.isArray(input.optionKeys) && input.optionKeys.length > 0
-      ? input.optionKeys.map((key) => normalizeSingleKey(key)).filter(Boolean)
+      ? input.optionKeys.map((key) => normalizeShortcut(key)).filter(Boolean)
       : defaultSettings.optionKeys;
   return {
     enabled: typeof input.enabled === "boolean" ? input.enabled : defaultSettings.enabled,
@@ -195,8 +201,8 @@ export function normalizeSettings(
       typeof input.searchVisible === "boolean"
         ? input.searchVisible
         : defaultSettings.searchVisible,
-    navPrevKey: normalizeSingleKey(input.navPrevKey) || defaultSettings.navPrevKey,
-    navNextKey: normalizeSingleKey(input.navNextKey) || defaultSettings.navNextKey,
+    navPrevKey: normalizeShortcut(input.navPrevKey) || defaultSettings.navPrevKey,
+    navNextKey: normalizeShortcut(input.navNextKey) || defaultSettings.navNextKey,
     revealKey: normalizeShortcut(input.revealKey) || defaultSettings.revealKey,
     optionKeys,
     position: isPosition(input.position) ? input.position : defaultSettings.position,
@@ -209,10 +215,33 @@ export function normalizeSettings(
         : defaultSettings.chatApiKey,
     chatModel: normalizeChatModel(input.chatModel) ?? defaultSettings.chatModel,
     chatTemplates: normalizeChatTemplates(input.chatTemplates),
+    chatTemplateCount: (() => {
+      const raw =
+        typeof input.chatTemplateCount === "number"
+          ? Math.floor(input.chatTemplateCount)
+          : defaultSettings.chatTemplateCount;
+      if (Number.isNaN(raw)) return defaultSettings.chatTemplateCount;
+      return Math.min(Math.max(raw, 1), CHAT_TEMPLATE_LIMIT);
+    })(),
+    commonPrompt:
+      typeof input.commonPrompt === "string"
+        ? input.commonPrompt.trim()
+        : defaultSettings.commonPrompt,
+    hintConstraintPrompt:
+      typeof input.hintConstraintPrompt === "string"
+        ? input.hintConstraintPrompt.trim()
+        : defaultSettings.hintConstraintPrompt,
     explanationLevel: isExplanationLevel(input.explanationLevel)
       ? input.explanationLevel
       : defaultSettings.explanationLevel,
     explanationPrompts: normalizeExplanationPrompts(input.explanationPrompts),
+    themePreference: isThemePreference(input.themePreference)
+      ? input.themePreference
+      : defaultSettings.themePreference,
+    pageAccentEnabled:
+      typeof input.pageAccentEnabled === "boolean"
+        ? input.pageAccentEnabled
+        : defaultSettings.pageAccentEnabled,
   };
 }
 
@@ -298,6 +327,10 @@ function normalizeExplanationPrompts(input: unknown): Record<ExplanationLevel, s
         ? raw["med-senior"].trim()
         : fallback["med-senior"],
   };
+}
+
+function isThemePreference(input?: string | null): input is ThemePreference {
+  return input === "system" || input === "light" || input === "dark";
 }
 
 export function normalizeShortcut(input: string | undefined | null): string {

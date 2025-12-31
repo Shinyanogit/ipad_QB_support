@@ -389,21 +389,26 @@
     chatApiKey: "",
     chatModel: "gpt-5.2",
     chatTemplates: DEFAULT_CHAT_TEMPLATES,
+    chatTemplateCount: 3,
+    commonPrompt: "",
+    hintConstraintPrompt: "\u203B400\u6587\u5B57\u4EE5\u5185\u3067\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
     explanationLevel: "med-junior",
-    explanationPrompts: DEFAULT_EXPLANATION_PROMPTS
+    explanationPrompts: DEFAULT_EXPLANATION_PROMPTS,
+    themePreference: "system",
+    pageAccentEnabled: true
   };
   function normalizeSettings(input) {
     if (!input) return { ...defaultSettings };
     const legacyNoteVisible = typeof input.noteHeaderVisible === "boolean" ? input.noteHeaderVisible : void 0;
-    const optionKeys = Array.isArray(input.optionKeys) && input.optionKeys.length > 0 ? input.optionKeys.map((key) => normalizeSingleKey(key)).filter(Boolean) : defaultSettings.optionKeys;
+    const optionKeys = Array.isArray(input.optionKeys) && input.optionKeys.length > 0 ? input.optionKeys.map((key) => normalizeShortcut(key)).filter(Boolean) : defaultSettings.optionKeys;
     return {
       enabled: typeof input.enabled === "boolean" ? input.enabled : defaultSettings.enabled,
       shortcutsEnabled: typeof input.shortcutsEnabled === "boolean" ? input.shortcutsEnabled : defaultSettings.shortcutsEnabled,
       debugEnabled: typeof input.debugEnabled === "boolean" ? input.debugEnabled : defaultSettings.debugEnabled,
       noteVisible: typeof input.noteVisible === "boolean" ? input.noteVisible : legacyNoteVisible ?? defaultSettings.noteVisible,
       searchVisible: typeof input.searchVisible === "boolean" ? input.searchVisible : defaultSettings.searchVisible,
-      navPrevKey: normalizeSingleKey(input.navPrevKey) || defaultSettings.navPrevKey,
-      navNextKey: normalizeSingleKey(input.navNextKey) || defaultSettings.navNextKey,
+      navPrevKey: normalizeShortcut(input.navPrevKey) || defaultSettings.navPrevKey,
+      navNextKey: normalizeShortcut(input.navNextKey) || defaultSettings.navNextKey,
       revealKey: normalizeShortcut(input.revealKey) || defaultSettings.revealKey,
       optionKeys,
       position: isPosition(input.position) ? input.position : defaultSettings.position,
@@ -413,8 +418,17 @@
       chatApiKey: typeof input.chatApiKey === "string" ? input.chatApiKey.trim() : defaultSettings.chatApiKey,
       chatModel: normalizeChatModel(input.chatModel) ?? defaultSettings.chatModel,
       chatTemplates: normalizeChatTemplates(input.chatTemplates),
+      chatTemplateCount: (() => {
+        const raw = typeof input.chatTemplateCount === "number" ? Math.floor(input.chatTemplateCount) : defaultSettings.chatTemplateCount;
+        if (Number.isNaN(raw)) return defaultSettings.chatTemplateCount;
+        return Math.min(Math.max(raw, 1), CHAT_TEMPLATE_LIMIT);
+      })(),
+      commonPrompt: typeof input.commonPrompt === "string" ? input.commonPrompt.trim() : defaultSettings.commonPrompt,
+      hintConstraintPrompt: typeof input.hintConstraintPrompt === "string" ? input.hintConstraintPrompt.trim() : defaultSettings.hintConstraintPrompt,
       explanationLevel: isExplanationLevel(input.explanationLevel) ? input.explanationLevel : defaultSettings.explanationLevel,
-      explanationPrompts: normalizeExplanationPrompts(input.explanationPrompts)
+      explanationPrompts: normalizeExplanationPrompts(input.explanationPrompts),
+      themePreference: isThemePreference(input.themePreference) ? input.themePreference : defaultSettings.themePreference,
+      pageAccentEnabled: typeof input.pageAccentEnabled === "boolean" ? input.pageAccentEnabled : defaultSettings.pageAccentEnabled
     };
   }
   function normalizeChatModel(input) {
@@ -422,23 +436,6 @@
     const trimmed = input.trim();
     if (!trimmed) return null;
     return CHAT_MODEL_OPTIONS.includes(trimmed) ? trimmed : null;
-  }
-  function normalizeSingleKey(input) {
-    if (!input) return "";
-    const trimmed = input.trim();
-    if (!trimmed) return "";
-    if (trimmed === " ") return "Space";
-    if (trimmed.length === 1) return trimmed.toUpperCase();
-    const lower = trimmed.toLowerCase();
-    if (lower === "arrowleft") return "ArrowLeft";
-    if (lower === "arrowright") return "ArrowRight";
-    if (lower === "arrowup") return "ArrowUp";
-    if (lower === "arrowdown") return "ArrowDown";
-    if (lower === "escape" || lower === "esc") return "Escape";
-    if (lower === "enter") return "Enter";
-    if (lower === "tab") return "Tab";
-    if (lower === "backspace") return "Backspace";
-    return trimmed;
   }
   function normalizeChatTemplates(input) {
     const safeDefaults = DEFAULT_CHAT_TEMPLATES.map((template) => ({ ...template }));
@@ -478,6 +475,9 @@
       "med-junior": typeof raw["med-junior"] === "string" && raw["med-junior"].trim() ? raw["med-junior"].trim() : fallback["med-junior"],
       "med-senior": typeof raw["med-senior"] === "string" && raw["med-senior"].trim() ? raw["med-senior"].trim() : fallback["med-senior"]
     };
+  }
+  function isThemePreference(input) {
+    return input === "system" || input === "light" || input === "dark";
   }
   function normalizeShortcut(input) {
     if (!input) return "";
@@ -20924,6 +20924,7 @@ This typically indicates that your device does not have a healthy Internet conne
   var CHAT_TEMPLATE_ID = "qb-support-chat-templates";
   var CHAT_TOGGLE_SHORTCUT = "Ctrl+O";
   var CHAT_NEW_SHORTCUT = "Ctrl+N";
+  var CHAT_TEMPLATE_MAX = 5;
   var QB_ACTION_ORIGIN = "https://input.medilink-study.com";
   var QB_TOP_ORIGIN = "https://qb.medilink-study.com";
   var FIREBASE_SETTINGS_COLLECTION = "qb_support_settings";
@@ -20948,12 +20949,20 @@ This typically indicates that your device does not have a healthy Internet conne
   var chatInput = null;
   var chatSendButton = null;
   var chatStatusField = null;
+  var chatInputWrap = null;
   var chatApiInput = null;
   var chatApiSaveButton = null;
   var chatModelInput = null;
   var chatModelSaveButton = null;
+  var chatSettingsPanel = null;
+  var chatSettingsButton = null;
+  var chatSettingsOpen = false;
   var chatTemplateBar = null;
   var chatTemplateRows = [];
+  var templateCountLabel = null;
+  var templateAddButton = null;
+  var templateRemoveButton = null;
+  var hintQuickButton = null;
   var chatResizer = null;
   var chatHistory = [];
   var chatRequestPending = false;
@@ -20970,6 +20979,7 @@ This typically indicates that your device does not have a healthy Internet conne
   var debugToggle = null;
   var noteToggle = null;
   var searchToggle = null;
+  var pageAccentToggle = null;
   var navPrevInput = null;
   var navNextInput = null;
   var revealInput = null;
@@ -20987,6 +20997,15 @@ This typically indicates that your device does not have a healthy Internet conne
   var remoteSettingsLoadedFor = null;
   var explanationLevelSelect = null;
   var explanationPromptInputs = {};
+  var hintConstraintInput = null;
+  var commonPromptInput = null;
+  var shortcutSectionEl = null;
+  var displaySectionEl = null;
+  var templateSectionEl = null;
+  var explanationSectionEl = null;
+  var authSectionEl = null;
+  var themeSelect = null;
+  var themeQuery = null;
   var start = () => {
     logInjectionOnce();
     ensureMarker();
@@ -21006,6 +21025,7 @@ This typically indicates that your device does not have a healthy Internet conne
     ensureUI();
     ensureChatUI();
     initAuth();
+    ensureThemeListener();
     applySettings();
     refreshQuestionInfo();
     startObservers();
@@ -21014,6 +21034,7 @@ This typically indicates that your device does not have a healthy Internet conne
   }
   async function initFrame() {
     await loadSettings();
+    ensureThemeListener();
     applySettings();
     refreshQuestionInfo();
     startObservers();
@@ -21098,7 +21119,12 @@ This typically indicates that your device does not have a healthy Internet conne
       console.warn("[QB_SUPPORT][auth]", error);
       const err = error;
       const detail = err?.code ? `${err.code}: ${err.message ?? ""}`.trim() : String(error);
-      setAuthStatus(`\u30ED\u30B0\u30A4\u30F3\u5931\u6557: ${detail}`, true);
+      const extensionId = webext.runtime?.id;
+      const domainHint = extensionId ? `chrome-extension://${extensionId}` : "chrome-extension://<extension-id>";
+      const pageOrigin = location.origin;
+      const needsDomainHint = err?.code === "auth/internal-error" || err?.code === "auth/unauthorized-domain";
+      const hint = needsDomainHint ? ` (Firebase\u306EAuthorized domains\u306B ${domainHint} \u3068 ${pageOrigin} \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044)` : "";
+      setAuthStatus(`\u30ED\u30B0\u30A4\u30F3\u5931\u6557: ${detail}${hint}`, true);
     } finally {
       if (button) button.disabled = false;
     }
@@ -21212,6 +21238,7 @@ This typically indicates that your device does not have a healthy Internet conne
     const settingsSection = document.createElement("div");
     settingsSection.className = "qb-support-section";
     settingsSection.appendChild(makeSectionTitle("\u8868\u793A"));
+    displaySectionEl = settingsSection;
     shortcutsToggle = document.createElement("input");
     shortcutsToggle.type = "checkbox";
     shortcutsToggle.className = "qb-support-toggle-input";
@@ -21260,18 +21287,60 @@ This typically indicates that your device does not have a healthy Internet conne
     noteLabel.className = "qb-support-toggle";
     noteLabel.appendChild(noteToggle);
     noteLabel.appendChild(makeSpan("\u30CE\u30FC\u30C8\u8868\u793A"));
+    pageAccentToggle = document.createElement("input");
+    pageAccentToggle.type = "checkbox";
+    pageAccentToggle.className = "qb-support-toggle-input";
+    pageAccentToggle.addEventListener("change", () => {
+      void saveSettings({
+        ...settings,
+        pageAccentEnabled: pageAccentToggle?.checked ?? false
+      });
+    });
+    const pageAccentLabel = document.createElement("label");
+    pageAccentLabel.className = "qb-support-toggle";
+    pageAccentLabel.appendChild(pageAccentToggle);
+    pageAccentLabel.appendChild(makeSpan("\u30DA\u30FC\u30B8\u306B\u7DD1\u30A2\u30AF\u30BB\u30F3\u30C8"));
+    themeSelect = document.createElement("select");
+    themeSelect.className = "qb-support-select";
+    [
+      { value: "system", label: "\u30B7\u30B9\u30C6\u30E0" },
+      { value: "light", label: "\u30E9\u30A4\u30C8" },
+      { value: "dark", label: "\u30C0\u30FC\u30AF" }
+    ].forEach((optionData) => {
+      const option = document.createElement("option");
+      option.value = optionData.value;
+      option.textContent = optionData.label;
+      themeSelect?.appendChild(option);
+    });
+    themeSelect.addEventListener("change", () => {
+      const nextTheme = themeSelect?.value ?? "system";
+      void saveSettings({
+        ...settings,
+        themePreference: nextTheme
+      });
+    });
+    const themeLabel = document.createElement("label");
+    themeLabel.className = "qb-support-field";
+    themeLabel.appendChild(makeSpan("\u30C6\u30FC\u30DE"));
+    themeLabel.appendChild(themeSelect);
     const shortcutSection = document.createElement("div");
     shortcutSection.className = "qb-support-section";
     shortcutSection.appendChild(makeSectionTitle("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8"));
+    shortcutSectionEl = shortcutSection;
     const buildKeyField = (labelText) => {
       const input = document.createElement("input");
       input.type = "text";
       input.className = "qb-support-input";
-      input.placeholder = "\u4F8B: A";
+      input.placeholder = "\u4F8B: A / Ctrl+A";
       input.addEventListener("keydown", (event) => {
         if (event.key === "Tab") return;
+        if (event.key === "Backspace" || event.key === "Delete") {
+          input.value = "";
+          return;
+        }
         event.preventDefault();
-        input.value = normalizeKey(event.key);
+        const shortcut = shortcutFromEvent(event);
+        if (shortcut) input.value = shortcut;
       });
       const label = document.createElement("label");
       label.className = "qb-support-field";
@@ -21321,11 +21390,12 @@ This typically indicates that your device does not have a healthy Internet conne
     const saveButton = document.createElement("button");
     saveButton.type = "button";
     saveButton.className = "qb-support-save";
+    applyButtonVariant(saveButton, "primary");
     saveButton.textContent = "\u4FDD\u5B58";
     saveButton.addEventListener("click", () => {
-      const optionKeys = optionInputs.map((input) => normalizeKey(input.value)).filter(Boolean);
-      const navPrevKey = normalizeKey(navPrevInput?.value ?? "");
-      const navNextKey = normalizeKey(navNextInput?.value ?? "");
+      const optionKeys = optionInputs.map((input) => normalizeShortcut(input.value)).filter(Boolean);
+      const navPrevKey = normalizeShortcut(navPrevInput?.value ?? "");
+      const navNextKey = normalizeShortcut(navNextInput?.value ?? "");
       const revealKey = normalizeShortcut(revealInput?.value ?? "");
       if (!navPrevKey || !navNextKey || !revealKey || optionKeys.length === 0) {
         setStatus("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044", true);
@@ -21347,6 +21417,8 @@ This typically indicates that your device does not have a healthy Internet conne
     statusField.className = "qb-support-status";
     settingsSection.appendChild(searchLabel);
     settingsSection.appendChild(noteLabel);
+    settingsSection.appendChild(pageAccentLabel);
+    settingsSection.appendChild(themeLabel);
     settingsSection.appendChild(statusField);
     shortcutSection.appendChild(toggleShortcutLabel);
     shortcutSection.appendChild(navPrevField.label);
@@ -21357,6 +21429,31 @@ This typically indicates that your device does not have a healthy Internet conne
     const templateSection = document.createElement("div");
     templateSection.className = "qb-support-section";
     templateSection.appendChild(makeSectionTitle("\u30C1\u30E3\u30C3\u30C8\u30C6\u30F3\u30D7\u30EC"));
+    templateSectionEl = templateSection;
+    const templateControls = document.createElement("div");
+    templateControls.className = "qb-support-template-controls";
+    templateCountLabel = document.createElement("span");
+    templateCountLabel.className = "qb-support-template-count";
+    templateAddButton = document.createElement("button");
+    templateAddButton.type = "button";
+    templateAddButton.className = "qb-support-template-control";
+    templateAddButton.textContent = "\u8FFD\u52A0";
+    applyButtonVariant(templateAddButton, "primary");
+    templateAddButton.addEventListener("click", () => {
+      updateTemplateCount(settings.chatTemplateCount + 1);
+    });
+    templateRemoveButton = document.createElement("button");
+    templateRemoveButton.type = "button";
+    templateRemoveButton.className = "qb-support-template-control";
+    templateRemoveButton.textContent = "\u524A\u9664";
+    applyButtonVariant(templateRemoveButton, "ghost");
+    templateRemoveButton.addEventListener("click", () => {
+      updateTemplateCount(settings.chatTemplateCount - 1);
+    });
+    templateControls.appendChild(templateCountLabel);
+    templateControls.appendChild(templateAddButton);
+    templateControls.appendChild(templateRemoveButton);
+    templateSection.appendChild(templateControls);
     const templateList = document.createElement("div");
     templateList.className = "qb-support-template-list";
     chatTemplateRows = [];
@@ -21415,6 +21512,7 @@ This typically indicates that your device does not have a healthy Internet conne
       row.appendChild(fields);
       templateList.appendChild(row);
       chatTemplateRows.push({
+        container: row,
         enabled: enabledInput,
         label: labelInput,
         shortcut: shortcutInput,
@@ -21424,6 +21522,7 @@ This typically indicates that your device does not have a healthy Internet conne
     const templateSaveButton = document.createElement("button");
     templateSaveButton.type = "button";
     templateSaveButton.className = "qb-support-save qb-support-template-save";
+    applyButtonVariant(templateSaveButton, "primary");
     templateSaveButton.textContent = "\u30C6\u30F3\u30D7\u30EC\u4FDD\u5B58";
     templateSaveButton.addEventListener("click", () => {
       const nextTemplates = chatTemplateRows.map((row, index) => {
@@ -21441,17 +21540,37 @@ This typically indicates that your device does not have a healthy Internet conne
         setStatus("\u6709\u52B9\u306A\u30C6\u30F3\u30D7\u30EC\u306F\u30D7\u30ED\u30F3\u30D7\u30C8\u5FC5\u9808\u3067\u3059", true);
         return;
       }
+      const hintConstraintPrompt = hintConstraintInput?.value.trim() ?? "";
       void saveSettings({
         ...settings,
-        chatTemplates: nextTemplates
+        chatTemplates: nextTemplates,
+        hintConstraintPrompt
       });
       setStatus("\u30C6\u30F3\u30D7\u30EC\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F", false);
     });
     templateSection.appendChild(templateList);
+    const hintConstraintLabel = document.createElement("label");
+    hintConstraintLabel.className = "qb-support-field qb-support-template-field";
+    hintConstraintLabel.appendChild(makeSpan("\u30D2\u30F3\u30C8\u5236\u7D04"));
+    hintConstraintInput = document.createElement("textarea");
+    hintConstraintInput.className = "qb-support-template-prompt qb-support-hint-constraint";
+    hintConstraintInput.rows = 2;
+    hintConstraintInput.placeholder = "\u4F8B: \u203B400\u6587\u5B57\u4EE5\u5185\u3067\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
+    hintConstraintLabel.appendChild(hintConstraintInput);
+    templateSection.appendChild(hintConstraintLabel);
     templateSection.appendChild(templateSaveButton);
     const explanationSection = document.createElement("div");
     explanationSection.className = "qb-support-section";
-    explanationSection.appendChild(makeSectionTitle("\u89E3\u8AAC\u30EC\u30D9\u30EB"));
+    explanationSection.appendChild(makeSectionTitle("\u30D7\u30ED\u30F3\u30D7\u30C8"));
+    explanationSectionEl = explanationSection;
+    const commonPromptLabel = document.createElement("label");
+    commonPromptLabel.className = "qb-support-field qb-support-template-field";
+    commonPromptLabel.appendChild(makeSpan("\u5171\u901A\u30D7\u30ED\u30F3\u30D7\u30C8"));
+    commonPromptInput = document.createElement("textarea");
+    commonPromptInput.className = "qb-support-template-prompt qb-support-common-prompt";
+    commonPromptInput.rows = 3;
+    commonPromptInput.placeholder = "\u5168\u3066\u306E\u4F1A\u8A71\u306B\u4ED8\u4E0E\u3059\u308B\u5171\u901A\u30D7\u30ED\u30F3\u30D7\u30C8";
+    commonPromptLabel.appendChild(commonPromptInput);
     explanationLevelSelect = document.createElement("select");
     explanationLevelSelect.className = "qb-support-select qb-support-explanation-level";
     Object.entries(EXPLANATION_LEVEL_LABELS).forEach(([value, label]) => {
@@ -21488,9 +21607,11 @@ This typically indicates that your device does not have a healthy Internet conne
     const explanationSaveButton = document.createElement("button");
     explanationSaveButton.type = "button";
     explanationSaveButton.className = "qb-support-save qb-support-explanation-save";
+    applyButtonVariant(explanationSaveButton, "primary");
     explanationSaveButton.textContent = "\u89E3\u8AAC\u8A2D\u5B9A\u3092\u4FDD\u5B58";
     explanationSaveButton.addEventListener("click", () => {
       const level = explanationLevelSelect?.value ?? "med-junior";
+      const commonPrompt = commonPromptInput?.value.trim() ?? "";
       const nextPrompts = {
         highschool: explanationPromptInputs.highschool?.value.trim() ?? "",
         "med-junior": explanationPromptInputs["med-junior"]?.value.trim() ?? "",
@@ -21502,17 +21623,20 @@ This typically indicates that your device does not have a healthy Internet conne
       }
       void saveSettings({
         ...settings,
+        commonPrompt,
         explanationLevel: level,
         explanationPrompts: nextPrompts
       });
       setStatus("\u89E3\u8AAC\u30EC\u30D9\u30EB\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F", false);
     });
+    explanationSection.appendChild(commonPromptLabel);
     explanationSection.appendChild(explanationSelectLabel);
     explanationSection.appendChild(promptWrap);
     explanationSection.appendChild(explanationSaveButton);
     const authSection = document.createElement("div");
     authSection.className = "qb-support-section";
-    authSection.appendChild(makeSectionTitle("\u30A2\u30AB\u30A6\u30F3\u30C8"));
+    authSection.appendChild(makeSectionTitle("\u8A8D\u8A3C"));
+    authSectionEl = authSection;
     authStatusField = document.createElement("div");
     authStatusField.className = "qb-support-auth-status";
     authStatusField.textContent = "\u672A\u30ED\u30B0\u30A4\u30F3";
@@ -21524,6 +21648,7 @@ This typically indicates that your device does not have a healthy Internet conne
     authSignInButton = document.createElement("button");
     authSignInButton.type = "button";
     authSignInButton.className = "qb-support-save qb-support-auth-button";
+    applyButtonVariant(authSignInButton, "primary");
     authSignInButton.textContent = "Google\u3067\u30ED\u30B0\u30A4\u30F3";
     authSignInButton.addEventListener("click", () => {
       void handleAuthSignIn();
@@ -21531,6 +21656,7 @@ This typically indicates that your device does not have a healthy Internet conne
     authSignOutButton = document.createElement("button");
     authSignOutButton.type = "button";
     authSignOutButton.className = "qb-support-save qb-support-auth-button qb-support-auth-signout";
+    applyButtonVariant(authSignOutButton, "danger");
     authSignOutButton.textContent = "\u30ED\u30B0\u30A2\u30A6\u30C8";
     authSignOutButton.style.display = "none";
     authSignOutButton.addEventListener("click", () => {
@@ -21600,6 +21726,12 @@ This typically indicates that your device does not have a healthy Internet conne
       chatModelSaveButton = chatRoot.querySelector(
         ".qb-support-chat-model-save"
       );
+      chatSettingsPanel = chatRoot.querySelector(
+        ".qb-support-chat-settings"
+      );
+      chatSettingsButton = chatRoot.querySelector(
+        ".qb-support-chat-settings-btn"
+      );
       if (chatApiInput) {
         chatApiInput.classList.add("qb-support-chat-api-key");
       }
@@ -21633,10 +21765,59 @@ This typically indicates that your device does not have a healthy Internet conne
           }
         }
       }
+      if (!chatSettingsButton) {
+        const actions2 = chatRoot.querySelector(".qb-support-chat-actions");
+        if (actions2) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "qb-support-chat-settings-btn";
+          button.textContent = "\u8A2D\u5B9A";
+          button.setAttribute("aria-label", "\u30C1\u30E3\u30C3\u30C8\u8A2D\u5B9A");
+          actions2.insertBefore(button, actions2.firstChild);
+          chatSettingsButton = button;
+        }
+      }
+      if (!chatSettingsPanel) {
+        const existingPanel = chatRoot.querySelector(".qb-support-chat-settings");
+        if (existingPanel instanceof HTMLDivElement) {
+          chatSettingsPanel = existingPanel;
+        } else {
+          const panel2 = document.createElement("div");
+          panel2.className = "qb-support-chat-settings";
+          panel2.dataset.open = "false";
+          const apiSection2 = chatRoot.querySelector(".qb-support-chat-api");
+          if (apiSection2) {
+            apiSection2.classList.add("qb-support-chat-settings-section");
+            panel2.appendChild(apiSection2);
+          }
+          if (chatPanel && chatMessagesEl) {
+            chatPanel.insertBefore(panel2, chatMessagesEl);
+          } else {
+            chatPanel?.appendChild(panel2);
+          }
+          chatSettingsPanel = panel2;
+        }
+      }
+      if (chatSettingsPanel) {
+        chatSettingsOpen = chatSettingsPanel.dataset.open === "true";
+      }
       attachChatModelHandlers();
       ensureChatToggle();
       ensureChatResizer();
       ensureChatTemplates();
+      if (chatSettingsButton) {
+        chatSettingsButton.dataset.shortcut = "Ctrl+S";
+        applyButtonVariant(chatSettingsButton, "ghost");
+      }
+      const chatNewButton = chatRoot.querySelector(
+        ".qb-support-chat-new"
+      );
+      applyButtonVariant(chatNewButton, "ghost");
+      applyButtonVariant(chatApiSaveButton, "primary");
+      applyButtonVariant(chatModelSaveButton, "primary");
+      applyButtonVariant(chatSendButton, "primary");
+      attachChatSettingsHandlers();
+      populateChatSettingsPanel();
       return;
     }
     chatRoot = document.createElement("div");
@@ -21650,6 +21831,14 @@ This typically indicates that your device does not have a healthy Internet conne
     title.textContent = "QB Chat";
     const actions = document.createElement("div");
     actions.className = "qb-support-chat-actions";
+    const settingsButton = document.createElement("button");
+    settingsButton.type = "button";
+    settingsButton.className = "qb-support-chat-settings-btn";
+    settingsButton.textContent = "\u8A2D\u5B9A";
+    settingsButton.setAttribute("aria-label", "\u30C1\u30E3\u30C3\u30C8\u8A2D\u5B9A");
+    chatSettingsButton = settingsButton;
+    settingsButton.dataset.shortcut = "Ctrl+S";
+    applyButtonVariant(settingsButton, "ghost");
     const resetButton = document.createElement("button");
     resetButton.type = "button";
     resetButton.className = "qb-support-chat-new";
@@ -21658,11 +21847,16 @@ This typically indicates that your device does not have a healthy Internet conne
     resetButton.addEventListener("click", () => {
       resetChatHistory("\u4F1A\u8A71\u3092\u30EA\u30BB\u30C3\u30C8\u3057\u307E\u3057\u305F");
     });
+    applyButtonVariant(resetButton, "ghost");
+    actions.appendChild(settingsButton);
     actions.appendChild(resetButton);
     header.appendChild(title);
     header.appendChild(actions);
+    chatSettingsPanel = document.createElement("div");
+    chatSettingsPanel.className = "qb-support-chat-settings";
+    chatSettingsPanel.dataset.open = "false";
     const apiSection = document.createElement("div");
-    apiSection.className = "qb-support-chat-api";
+    apiSection.className = "qb-support-chat-api qb-support-chat-settings-section";
     const apiLabel = document.createElement("label");
     apiLabel.textContent = "OpenAI API Key";
     apiLabel.className = "qb-support-chat-api-label";
@@ -21674,6 +21868,7 @@ This typically indicates that your device does not have a healthy Internet conne
     chatApiSaveButton.type = "button";
     chatApiSaveButton.className = "qb-support-chat-save qb-support-chat-api-save";
     chatApiSaveButton.textContent = "\u4FDD\u5B58";
+    applyButtonVariant(chatApiSaveButton, "primary");
     chatApiSaveButton.addEventListener("click", () => {
       const nextKey = chatApiInput?.value.trim() ?? "";
       if (!nextKey) {
@@ -21696,6 +21891,7 @@ This typically indicates that your device does not have a healthy Internet conne
     chatModelSaveButton.type = "button";
     chatModelSaveButton.className = "qb-support-chat-save qb-support-chat-model-save";
     chatModelSaveButton.textContent = "\u9069\u7528";
+    applyButtonVariant(chatModelSaveButton, "primary");
     apiSection.appendChild(apiLabel);
     apiSection.appendChild(chatApiInput);
     apiSection.appendChild(chatApiSaveButton);
@@ -21703,12 +21899,14 @@ This typically indicates that your device does not have a healthy Internet conne
     apiSection.appendChild(chatModelInput);
     apiSection.appendChild(chatModelSaveButton);
     attachChatModelHandlers();
+    chatSettingsPanel.appendChild(apiSection);
     chatMessagesEl = document.createElement("div");
     chatMessagesEl.className = "qb-support-chat-messages";
     chatStatusField = document.createElement("div");
     chatStatusField.className = "qb-support-chat-status";
     const inputWrap = document.createElement("div");
     inputWrap.className = "qb-support-chat-input-wrap";
+    chatInputWrap = inputWrap;
     chatInput = document.createElement("textarea");
     chatInput.className = "qb-support-chat-textarea";
     chatInput.placeholder = "\u8CEA\u554F\u3092\u5165\u529B...";
@@ -21717,10 +21915,11 @@ This typically indicates that your device does not have a healthy Internet conne
     chatSendButton.type = "button";
     chatSendButton.className = "qb-support-chat-send";
     chatSendButton.textContent = "\u9001\u4FE1";
+    applyButtonVariant(chatSendButton, "primary");
     inputWrap.appendChild(chatInput);
     inputWrap.appendChild(chatSendButton);
     chatPanel.appendChild(header);
-    chatPanel.appendChild(apiSection);
+    chatPanel.appendChild(chatSettingsPanel);
     chatPanel.appendChild(chatMessagesEl);
     chatPanel.appendChild(chatStatusField);
     chatPanel.appendChild(inputWrap);
@@ -21729,6 +21928,8 @@ This typically indicates that your device does not have a healthy Internet conne
     ensureChatToggle();
     ensureChatResizer();
     ensureChatTemplates();
+    attachChatSettingsHandlers();
+    populateChatSettingsPanel();
   }
   function ensureChatResizer() {
     const existing = document.getElementById(CHAT_RESIZER_ID);
@@ -21775,6 +21976,9 @@ This typically indicates that your device does not have a healthy Internet conne
     updateChatToggleLabel();
     applyChatDockLayout();
     ensureChatLayoutHandler();
+    if (!settings.chatOpen && chatSettingsOpen) {
+      toggleChatSettings(false);
+    }
     if (chatApiInput && document.activeElement !== chatApiInput) {
       chatApiInput.value = "";
       chatApiInput.placeholder = settings.chatApiKey ? "\u4FDD\u5B58\u6E08\u307F (\u518D\u5165\u529B\u3067\u66F4\u65B0)" : "sk-...";
@@ -21782,6 +21986,26 @@ This typically indicates that your device does not have a healthy Internet conne
     if (chatModelInput && document.activeElement !== chatModelInput) {
       chatModelInput.value = settings.chatModel;
     }
+  }
+  function ensureThemeListener() {
+    if (themeQuery) return;
+    themeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    themeQuery.addEventListener("change", () => {
+      if (settings.themePreference === "system") {
+        applyTheme();
+      }
+    });
+  }
+  function resolveTheme() {
+    if (settings.themePreference === "system") {
+      return themeQuery?.matches ? "dark" : "light";
+    }
+    return settings.themePreference === "dark" ? "dark" : "light";
+  }
+  function applyTheme() {
+    const docEl = document.documentElement;
+    docEl.dataset.qbTheme = resolveTheme();
+    docEl.dataset.qbAccent = settings.pageAccentEnabled ? "on" : "off";
   }
   function ensureChatLayoutHandler() {
     if (chatLayoutBound) return;
@@ -21798,15 +22022,100 @@ This typically indicates that your device does not have a healthy Internet conne
       const bar = document.createElement("div");
       bar.id = CHAT_TEMPLATE_ID;
       bar.className = "qb-support-chat-templates";
-      document.body.appendChild(bar);
       chatTemplateBar = bar;
+    }
+    if (chatInputWrap && chatTemplateBar.parentElement !== chatInputWrap) {
+      const anchor = chatInputWrap.firstChild;
+      if (anchor) {
+        chatInputWrap.insertBefore(chatTemplateBar, anchor);
+      } else {
+        chatInputWrap.appendChild(chatTemplateBar);
+      }
     }
     updateChatTemplatesUI();
   }
   function getEnabledChatTemplates() {
-    return (settings.chatTemplates ?? []).filter(
-      (template) => template.enabled && template.prompt.trim()
-    );
+    const count = getTemplateCount();
+    return (settings.chatTemplates ?? []).slice(0, count).filter((template) => template.enabled && template.prompt.trim());
+  }
+  function getTemplateCount() {
+    const raw = settings.chatTemplateCount ?? 0;
+    if (!raw) return Math.min(Math.max(1, settings.chatTemplates?.length ?? 1), CHAT_TEMPLATE_MAX);
+    return Math.min(Math.max(raw, 1), CHAT_TEMPLATE_MAX);
+  }
+  function updateTemplateControls() {
+    if (templateCountLabel) {
+      templateCountLabel.textContent = `\u30C6\u30F3\u30D7\u30EC\u6570: ${getTemplateCount()}`;
+    }
+    if (templateAddButton) {
+      templateAddButton.disabled = getTemplateCount() >= CHAT_TEMPLATE_MAX;
+    }
+    if (templateRemoveButton) {
+      templateRemoveButton.disabled = getTemplateCount() <= 1;
+    }
+  }
+  function updateTemplateCount(nextCount) {
+    const clamped = Math.min(Math.max(nextCount, 1), CHAT_TEMPLATE_MAX);
+    if (clamped === getTemplateCount()) return;
+    const nextTemplates = (settings.chatTemplates ?? []).map((template) => ({ ...template }));
+    for (let i = clamped; i < nextTemplates.length; i += 1) {
+      nextTemplates[i].enabled = false;
+    }
+    void saveSettings({
+      ...settings,
+      chatTemplateCount: clamped,
+      chatTemplates: nextTemplates
+    });
+  }
+  function getHintTemplate() {
+    const hintPhrase = "\u7D76\u5999\u306A\u30D2\u30F3\u30C8";
+    for (const template of getEnabledChatTemplates()) {
+      const label = template.label ?? "";
+      const prompt = template.prompt ?? "";
+      if (label.includes("\u30D2\u30F3\u30C8") || label.includes(hintPhrase) || prompt.includes(hintPhrase)) {
+        return template;
+      }
+    }
+    return null;
+  }
+  function updateHintQuickButton() {
+    if (window !== window.top) return;
+    const template = getHintTemplate();
+    if (!template) {
+      if (hintQuickButton) {
+        hintQuickButton.remove();
+        hintQuickButton = null;
+      }
+      return;
+    }
+    const revealButton = getAnswerRevealButton(document);
+    if (!revealButton) {
+      if (hintQuickButton) {
+        hintQuickButton.remove();
+        hintQuickButton = null;
+      }
+      return;
+    }
+    if (!hintQuickButton) {
+      hintQuickButton = document.createElement("button");
+      hintQuickButton.type = "button";
+      hintQuickButton.className = "qb-support-chat-template-btn qb-support-hint-quick";
+      applyButtonVariant(hintQuickButton, "accent");
+    }
+    hintQuickButton.textContent = "\u30D2\u30F3\u30C8";
+    if (template.shortcut) {
+      hintQuickButton.dataset.shortcut = template.shortcut;
+    } else {
+      hintQuickButton.removeAttribute("data-shortcut");
+    }
+    hintQuickButton.onclick = () => {
+      void sendTemplateMessage(template);
+    };
+    const parent = revealButton.parentElement;
+    if (!parent) return;
+    if (hintQuickButton.parentElement !== parent || hintQuickButton.nextSibling !== revealButton) {
+      parent.insertBefore(hintQuickButton, revealButton);
+    }
   }
   function updateChatTemplatesUI() {
     if (!chatTemplateBar) return;
@@ -21814,6 +22123,7 @@ This typically indicates that your device does not have a healthy Internet conne
     chatTemplateBar.innerHTML = "";
     if (templates.length === 0) {
       chatTemplateBar.style.display = "none";
+      updateHintQuickButton();
       return;
     }
     chatTemplateBar.style.display = "flex";
@@ -21821,15 +22131,17 @@ This typically indicates that your device does not have a healthy Internet conne
       const button = document.createElement("button");
       button.type = "button";
       button.className = "qb-support-chat-template-btn";
+      applyButtonVariant(button, "accent");
       button.textContent = template.label || `\u30C6\u30F3\u30D7\u30EC${index + 1}`;
       if (template.shortcut) {
         button.dataset.shortcut = template.shortcut;
       }
       button.addEventListener("click", () => {
-        void sendTemplateMessage(template.prompt);
+        void sendTemplateMessage(template);
       });
       chatTemplateBar.appendChild(button);
     });
+    updateHintQuickButton();
   }
   function createChatModelSelect() {
     const select = document.createElement("select");
@@ -21863,8 +22175,40 @@ This typically indicates that your device does not have a healthy Internet conne
       });
     }
   }
-  async function sendTemplateMessage(message) {
-    if (!message.trim()) return;
+  function attachChatSettingsHandlers() {
+    if (!chatSettingsButton) return;
+    if (chatSettingsButton.dataset.handlers === "true") return;
+    chatSettingsButton.dataset.handlers = "true";
+    chatSettingsButton.addEventListener("click", () => {
+      toggleChatSettings();
+    });
+  }
+  function toggleChatSettings(force) {
+    if (!chatSettingsPanel || !chatSettingsButton) return;
+    chatSettingsOpen = typeof force === "boolean" ? force : !chatSettingsOpen;
+    chatSettingsPanel.dataset.open = chatSettingsOpen ? "true" : "false";
+    chatSettingsButton.dataset.open = chatSettingsOpen ? "true" : "false";
+    chatSettingsButton.setAttribute("aria-expanded", chatSettingsOpen ? "true" : "false");
+  }
+  function populateChatSettingsPanel() {
+    if (!chatSettingsPanel) return;
+    if (chatSettingsPanel.dataset.populated === "true") return;
+    const sections = [
+      authSectionEl,
+      displaySectionEl,
+      shortcutSectionEl,
+      explanationSectionEl,
+      templateSectionEl
+    ];
+    sections.forEach((section) => {
+      if (section) chatSettingsPanel?.appendChild(section);
+    });
+    chatSettingsPanel.dataset.populated = "true";
+  }
+  async function sendTemplateMessage(template) {
+    const rawMessage = typeof template === "string" ? template : template.prompt;
+    if (!rawMessage.trim()) return;
+    const message = applyTemplateConstraints(rawMessage, template);
     if (!settings.chatApiKey) {
       setChatStatus("API\u30AD\u30FC\u3092\u8A2D\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044", true);
       return;
@@ -21876,6 +22220,22 @@ This typically indicates that your device does not have a healthy Internet conne
     if (!chatInput) return;
     chatInput.value = message;
     void handleChatSend();
+  }
+  function applyTemplateConstraints(message, template) {
+    const label = typeof template === "string" ? "" : template.label;
+    const hintPhrase = "\u7D76\u5999\u306A\u30D2\u30F3\u30C8";
+    const needsLimit = label && label.includes(hintPhrase) || message.includes(hintPhrase);
+    if (!needsLimit) return message;
+    const constraint = settings.hintConstraintPrompt?.trim();
+    if (!constraint) return message;
+    if (message.includes(constraint)) return message;
+    return `${message}
+
+${constraint}`;
+  }
+  function applyButtonVariant(button, variant) {
+    if (!button) return;
+    button.classList.add("qb-support-btn", `qb-support-btn--${variant}`);
   }
   function applyChatDockLayout() {
     if (window !== window.top) return;
@@ -22092,19 +22452,32 @@ This typically indicates that your device does not have a healthy Internet conne
     message.className = `qb-support-chat-msg is-${role}`;
     if (options?.pending) message.classList.add("is-pending");
     setChatMessageContent(message, role, content);
+    if (role === "assistant") {
+      ensureCopyButton(message);
+    }
+    if (role === "user") {
+      applyUserMessageCollapse(message, content);
+    }
     chatMessagesEl.appendChild(message);
     chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
     return message;
   }
   function setChatMessageContent(message, role, content) {
+    message.dataset.raw = content;
+    let contentEl = message.querySelector(".qb-support-chat-content");
+    if (!contentEl) {
+      contentEl = document.createElement("div");
+      contentEl.className = "qb-support-chat-content";
+      message.insertBefore(contentEl, message.firstChild);
+    }
     if (role === "assistant") {
-      message.innerHTML = renderMarkdown(content);
+      contentEl.innerHTML = renderMarkdown(content);
     } else {
-      message.textContent = content;
+      contentEl.textContent = content;
     }
   }
   function renderMarkdown(text) {
-    const escaped = escapeHtml(text);
+    const escaped = escapeHtml(text.replace(/\r\n/g, "\n"));
     const codeBlocks = [];
     const withBlocks = escaped.replace(/```([\s\S]*?)```/g, (_, code) => {
       const block = `<pre class="qb-support-code"><code>${code.trim()}</code></pre>`;
@@ -22112,6 +22485,12 @@ This typically indicates that your device does not have a healthy Internet conne
       return `@@QB_CODEBLOCK_${codeBlocks.length - 1}@@`;
     });
     let html = withBlocks;
+    html = html.replace(/^######\s+(.+)$/gm, '<h6 class="qb-support-md-h6">$1</h6>');
+    html = html.replace(/^#####\s+(.+)$/gm, '<h5 class="qb-support-md-h5">$1</h5>');
+    html = html.replace(/^####\s+(.+)$/gm, '<h4 class="qb-support-md-h4">$1</h4>');
+    html = html.replace(/^###\s+(.+)$/gm, '<h3 class="qb-support-md-h3">$1</h3>');
+    html = html.replace(/^##\s+(.+)$/gm, '<h2 class="qb-support-md-h2">$1</h2>');
+    html = html.replace(/^#\s+(.+)$/gm, '<h1 class="qb-support-md-h1">$1</h1>');
     html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
     html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
     html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
@@ -22142,12 +22521,63 @@ This typically indicates that your device does not have a healthy Internet conne
   }
   function setChatMessageMeta(message, meta) {
     let metaEl = message.querySelector(".qb-support-chat-meta");
+    const copyButton = message.querySelector(".qb-support-chat-copy");
     if (!metaEl) {
       metaEl = document.createElement("div");
       metaEl.className = "qb-support-chat-meta";
-      message.appendChild(metaEl);
+      if (copyButton) {
+        message.insertBefore(metaEl, copyButton);
+      } else {
+        message.appendChild(metaEl);
+      }
     }
     metaEl.textContent = meta;
+  }
+  function ensureCopyButton(message) {
+    if (message.querySelector(".qb-support-chat-copy")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "qb-support-chat-copy";
+    applyButtonVariant(button, "ghost");
+    button.textContent = "\u30B3\u30D4\u30FC";
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const text = message.dataset.raw ?? "";
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        button.textContent = "\u30B3\u30D4\u30FC\u6E08\u307F";
+        window.setTimeout(() => {
+          button.textContent = "\u30B3\u30D4\u30FC";
+        }, 1200);
+      } catch {
+        button.textContent = "\u5931\u6557";
+        window.setTimeout(() => {
+          button.textContent = "\u30B3\u30D4\u30FC";
+        }, 1200);
+      }
+    });
+    message.appendChild(button);
+  }
+  function applyUserMessageCollapse(message, content) {
+    const words = content.trim().split(/\s+/).filter(Boolean);
+    if (words.length <= 400) return;
+    const preview = `${words.slice(0, 400).join(" ")} \u2026 (\u30AF\u30EA\u30C3\u30AF\u3067\u5C55\u958B)`;
+    const contentEl = message.querySelector(".qb-support-chat-content");
+    if (!contentEl) return;
+    message.classList.add("is-collapsible", "is-collapsed");
+    contentEl.textContent = preview;
+    message.dataset.full = content;
+    message.dataset.preview = preview;
+    message.addEventListener("click", () => {
+      const collapsed = message.classList.toggle("is-collapsed");
+      const nextText = collapsed ? message.dataset.preview : message.dataset.full;
+      if (nextText) {
+        const targetEl = message.querySelector(".qb-support-chat-content");
+        if (targetEl) targetEl.textContent = nextText;
+      }
+    });
   }
   var MODEL_PRICING_USD_PER_1M = {
     "gpt-5.2": { input: 10, output: 30 },
@@ -22195,10 +22625,12 @@ This typically indicates that your device does not have a healthy Internet conne
     const levelKey = settings.explanationLevel ?? "med-junior";
     const levelLabel = EXPLANATION_LEVEL_LABELS[levelKey] ?? levelKey;
     const prompt = settings.explanationPrompts?.[levelKey] ?? "";
+    const commonPrompt = settings.commonPrompt?.trim() ?? "";
     return [
       "\u3042\u306A\u305F\u306FQB\u554F\u984C\u96C6\u306E\u5B66\u7FD2\u652F\u63F4\u30A2\u30B7\u30B9\u30BF\u30F3\u30C8\u3067\u3059\u3002",
       "\u4E0E\u3048\u3089\u308C\u305F\u554F\u984C\u6587\u30FB\u9078\u629E\u80A2\u30FB\u6DFB\u4ED8\u753B\u50CF\u306B\u57FA\u3065\u3044\u3066\u3001\u65E5\u672C\u8A9E\u3067\u7C21\u6F54\u306B\u7B54\u3048\u3066\u304F\u3060\u3055\u3044\u3002",
       "\u60C5\u5831\u304C\u4E0D\u8DB3\u3057\u3066\u3044\u308B\u5834\u5408\u306F\u3001\u305D\u306E\u65E8\u3092\u4F1D\u3048\u3066\u304F\u3060\u3055\u3044\u3002",
+      commonPrompt,
       `\u89E3\u8AAC\u30EC\u30D9\u30EB: ${levelLabel}`,
       prompt
     ].join("\n");
@@ -22458,13 +22890,21 @@ This typically indicates that your device does not have a healthy Internet conne
     if (debugToggle) debugToggle.checked = settings.debugEnabled;
     if (searchToggle) searchToggle.checked = settings.searchVisible;
     if (noteToggle) noteToggle.checked = settings.noteVisible;
+    if (pageAccentToggle) pageAccentToggle.checked = settings.pageAccentEnabled;
     if (navPrevInput) navPrevInput.value = settings.navPrevKey;
     if (navNextInput) navNextInput.value = settings.navNextKey;
     if (revealInput) revealInput.value = settings.revealKey;
+    if (themeSelect) themeSelect.value = settings.themePreference;
     optionInputs.forEach((input, index) => {
       input.value = settings.optionKeys[index] ?? "";
     });
     syncTemplateSettingsUI();
+    if (hintConstraintInput) {
+      hintConstraintInput.value = settings.hintConstraintPrompt ?? "";
+    }
+    if (commonPromptInput) {
+      commonPromptInput.value = settings.commonPrompt ?? "";
+    }
     if (explanationLevelSelect) {
       explanationLevelSelect.value = settings.explanationLevel;
     }
@@ -22476,18 +22916,22 @@ This typically indicates that your device does not have a healthy Internet conne
     });
     applySidebarVisibility(settings.searchVisible, settings.noteVisible);
     applyChatSettings();
+    applyTheme();
     updateChatTemplatesUI();
   }
   function syncTemplateSettingsUI() {
     if (!chatTemplateRows.length) return;
     const templates = settings.chatTemplates ?? [];
+    const count = getTemplateCount();
     chatTemplateRows.forEach((row, index) => {
       const template = templates[index];
       row.enabled.checked = template?.enabled ?? false;
       row.label.value = template?.label ?? `\u30C6\u30F3\u30D7\u30EC${index + 1}`;
       row.shortcut.value = template?.shortcut ?? "";
       row.prompt.value = template?.prompt ?? "";
+      row.container.style.display = index < count ? "block" : "none";
     });
+    updateTemplateControls();
   }
   function refreshQuestionInfo() {
     const nextInfo = extractQuestionInfo(document, location.href);
@@ -22503,6 +22947,7 @@ This typically indicates that your device does not have a healthy Internet conne
     } else if (currentSnapshot) {
       currentSnapshot = null;
     }
+    updateHintQuickButton();
   }
   function startObservers() {
     const rootEl = root;
@@ -22567,12 +23012,23 @@ This typically indicates that your device does not have a healthy Internet conne
         }
         if (!settings.shortcutsEnabled) return;
         if (event.isComposing) return;
+        const key = normalizeKey(event.key);
+        const navPrevMatch = isShortcutMatch(event, settings.navPrevKey);
+        const navNextMatch = isShortcutMatch(event, settings.navNextKey);
+        const isNavKey = navPrevMatch || navNextMatch;
+        const navShortcut = navPrevMatch ? settings.navPrevKey : navNextMatch ? settings.navNextKey : "";
+        const navBaseKey = navShortcut ? getShortcutBaseKey(navShortcut) : "";
+        const optionIndex = settings.optionKeys.findIndex(
+          (shortcut) => isShortcutMatch(event, shortcut)
+        );
+        const isOptionKey = optionIndex >= 0;
+        const optionBaseKey = isOptionKey && settings.optionKeys[optionIndex] ? getShortcutBaseKey(settings.optionKeys[optionIndex]) : "";
         const isTyping = isTypingTarget(event.target);
         const templateShortcut = getChatTemplateShortcut(event);
         if (templateShortcut && window === window.top && (!isTyping || event.ctrlKey)) {
           event.preventDefault();
           event.stopPropagation();
-          void sendTemplateMessage(templateShortcut.prompt);
+          void sendTemplateMessage(templateShortcut);
           return;
         }
         if (isShortcutMatch(event, CHAT_NEW_SHORTCUT) && window === window.top) {
@@ -22582,7 +23038,22 @@ This typically indicates that your device does not have a healthy Internet conne
           void saveSettings({ ...settings, chatOpen: true });
           return;
         }
-        if (isTyping && !event.ctrlKey) return;
+        if (isShortcutMatch(event, "Ctrl+S") && window === window.top) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!chatSettingsPanel) {
+            ensureChatUI();
+          }
+          if (!settings.chatOpen) {
+            void saveSettings({ ...settings, chatOpen: true }).then(() => {
+              toggleChatSettings(true);
+            });
+          } else {
+            toggleChatSettings();
+          }
+          return;
+        }
+        if (isTyping && !event.ctrlKey && !isOptionKey && !isNavKey) return;
         if (!isQuestionPage()) {
           if (shouldLogKey) {
             console.log("[QB_SUPPORT][frame-skip]", {
@@ -22594,7 +23065,6 @@ This typically indicates that your device does not have a healthy Internet conne
           }
           return;
         }
-        const key = normalizeKey(event.key);
         if (isShortcutMatch(event, CHAT_TOGGLE_SHORTCUT) && window === window.top) {
           event.preventDefault();
           event.stopPropagation();
@@ -22613,7 +23083,8 @@ This typically indicates that your device does not have a healthy Internet conne
           void saveSettings({ ...settings, enabled: !settings.enabled });
           return;
         }
-        if (hasModifier(event)) {
+        const revealMatch = isShortcutMatch(event, settings.revealKey);
+        if (hasModifier(event) && !isNavKey && !isOptionKey && !revealMatch) {
           if (shouldLogKey) {
             console.log("[QB_SUPPORT][key-skip]", {
               key: event.key,
@@ -22624,21 +23095,21 @@ This typically indicates that your device does not have a healthy Internet conne
           }
           return;
         }
-        if (key === settings.navNextKey || key === settings.navPrevKey) {
+        if (isNavKey && navBaseKey) {
           if (window === window.top) {
             sendAction({
               action: "nav",
-              key: key.toLowerCase()
+              key: navBaseKey.toLowerCase()
             }, event);
             return;
           }
           const target = getNavigationTarget(
             document,
-            key === settings.navNextKey ? "next" : "prev"
+            navNextMatch ? "next" : "prev"
           );
           if (shouldLogKey) {
             console.log("[QB_SUPPORT][nav-target]", {
-              key,
+              key: navBaseKey,
               target: describeElement(target),
               meta: describeElementMeta(target),
               url: location.href,
@@ -22647,7 +23118,7 @@ This typically indicates that your device does not have a healthy Internet conne
           }
           if (debug) {
             console.debug("[QB_SUPPORT][nav]", {
-              key,
+              key: navBaseKey,
               target: describeElement(target)
             });
           }
@@ -22659,7 +23130,7 @@ This typically indicates that your device does not have a healthy Internet conne
           if (shouldLogKey) {
             window.setTimeout(() => {
               console.log("[QB_SUPPORT][nav-effect]", {
-                key,
+                key: navBaseKey,
                 beforeUrl,
                 afterUrl: location.href,
                 changed: location.href !== beforeUrl,
@@ -22669,13 +23140,13 @@ This typically indicates that your device does not have a healthy Internet conne
           }
           return;
         }
-        if (settings.optionKeys.includes(key)) {
-          const index = settings.optionKeys.indexOf(key);
+        if (isOptionKey && optionBaseKey) {
+          const index = optionIndex;
           if (window === window.top) {
             sendAction(
               {
                 action: "option",
-                key: key.toLowerCase(),
+                key: optionBaseKey.toLowerCase(),
                 index
               },
               event
@@ -22687,7 +23158,7 @@ This typically indicates that your device does not have a healthy Internet conne
           const clickable = getClickableOptionElement(options[index]);
           if (shouldLogKey) {
             console.log("[QB_SUPPORT][option-target]", {
-              key,
+              key: optionBaseKey,
               index,
               optionCount: options.length,
               target: describeElement(clickable),
@@ -22698,7 +23169,7 @@ This typically indicates that your device does not have a healthy Internet conne
           }
           if (debug) {
             console.debug("[QB_SUPPORT][option]", {
-              key,
+              key: optionBaseKey,
               index,
               optionCount: options.length,
               target: describeElement(clickable)
@@ -22713,7 +23184,7 @@ This typically indicates that your device does not have a healthy Internet conne
             window.setTimeout(() => {
               const afterState = getOptionState(options[index]);
               console.log("[QB_SUPPORT][option-effect]", {
-                key,
+                key: optionBaseKey,
                 before: beforeState,
                 after: afterState,
                 changed: !isSameOptionState(beforeState, afterState),
@@ -22723,12 +23194,12 @@ This typically indicates that your device does not have a healthy Internet conne
           }
           return;
         }
-        if (isShortcutMatch(event, settings.revealKey)) {
+        if (revealMatch) {
           if (window === window.top) {
             sendAction(
               {
                 action: "reveal",
-                key: key.toLowerCase()
+                key: getShortcutBaseKey(settings.revealKey).toLowerCase()
               },
               event
             );
@@ -22737,7 +23208,7 @@ This typically indicates that your device does not have a healthy Internet conne
           const revealButton = getAnswerRevealButton(document);
           if (shouldLogKey) {
             console.log("[QB_SUPPORT][reveal-target]", {
-              key,
+              key: getShortcutBaseKey(settings.revealKey),
               target: describeElement(revealButton),
               meta: describeElementMeta(revealButton),
               url: location.href,
@@ -22758,7 +23229,7 @@ This typically indicates that your device does not have a healthy Internet conne
               window.setTimeout(() => {
                 const afterState = getRevealState();
                 console.log("[QB_SUPPORT][reveal-effect]", {
-                  key,
+                  key: getShortcutBaseKey(settings.revealKey),
                   before: beforeState,
                   after: afterState,
                   changed: !isSameRevealState(beforeState, afterState),
@@ -22881,9 +23352,25 @@ This typically indicates that your device does not have a healthy Internet conne
     return a.id === b.id && a.progressText === b.progressText && a.pageRef === b.pageRef && a.optionCount === b.optionCount && a.tags.join(",") === b.tags.join(",");
   }
   function makeSectionTitle(text) {
-    const title = document.createElement("div");
-    title.className = "qb-support-section-title";
+    const title = document.createElement("button");
+    title.type = "button";
+    title.className = "qb-support-section-title qb-support-section-toggle";
     title.textContent = text;
+    title.setAttribute("aria-expanded", "true");
+    const toggle = () => {
+      const section = title.parentElement;
+      if (!section) return;
+      const collapsed = section.dataset.collapsed === "true";
+      section.dataset.collapsed = collapsed ? "false" : "true";
+      title.setAttribute("aria-expanded", collapsed ? "true" : "false");
+    };
+    title.addEventListener("click", toggle);
+    title.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggle();
+      }
+    });
     return title;
   }
   function makeSpan(text) {
@@ -23057,7 +23544,8 @@ This typically indicates that your device does not have a healthy Internet conne
   }
   function isTargetKey(rawKey) {
     const key = normalizeKey(rawKey);
-    return key === settings.navPrevKey || key === settings.navNextKey || key === getShortcutBaseKey(settings.revealKey) || key === getShortcutBaseKey(CHAT_TOGGLE_SHORTCUT) || getTemplateShortcutKeys().includes(key) || settings.optionKeys.includes(key);
+    const optionKeys = settings.optionKeys.map((shortcut) => getShortcutBaseKey(shortcut)).filter(Boolean);
+    return key === getShortcutBaseKey(settings.navPrevKey) || key === getShortcutBaseKey(settings.navNextKey) || key === getShortcutBaseKey(settings.revealKey) || key === getShortcutBaseKey(CHAT_TOGGLE_SHORTCUT) || getTemplateShortcutKeys().includes(key) || optionKeys.includes(key);
   }
   function hasModifier(event) {
     return event.metaKey || event.ctrlKey || event.altKey;
