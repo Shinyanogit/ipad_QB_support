@@ -214,6 +214,19 @@ html[data-qb-theme="light"] {
   margin-bottom: 10px;
 }
 
+.qb-support-toggle-btn {
+  background: #006057;
+  color: #ffffff;
+  border: 1px solid rgba(0, 150, 136, 0.6);
+  border-radius: 999px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.qb-support-toggle-btn .qb-support-toggle-input {
+  accent-color: #ffffff;
+}
+
 .qb-support-toggle-input {
   accent-color: #5cd0ff;
 }
@@ -598,8 +611,10 @@ body.qb-support-chat-dock > #app {
 .qb-support-chat-settings {
   position: absolute;
   top: 46px;
+  left: 10px;
   right: 10px;
-  width: min(340px, 92%);
+  width: calc(100% - 20px);
+  height: 70vh;
   background: rgba(8, 16, 24, 0.96);
   border: 1px solid rgba(120, 160, 190, 0.35);
   border-radius: 12px;
@@ -844,6 +859,10 @@ html[data-qb-theme="light"] .qb-support-chat-textarea {
 
 html[data-qb-theme="light"] .qb-support-toggle {
   color: rgba(11, 22, 32, 0.85);
+}
+
+html[data-qb-theme="light"] .qb-support-toggle-btn {
+  color: #ffffff;
 }
 
 html[data-qb-theme="light"] .qb-support-chat-panel {

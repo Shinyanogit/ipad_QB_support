@@ -14,6 +14,7 @@ type RuntimeLike = {
 type WebExtLike = {
   storage?: { sync?: StorageAreaLike; local?: StorageAreaLike };
   runtime?: RuntimeLike;
+  identity?: typeof chrome.identity;
   debugger?: typeof chrome.debugger;
 };
 

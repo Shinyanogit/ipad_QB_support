@@ -30,7 +30,7 @@ const DEFAULT_CHAT_TEMPLATES: ChatTemplateSetting[] = [
     label: "ヒント",
     shortcut: "Ctrl+Z",
     prompt:
-      "絶妙なヒント（答えありきでなく、所見や症状から推論する視点で思考力を養う答えに迫りすぎないもの）をどうぞ。",
+      "絶妙なヒント（答えありきでなく、所見や症状から推論する視点で思考力を養う答えに迫りすぎないもの）をどうぞ。※400文字以内で回答してください。",
   },
   {
     enabled: true,

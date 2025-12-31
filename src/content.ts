@@ -24,13 +24,14 @@ import type {
 import type { User } from "firebase/auth";
 import {
   browserLocalPersistence,
+  GoogleAuthProvider,
   onAuthStateChanged,
   setPersistence,
-  signInWithPopup,
+  signInWithCredential,
   signOut,
 } from "firebase/auth";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-import { googleAuthProvider, getFirebaseAuth, getFirebaseDb } from "./lib/firebase";
+import { getFirebaseAuth, getFirebaseDb } from "./lib/firebase";
 import {
   getManifest,
   getStorageArea,
@@ -154,9 +155,9 @@ let authSyncTimer: number | null = null;
 let authSyncInFlight = false;
 let authSyncPending = false;
 let remoteSettingsLoadedFor: string | null = null;
+let lastAuthAccessToken: string | null = null;
 let explanationLevelSelect: HTMLSelectElement | null = null;
 let explanationPromptInputs: Partial<Record<string, HTMLTextAreaElement>> = {};
-let hintConstraintInput: HTMLTextAreaElement | null = null;
 let commonPromptInput: HTMLTextAreaElement | null = null;
 let shortcutSectionEl: HTMLDivElement | null = null;
 let displaySectionEl: HTMLDivElement | null = null;
@@ -278,15 +279,41 @@ function setAuthSyncStatus(message: string, isError: boolean) {
   authSyncField.classList.toggle("is-error", isError);
 }
 
+async function requestGoogleAuthToken(): Promise<string> {
+  const response = await sendRuntimeMessage<{
+    ok: boolean;
+    token?: string;
+    error?: string;
+  }>({
+    type: "QB_AUTH_GET_TOKEN",
+    interactive: true,
+  });
+  if (!response?.ok) {
+    const message = response?.error ?? "OAuth token request failed.";
+    throw new Error(message);
+  }
+  if (!response.token) throw new Error("OAuth token was not returned.");
+  lastAuthAccessToken = response.token;
+  return response.token;
+}
+
 async function handleAuthSignIn() {
   const button = authSignInButton;
   if (button) button.disabled = true;
   setAuthStatus("ログイン中...", false);
+  console.log("[QB_SUPPORT][auth] ORIGIN", location.origin);
+  console.log("[QB_SUPPORT][auth] HREF", location.href);
   try {
-    await signInWithPopup(getFirebaseAuth(), googleAuthProvider);
+    const token = await requestGoogleAuthToken();
+    const credential = GoogleAuthProvider.credential(null, token);
+    await signInWithCredential(getFirebaseAuth(), credential);
   } catch (error) {
-    console.warn("[QB_SUPPORT][auth]", error);
-    const err = error as { code?: string; message?: string };
+    console.log("[QB_SUPPORT][auth] AUTH_ERR_RAW", error);
+    const err = error as { code?: string; message?: string; customData?: unknown; stack?: string };
+    console.log("[QB_SUPPORT][auth] AUTH_ERR_CODE", err?.code);
+    console.log("[QB_SUPPORT][auth] AUTH_ERR_MSG", err?.message);
+    console.log("[QB_SUPPORT][auth] AUTH_ERR_CUSTOM", err?.customData);
+    console.log("[QB_SUPPORT][auth] AUTH_ERR_STACK", err?.stack);
     const detail = err?.code ? `${err.code}: ${err.message ?? ""}`.trim() : String(error);
     const extensionId = webext.runtime?.id;
     const domainHint = extensionId
@@ -299,6 +326,7 @@ async function handleAuthSignIn() {
       ? ` (FirebaseのAuthorized domainsに ${domainHint} と ${pageOrigin} を追加してください)`
       : "";
     setAuthStatus(`ログイン失敗: ${detail}${hint}`, true);
+    throw error;
   } finally {
     if (button) button.disabled = false;
   }
@@ -308,6 +336,13 @@ async function handleAuthSignOut() {
   const button = authSignOutButton;
   if (button) button.disabled = true;
   try {
+    if (lastAuthAccessToken) {
+      await sendRuntimeMessage({
+        type: "QB_AUTH_REMOVE_TOKEN",
+        token: lastAuthAccessToken,
+      });
+      lastAuthAccessToken = null;
+    }
     await signOut(getFirebaseAuth());
     setAuthStatus("ログアウトしました", false);
   } catch (error) {
@@ -428,6 +463,7 @@ function ensureUI() {
   settingsSection.className = "qb-support-section";
   settingsSection.appendChild(makeSectionTitle("表示"));
   displaySectionEl = settingsSection;
+  setSectionCollapsed(settingsSection, true);
 
   shortcutsToggle = document.createElement("input");
   shortcutsToggle.type = "checkbox";
@@ -465,7 +501,7 @@ function ensureUI() {
   });
 
   const searchLabel = document.createElement("label");
-  searchLabel.className = "qb-support-toggle";
+  searchLabel.className = "qb-support-toggle qb-support-toggle-btn";
   searchLabel.appendChild(searchToggle);
   searchLabel.appendChild(makeSpan("検索バー表示"));
 
@@ -480,7 +516,7 @@ function ensureUI() {
   });
 
   const noteLabel = document.createElement("label");
-  noteLabel.className = "qb-support-toggle";
+  noteLabel.className = "qb-support-toggle qb-support-toggle-btn";
   noteLabel.appendChild(noteToggle);
   noteLabel.appendChild(makeSpan("ノート表示"));
 
@@ -528,6 +564,16 @@ function ensureUI() {
   shortcutSection.className = "qb-support-section";
   shortcutSection.appendChild(makeSectionTitle("ショートカット"));
   shortcutSectionEl = shortcutSection;
+  setSectionCollapsed(shortcutSection, true);
+
+  const modifierLabelFromKey = (rawKey: string) => {
+    const lower = rawKey.toLowerCase();
+    if (lower === "control") return "Ctrl";
+    if (lower === "alt") return "Alt";
+    if (lower === "shift") return "Shift";
+    if (lower === "meta") return "Meta";
+    return "";
+  };
 
   const buildKeyField = (labelText: string) => {
     const input = document.createElement("input");
@@ -542,7 +588,12 @@ function ensureUI() {
       }
       event.preventDefault();
       const shortcut = shortcutFromEvent(event);
-      if (shortcut) input.value = shortcut;
+      if (shortcut) {
+        input.value = shortcut;
+        return;
+      }
+      const fallback = modifierLabelFromKey(event.key);
+      if (fallback) input.value = fallback;
     });
     const label = document.createElement("label");
     label.className = "qb-support-field";
@@ -564,7 +615,12 @@ function ensureUI() {
       }
       event.preventDefault();
       const shortcut = shortcutFromEvent(event);
-      if (shortcut) input.value = shortcut;
+      if (shortcut) {
+        input.value = shortcut;
+        return;
+      }
+      const fallback = modifierLabelFromKey(event.key);
+      if (fallback) input.value = fallback;
     });
     const label = document.createElement("label");
     label.className = "qb-support-field";
@@ -644,6 +700,7 @@ function ensureUI() {
   templateSection.className = "qb-support-section";
   templateSection.appendChild(makeSectionTitle("チャットテンプレ"));
   templateSectionEl = templateSection;
+  setSectionCollapsed(templateSection, true);
 
   const templateControls = document.createElement("div");
   templateControls.className = "qb-support-template-controls";
@@ -726,7 +783,12 @@ function ensureUI() {
       }
       event.preventDefault();
       const shortcut = shortcutFromEvent(event);
-      if (shortcut) shortcutInput.value = shortcut;
+      if (shortcut) {
+        shortcutInput.value = shortcut;
+        return;
+      }
+      const fallback = modifierLabelFromKey(event.key);
+      if (fallback) shortcutInput.value = fallback;
     });
 
     const promptInput = document.createElement("textarea");
@@ -774,27 +836,14 @@ function ensureUI() {
       setStatus("有効なテンプレはプロンプト必須です", true);
       return;
     }
-    const hintConstraintPrompt = hintConstraintInput?.value.trim() ?? "";
     void saveSettings({
       ...settings,
       chatTemplates: nextTemplates,
-      hintConstraintPrompt,
     });
     setStatus("テンプレを保存しました", false);
   });
 
   templateSection.appendChild(templateList);
-
-  const hintConstraintLabel = document.createElement("label");
-  hintConstraintLabel.className = "qb-support-field qb-support-template-field";
-  hintConstraintLabel.appendChild(makeSpan("ヒント制約"));
-
-  hintConstraintInput = document.createElement("textarea");
-  hintConstraintInput.className = "qb-support-template-prompt qb-support-hint-constraint";
-  hintConstraintInput.rows = 2;
-  hintConstraintInput.placeholder = "例: ※400文字以内で回答してください。";
-  hintConstraintLabel.appendChild(hintConstraintInput);
-  templateSection.appendChild(hintConstraintLabel);
 
   templateSection.appendChild(templateSaveButton);
 
@@ -802,6 +851,7 @@ function ensureUI() {
   explanationSection.className = "qb-support-section";
   explanationSection.appendChild(makeSectionTitle("プロンプト"));
   explanationSectionEl = explanationSection;
+  setSectionCollapsed(explanationSection, true);
 
   const commonPromptLabel = document.createElement("label");
   commonPromptLabel.className = "qb-support-field qb-support-template-field";
@@ -885,6 +935,7 @@ function ensureUI() {
   authSection.className = "qb-support-section";
   authSection.appendChild(makeSectionTitle("認証"));
   authSectionEl = authSection;
+  setSectionCollapsed(authSection, false);
 
   authStatusField = document.createElement("div");
   authStatusField.className = "qb-support-auth-status";
@@ -1338,10 +1389,22 @@ function ensureChatTemplates() {
 }
 
 function getEnabledChatTemplates(): ChatTemplateSetting[] {
+  return getEnabledChatTemplatesWithIndex().map(({ template }) => template);
+}
+
+function getEnabledChatTemplatesWithIndex(): Array<{
+  template: ChatTemplateSetting;
+  index: number;
+}> {
   const count = getTemplateCount();
-  return (settings.chatTemplates ?? [])
-    .slice(0, count)
-    .filter((template) => template.enabled && template.prompt.trim());
+  const templates = settings.chatTemplates ?? [];
+  const list: Array<{ template: ChatTemplateSetting; index: number }> = [];
+  for (let i = 0; i < Math.min(count, templates.length); i += 1) {
+    const template = templates[i];
+    if (!template || !template.enabled || !template.prompt.trim()) continue;
+    list.push({ template, index: i });
+  }
+  return list;
 }
 
 function getTemplateCount(): number {
@@ -1376,22 +1439,104 @@ function updateTemplateCount(nextCount: number) {
   });
 }
 
-function getHintTemplate(): ChatTemplateSetting | null {
+function getHintTemplate(): { template: ChatTemplateSetting; index: number } | null {
   const hintPhrase = "絶妙なヒント";
-  for (const template of getEnabledChatTemplates()) {
+  for (const entry of getEnabledChatTemplatesWithIndex()) {
+    const template = entry.template;
     const label = template.label ?? "";
     const prompt = template.prompt ?? "";
     if (label.includes("ヒント") || label.includes(hintPhrase) || prompt.includes(hintPhrase)) {
-      return template;
+      return entry;
     }
   }
   return null;
 }
 
+function setSectionCollapsed(section: HTMLElement | null, collapsed: boolean) {
+  if (!section) return;
+  section.dataset.collapsed = collapsed ? "true" : "false";
+  const title = section.querySelector(".qb-support-section-title");
+  if (title) {
+    title.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+}
+
+function openTemplateEditor(index: number) {
+  if (window !== window.top) return;
+  if (!chatSettingsPanel) {
+    ensureChatUI();
+  }
+  const openPanel = () => {
+    toggleChatSettings(true);
+    setSectionCollapsed(templateSectionEl, false);
+    const row = chatTemplateRows[index];
+    if (!row) return;
+    row.container.scrollIntoView({ block: "center" });
+    row.prompt.focus();
+  };
+  if (!settings.chatOpen) {
+    void saveSettings({ ...settings, chatOpen: true }).then(openPanel);
+  } else {
+    openPanel();
+  }
+}
+
+function attachTemplateEditJump(button: HTMLButtonElement, index: number) {
+  if (button.dataset.editJump === "true") return;
+  button.dataset.editJump = "true";
+  let hoverTimer: number | null = null;
+  let pressTimer: number | null = null;
+  let longPressTriggered = false;
+
+  const clearHover = () => {
+    if (hoverTimer) window.clearTimeout(hoverTimer);
+    hoverTimer = null;
+  };
+  const clearPress = () => {
+    if (pressTimer) window.clearTimeout(pressTimer);
+    pressTimer = null;
+  };
+
+  button.addEventListener("mouseenter", () => {
+    clearHover();
+    hoverTimer = window.setTimeout(() => {
+      openTemplateEditor(index);
+    }, 900);
+  });
+  button.addEventListener("mouseleave", clearHover);
+
+  button.addEventListener("pointerdown", (event) => {
+    if (event.button && event.button !== 0) return;
+    longPressTriggered = false;
+    clearPress();
+    pressTimer = window.setTimeout(() => {
+      longPressTriggered = true;
+      openTemplateEditor(index);
+    }, 650);
+  });
+  const cancelPress = () => {
+    clearPress();
+  };
+  button.addEventListener("pointerup", cancelPress);
+  button.addEventListener("pointerleave", cancelPress);
+  button.addEventListener("pointercancel", cancelPress);
+
+  button.addEventListener(
+    "click",
+    (event) => {
+      if (!longPressTriggered) return;
+      event.preventDefault();
+      event.stopPropagation();
+      longPressTriggered = false;
+    },
+    true
+  );
+}
+
 function updateHintQuickButton() {
   if (window !== window.top) return;
-  const template = getHintTemplate();
-  if (!template) {
+  const hintEntry = getHintTemplate();
+  if (!hintEntry) {
     if (hintQuickButton) {
       hintQuickButton.remove();
       hintQuickButton = null;
@@ -1413,14 +1558,15 @@ function updateHintQuickButton() {
     applyButtonVariant(hintQuickButton, "accent");
   }
   hintQuickButton.textContent = "ヒント";
-  if (template.shortcut) {
-    hintQuickButton.dataset.shortcut = template.shortcut;
+  if (hintEntry.template.shortcut) {
+    hintQuickButton.dataset.shortcut = hintEntry.template.shortcut;
   } else {
     hintQuickButton.removeAttribute("data-shortcut");
   }
   hintQuickButton.onclick = () => {
-    void sendTemplateMessage(template);
+    void sendTemplateMessage(hintEntry.template);
   };
+  attachTemplateEditJump(hintQuickButton, hintEntry.index);
   const parent = revealButton.parentElement;
   if (!parent) return;
   if (hintQuickButton.parentElement !== parent || hintQuickButton.nextSibling !== revealButton) {
@@ -1430,7 +1576,7 @@ function updateHintQuickButton() {
 
 function updateChatTemplatesUI() {
   if (!chatTemplateBar) return;
-  const templates = getEnabledChatTemplates();
+  const templates = getEnabledChatTemplatesWithIndex();
   chatTemplateBar.innerHTML = "";
   if (templates.length === 0) {
     chatTemplateBar.style.display = "none";
@@ -1438,7 +1584,7 @@ function updateChatTemplatesUI() {
     return;
   }
   chatTemplateBar.style.display = "flex";
-  templates.forEach((template, index) => {
+  templates.forEach(({ template, index }) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "qb-support-chat-template-btn";
@@ -1450,6 +1596,7 @@ function updateChatTemplatesUI() {
     button.addEventListener("click", () => {
       void sendTemplateMessage(template);
     });
+    attachTemplateEditJump(button, index);
     chatTemplateBar.appendChild(button);
   });
   updateHintQuickButton();
@@ -1543,15 +1690,7 @@ function applyTemplateConstraints(
   message: string,
   template: ChatTemplateSetting | string
 ): string {
-  const label = typeof template === "string" ? "" : template.label;
-  const hintPhrase = "絶妙なヒント";
-  const needsLimit =
-    (label && label.includes(hintPhrase)) || message.includes(hintPhrase);
-  if (!needsLimit) return message;
-  const constraint = settings.hintConstraintPrompt?.trim();
-  if (!constraint) return message;
-  if (message.includes(constraint)) return message;
-  return `${message}\n\n${constraint}`;
+  return message;
 }
 
 type ButtonVariant = "primary" | "ghost" | "accent" | "danger";
@@ -2317,9 +2456,6 @@ function applySettings() {
     input.value = settings.optionKeys[index] ?? "";
   });
   syncTemplateSettingsUI();
-  if (hintConstraintInput) {
-    hintConstraintInput.value = settings.hintConstraintPrompt ?? "";
-  }
   if (commonPromptInput) {
     commonPromptInput.value = settings.commonPrompt ?? "";
   }

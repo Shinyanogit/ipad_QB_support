@@ -256,7 +256,7 @@
       enabled: true,
       label: "\u30D2\u30F3\u30C8",
       shortcut: "Ctrl+Z",
-      prompt: "\u7D76\u5999\u306A\u30D2\u30F3\u30C8\uFF08\u7B54\u3048\u3042\u308A\u304D\u3067\u306A\u304F\u3001\u6240\u898B\u3084\u75C7\u72B6\u304B\u3089\u63A8\u8AD6\u3059\u308B\u8996\u70B9\u3067\u601D\u8003\u529B\u3092\u990A\u3046\u7B54\u3048\u306B\u8FEB\u308A\u3059\u304E\u306A\u3044\u3082\u306E\uFF09\u3092\u3069\u3046\u305E\u3002"
+      prompt: "\u7D76\u5999\u306A\u30D2\u30F3\u30C8\uFF08\u7B54\u3048\u3042\u308A\u304D\u3067\u306A\u304F\u3001\u6240\u898B\u3084\u75C7\u72B6\u304B\u3089\u63A8\u8AD6\u3059\u308B\u8996\u70B9\u3067\u601D\u8003\u529B\u3092\u990A\u3046\u7B54\u3048\u306B\u8FEB\u308A\u3059\u304E\u306A\u3044\u3082\u306E\uFF09\u3092\u3069\u3046\u305E\u3002\u203B400\u6587\u5B57\u4EE5\u5185\u3067\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
     },
     {
       enabled: true,
@@ -2648,19 +2648,6 @@
   }
   function _serverAppCurrentUserOperationNotSupportedError(auth) {
     return _errorWithCustomMessage(auth, "operation-not-supported-in-this-environment", "Operations that alter the current user are not supported in conjunction with FirebaseServerApp");
-  }
-  function _assertInstanceOf(auth, object, instance) {
-    const constructorInstance = instance;
-    if (!(object instanceof constructorInstance)) {
-      if (constructorInstance.name !== object.constructor.name) {
-        _fail(
-          auth,
-          "argument-error"
-          /* AuthErrorCode.ARGUMENT_ERROR */
-        );
-      }
-      throw _errorWithCustomMessage(auth, "argument-error", `Type of ${object.constructor.name} does not match expected instance.Did you pass a reference from a different Auth SDK?`);
-    }
   }
   function createErrorInternal(authOrCode, ...rest) {
     if (typeof authOrCode !== "string") {
@@ -6180,6 +6167,9 @@
     }
     return userCredential;
   }
+  async function signInWithCredential(auth, credential) {
+    return _signInWithCredential(_castAuth(auth), credential);
+  }
   function setPersistence(auth, persistence) {
     return getModularInstance(auth).setPersistence(persistence);
   }
@@ -7524,20 +7514,6 @@
     }
   };
   var _POLL_WINDOW_CLOSE_TIMEOUT = new Delay(2e3, 1e4);
-  async function signInWithPopup(auth, provider, resolver) {
-    if (_isFirebaseServerApp(auth.app)) {
-      return Promise.reject(_createError(
-        auth,
-        "operation-not-supported-in-this-environment"
-        /* AuthErrorCode.OPERATION_NOT_SUPPORTED */
-      ));
-    }
-    const authInternal = _castAuth(auth);
-    _assertInstanceOf(auth, provider, FederatedAuthProvider);
-    const resolverInternal = _withDefaultResolver(authInternal, resolver);
-    const action = new PopupOperation(authInternal, "signInViaPopup", provider, resolverInternal);
-    return action.executeNotNull();
-  }
   var PopupOperation = class _PopupOperation extends AbstractPopupRedirectOperation {
     constructor(auth, filter, provider, resolver, user) {
       super(auth, filter, resolver, user);
@@ -20995,9 +20971,9 @@ This typically indicates that your device does not have a healthy Internet conne
   var authSyncInFlight = false;
   var authSyncPending = false;
   var remoteSettingsLoadedFor = null;
+  var lastAuthAccessToken = null;
   var explanationLevelSelect = null;
   var explanationPromptInputs = {};
-  var hintConstraintInput = null;
   var commonPromptInput = null;
   var shortcutSectionEl = null;
   var displaySectionEl = null;
@@ -21109,15 +21085,36 @@ This typically indicates that your device does not have a healthy Internet conne
     authSyncField.textContent = message;
     authSyncField.classList.toggle("is-error", isError);
   }
+  async function requestGoogleAuthToken() {
+    const response = await sendRuntimeMessage({
+      type: "QB_AUTH_GET_TOKEN",
+      interactive: true
+    });
+    if (!response?.ok) {
+      const message = response?.error ?? "OAuth token request failed.";
+      throw new Error(message);
+    }
+    if (!response.token) throw new Error("OAuth token was not returned.");
+    lastAuthAccessToken = response.token;
+    return response.token;
+  }
   async function handleAuthSignIn() {
     const button = authSignInButton;
     if (button) button.disabled = true;
     setAuthStatus("\u30ED\u30B0\u30A4\u30F3\u4E2D...", false);
+    console.log("[QB_SUPPORT][auth] ORIGIN", location.origin);
+    console.log("[QB_SUPPORT][auth] HREF", location.href);
     try {
-      await signInWithPopup(getFirebaseAuth(), googleAuthProvider);
+      const token = await requestGoogleAuthToken();
+      const credential = GoogleAuthProvider.credential(null, token);
+      await signInWithCredential(getFirebaseAuth(), credential);
     } catch (error) {
-      console.warn("[QB_SUPPORT][auth]", error);
+      console.log("[QB_SUPPORT][auth] AUTH_ERR_RAW", error);
       const err = error;
+      console.log("[QB_SUPPORT][auth] AUTH_ERR_CODE", err?.code);
+      console.log("[QB_SUPPORT][auth] AUTH_ERR_MSG", err?.message);
+      console.log("[QB_SUPPORT][auth] AUTH_ERR_CUSTOM", err?.customData);
+      console.log("[QB_SUPPORT][auth] AUTH_ERR_STACK", err?.stack);
       const detail = err?.code ? `${err.code}: ${err.message ?? ""}`.trim() : String(error);
       const extensionId = webext.runtime?.id;
       const domainHint = extensionId ? `chrome-extension://${extensionId}` : "chrome-extension://<extension-id>";
@@ -21125,6 +21122,7 @@ This typically indicates that your device does not have a healthy Internet conne
       const needsDomainHint = err?.code === "auth/internal-error" || err?.code === "auth/unauthorized-domain";
       const hint = needsDomainHint ? ` (Firebase\u306EAuthorized domains\u306B ${domainHint} \u3068 ${pageOrigin} \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044)` : "";
       setAuthStatus(`\u30ED\u30B0\u30A4\u30F3\u5931\u6557: ${detail}${hint}`, true);
+      throw error;
     } finally {
       if (button) button.disabled = false;
     }
@@ -21133,6 +21131,13 @@ This typically indicates that your device does not have a healthy Internet conne
     const button = authSignOutButton;
     if (button) button.disabled = true;
     try {
+      if (lastAuthAccessToken) {
+        await sendRuntimeMessage({
+          type: "QB_AUTH_REMOVE_TOKEN",
+          token: lastAuthAccessToken
+        });
+        lastAuthAccessToken = null;
+      }
       await signOut(getFirebaseAuth());
       setAuthStatus("\u30ED\u30B0\u30A2\u30A6\u30C8\u3057\u307E\u3057\u305F", false);
     } catch (error) {
@@ -21239,6 +21244,7 @@ This typically indicates that your device does not have a healthy Internet conne
     settingsSection.className = "qb-support-section";
     settingsSection.appendChild(makeSectionTitle("\u8868\u793A"));
     displaySectionEl = settingsSection;
+    setSectionCollapsed(settingsSection, true);
     shortcutsToggle = document.createElement("input");
     shortcutsToggle.type = "checkbox";
     shortcutsToggle.className = "qb-support-toggle-input";
@@ -21271,7 +21277,7 @@ This typically indicates that your device does not have a healthy Internet conne
       });
     });
     const searchLabel = document.createElement("label");
-    searchLabel.className = "qb-support-toggle";
+    searchLabel.className = "qb-support-toggle qb-support-toggle-btn";
     searchLabel.appendChild(searchToggle);
     searchLabel.appendChild(makeSpan("\u691C\u7D22\u30D0\u30FC\u8868\u793A"));
     noteToggle = document.createElement("input");
@@ -21284,7 +21290,7 @@ This typically indicates that your device does not have a healthy Internet conne
       });
     });
     const noteLabel = document.createElement("label");
-    noteLabel.className = "qb-support-toggle";
+    noteLabel.className = "qb-support-toggle qb-support-toggle-btn";
     noteLabel.appendChild(noteToggle);
     noteLabel.appendChild(makeSpan("\u30CE\u30FC\u30C8\u8868\u793A"));
     pageAccentToggle = document.createElement("input");
@@ -21327,6 +21333,15 @@ This typically indicates that your device does not have a healthy Internet conne
     shortcutSection.className = "qb-support-section";
     shortcutSection.appendChild(makeSectionTitle("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8"));
     shortcutSectionEl = shortcutSection;
+    setSectionCollapsed(shortcutSection, true);
+    const modifierLabelFromKey = (rawKey) => {
+      const lower = rawKey.toLowerCase();
+      if (lower === "control") return "Ctrl";
+      if (lower === "alt") return "Alt";
+      if (lower === "shift") return "Shift";
+      if (lower === "meta") return "Meta";
+      return "";
+    };
     const buildKeyField = (labelText) => {
       const input = document.createElement("input");
       input.type = "text";
@@ -21340,7 +21355,12 @@ This typically indicates that your device does not have a healthy Internet conne
         }
         event.preventDefault();
         const shortcut = shortcutFromEvent(event);
-        if (shortcut) input.value = shortcut;
+        if (shortcut) {
+          input.value = shortcut;
+          return;
+        }
+        const fallback = modifierLabelFromKey(event.key);
+        if (fallback) input.value = fallback;
       });
       const label = document.createElement("label");
       label.className = "qb-support-field";
@@ -21361,7 +21381,12 @@ This typically indicates that your device does not have a healthy Internet conne
         }
         event.preventDefault();
         const shortcut = shortcutFromEvent(event);
-        if (shortcut) input.value = shortcut;
+        if (shortcut) {
+          input.value = shortcut;
+          return;
+        }
+        const fallback = modifierLabelFromKey(event.key);
+        if (fallback) input.value = fallback;
       });
       const label = document.createElement("label");
       label.className = "qb-support-field";
@@ -21430,6 +21455,7 @@ This typically indicates that your device does not have a healthy Internet conne
     templateSection.className = "qb-support-section";
     templateSection.appendChild(makeSectionTitle("\u30C1\u30E3\u30C3\u30C8\u30C6\u30F3\u30D7\u30EC"));
     templateSectionEl = templateSection;
+    setSectionCollapsed(templateSection, true);
     const templateControls = document.createElement("div");
     templateControls.className = "qb-support-template-controls";
     templateCountLabel = document.createElement("span");
@@ -21497,7 +21523,12 @@ This typically indicates that your device does not have a healthy Internet conne
         }
         event.preventDefault();
         const shortcut = shortcutFromEvent(event);
-        if (shortcut) shortcutInput.value = shortcut;
+        if (shortcut) {
+          shortcutInput.value = shortcut;
+          return;
+        }
+        const fallback = modifierLabelFromKey(event.key);
+        if (fallback) shortcutInput.value = fallback;
       });
       const promptInput = document.createElement("textarea");
       promptInput.className = "qb-support-template-prompt";
@@ -21540,29 +21571,19 @@ This typically indicates that your device does not have a healthy Internet conne
         setStatus("\u6709\u52B9\u306A\u30C6\u30F3\u30D7\u30EC\u306F\u30D7\u30ED\u30F3\u30D7\u30C8\u5FC5\u9808\u3067\u3059", true);
         return;
       }
-      const hintConstraintPrompt = hintConstraintInput?.value.trim() ?? "";
       void saveSettings({
         ...settings,
-        chatTemplates: nextTemplates,
-        hintConstraintPrompt
+        chatTemplates: nextTemplates
       });
       setStatus("\u30C6\u30F3\u30D7\u30EC\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F", false);
     });
     templateSection.appendChild(templateList);
-    const hintConstraintLabel = document.createElement("label");
-    hintConstraintLabel.className = "qb-support-field qb-support-template-field";
-    hintConstraintLabel.appendChild(makeSpan("\u30D2\u30F3\u30C8\u5236\u7D04"));
-    hintConstraintInput = document.createElement("textarea");
-    hintConstraintInput.className = "qb-support-template-prompt qb-support-hint-constraint";
-    hintConstraintInput.rows = 2;
-    hintConstraintInput.placeholder = "\u4F8B: \u203B400\u6587\u5B57\u4EE5\u5185\u3067\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
-    hintConstraintLabel.appendChild(hintConstraintInput);
-    templateSection.appendChild(hintConstraintLabel);
     templateSection.appendChild(templateSaveButton);
     const explanationSection = document.createElement("div");
     explanationSection.className = "qb-support-section";
     explanationSection.appendChild(makeSectionTitle("\u30D7\u30ED\u30F3\u30D7\u30C8"));
     explanationSectionEl = explanationSection;
+    setSectionCollapsed(explanationSection, true);
     const commonPromptLabel = document.createElement("label");
     commonPromptLabel.className = "qb-support-field qb-support-template-field";
     commonPromptLabel.appendChild(makeSpan("\u5171\u901A\u30D7\u30ED\u30F3\u30D7\u30C8"));
@@ -21637,6 +21658,7 @@ This typically indicates that your device does not have a healthy Internet conne
     authSection.className = "qb-support-section";
     authSection.appendChild(makeSectionTitle("\u8A8D\u8A3C"));
     authSectionEl = authSection;
+    setSectionCollapsed(authSection, false);
     authStatusField = document.createElement("div");
     authStatusField.className = "qb-support-auth-status";
     authStatusField.textContent = "\u672A\u30ED\u30B0\u30A4\u30F3";
@@ -22035,8 +22057,18 @@ This typically indicates that your device does not have a healthy Internet conne
     updateChatTemplatesUI();
   }
   function getEnabledChatTemplates() {
+    return getEnabledChatTemplatesWithIndex().map(({ template }) => template);
+  }
+  function getEnabledChatTemplatesWithIndex() {
     const count = getTemplateCount();
-    return (settings.chatTemplates ?? []).slice(0, count).filter((template) => template.enabled && template.prompt.trim());
+    const templates = settings.chatTemplates ?? [];
+    const list = [];
+    for (let i = 0; i < Math.min(count, templates.length); i += 1) {
+      const template = templates[i];
+      if (!template || !template.enabled || !template.prompt.trim()) continue;
+      list.push({ template, index: i });
+    }
+    return list;
   }
   function getTemplateCount() {
     const raw = settings.chatTemplateCount ?? 0;
@@ -22069,19 +22101,94 @@ This typically indicates that your device does not have a healthy Internet conne
   }
   function getHintTemplate() {
     const hintPhrase = "\u7D76\u5999\u306A\u30D2\u30F3\u30C8";
-    for (const template of getEnabledChatTemplates()) {
+    for (const entry of getEnabledChatTemplatesWithIndex()) {
+      const template = entry.template;
       const label = template.label ?? "";
       const prompt = template.prompt ?? "";
       if (label.includes("\u30D2\u30F3\u30C8") || label.includes(hintPhrase) || prompt.includes(hintPhrase)) {
-        return template;
+        return entry;
       }
     }
     return null;
   }
+  function setSectionCollapsed(section, collapsed) {
+    if (!section) return;
+    section.dataset.collapsed = collapsed ? "true" : "false";
+    const title = section.querySelector(".qb-support-section-title");
+    if (title) {
+      title.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    }
+  }
+  function openTemplateEditor(index) {
+    if (window !== window.top) return;
+    if (!chatSettingsPanel) {
+      ensureChatUI();
+    }
+    const openPanel = () => {
+      toggleChatSettings(true);
+      setSectionCollapsed(templateSectionEl, false);
+      const row = chatTemplateRows[index];
+      if (!row) return;
+      row.container.scrollIntoView({ block: "center" });
+      row.prompt.focus();
+    };
+    if (!settings.chatOpen) {
+      void saveSettings({ ...settings, chatOpen: true }).then(openPanel);
+    } else {
+      openPanel();
+    }
+  }
+  function attachTemplateEditJump(button, index) {
+    if (button.dataset.editJump === "true") return;
+    button.dataset.editJump = "true";
+    let hoverTimer = null;
+    let pressTimer = null;
+    let longPressTriggered = false;
+    const clearHover = () => {
+      if (hoverTimer) window.clearTimeout(hoverTimer);
+      hoverTimer = null;
+    };
+    const clearPress = () => {
+      if (pressTimer) window.clearTimeout(pressTimer);
+      pressTimer = null;
+    };
+    button.addEventListener("mouseenter", () => {
+      clearHover();
+      hoverTimer = window.setTimeout(() => {
+        openTemplateEditor(index);
+      }, 900);
+    });
+    button.addEventListener("mouseleave", clearHover);
+    button.addEventListener("pointerdown", (event) => {
+      if (event.button && event.button !== 0) return;
+      longPressTriggered = false;
+      clearPress();
+      pressTimer = window.setTimeout(() => {
+        longPressTriggered = true;
+        openTemplateEditor(index);
+      }, 650);
+    });
+    const cancelPress = () => {
+      clearPress();
+    };
+    button.addEventListener("pointerup", cancelPress);
+    button.addEventListener("pointerleave", cancelPress);
+    button.addEventListener("pointercancel", cancelPress);
+    button.addEventListener(
+      "click",
+      (event) => {
+        if (!longPressTriggered) return;
+        event.preventDefault();
+        event.stopPropagation();
+        longPressTriggered = false;
+      },
+      true
+    );
+  }
   function updateHintQuickButton() {
     if (window !== window.top) return;
-    const template = getHintTemplate();
-    if (!template) {
+    const hintEntry = getHintTemplate();
+    if (!hintEntry) {
       if (hintQuickButton) {
         hintQuickButton.remove();
         hintQuickButton = null;
@@ -22103,14 +22210,15 @@ This typically indicates that your device does not have a healthy Internet conne
       applyButtonVariant(hintQuickButton, "accent");
     }
     hintQuickButton.textContent = "\u30D2\u30F3\u30C8";
-    if (template.shortcut) {
-      hintQuickButton.dataset.shortcut = template.shortcut;
+    if (hintEntry.template.shortcut) {
+      hintQuickButton.dataset.shortcut = hintEntry.template.shortcut;
     } else {
       hintQuickButton.removeAttribute("data-shortcut");
     }
     hintQuickButton.onclick = () => {
-      void sendTemplateMessage(template);
+      void sendTemplateMessage(hintEntry.template);
     };
+    attachTemplateEditJump(hintQuickButton, hintEntry.index);
     const parent = revealButton.parentElement;
     if (!parent) return;
     if (hintQuickButton.parentElement !== parent || hintQuickButton.nextSibling !== revealButton) {
@@ -22119,7 +22227,7 @@ This typically indicates that your device does not have a healthy Internet conne
   }
   function updateChatTemplatesUI() {
     if (!chatTemplateBar) return;
-    const templates = getEnabledChatTemplates();
+    const templates = getEnabledChatTemplatesWithIndex();
     chatTemplateBar.innerHTML = "";
     if (templates.length === 0) {
       chatTemplateBar.style.display = "none";
@@ -22127,7 +22235,7 @@ This typically indicates that your device does not have a healthy Internet conne
       return;
     }
     chatTemplateBar.style.display = "flex";
-    templates.forEach((template, index) => {
+    templates.forEach(({ template, index }) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "qb-support-chat-template-btn";
@@ -22139,6 +22247,7 @@ This typically indicates that your device does not have a healthy Internet conne
       button.addEventListener("click", () => {
         void sendTemplateMessage(template);
       });
+      attachTemplateEditJump(button, index);
       chatTemplateBar.appendChild(button);
     });
     updateHintQuickButton();
@@ -22222,16 +22331,7 @@ This typically indicates that your device does not have a healthy Internet conne
     void handleChatSend();
   }
   function applyTemplateConstraints(message, template) {
-    const label = typeof template === "string" ? "" : template.label;
-    const hintPhrase = "\u7D76\u5999\u306A\u30D2\u30F3\u30C8";
-    const needsLimit = label && label.includes(hintPhrase) || message.includes(hintPhrase);
-    if (!needsLimit) return message;
-    const constraint = settings.hintConstraintPrompt?.trim();
-    if (!constraint) return message;
-    if (message.includes(constraint)) return message;
-    return `${message}
-
-${constraint}`;
+    return message;
   }
   function applyButtonVariant(button, variant) {
     if (!button) return;
@@ -22899,9 +22999,6 @@ ${constraint}`;
       input.value = settings.optionKeys[index] ?? "";
     });
     syncTemplateSettingsUI();
-    if (hintConstraintInput) {
-      hintConstraintInput.value = settings.hintConstraintPrompt ?? "";
-    }
     if (commonPromptInput) {
       commonPromptInput.value = settings.commonPrompt ?? "";
     }
@@ -24433,6 +24530,24 @@ ${constraint}`;
   (**
    * @license
    * Copyright 2021 Google LLC
+   *
+   * Licensed under the Apache License, Version 2.0 (the "License");
+   * you may not use this file except in compliance with the License.
+   * You may obtain a copy of the License at
+   *
+   *   http://www.apache.org/licenses/LICENSE-2.0
+   *
+   * Unless required by applicable law or agreed to in writing, software
+   * distributed under the License is distributed on an "AS IS" BASIS,
+   * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   * See the License for the specific language governing permissions and
+   * limitations under the License.
+   *)
+
+@firebase/auth/dist/esm/index-36fcbc82.js:
+  (**
+   * @license
+   * Copyright 2020 Google LLC
    *
    * Licensed under the Apache License, Version 2.0 (the "License");
    * you may not use this file except in compliance with the License.

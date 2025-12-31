@@ -21,6 +21,15 @@
       handleCdpClick(tabId, message.x, message.y).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ ok: false, error: error.message }));
       return true;
     }
+    if (message.type === "QB_AUTH_GET_TOKEN") {
+      const interactive = message.interactive !== false;
+      handleAuthTokenRequest(interactive).then((token) => sendResponse({ ok: true, token })).catch((error) => sendResponse({ ok: false, error: error.message }));
+      return true;
+    }
+    if (message.type === "QB_AUTH_REMOVE_TOKEN") {
+      handleAuthTokenRemoval(message.token).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ ok: false, error: error.message }));
+      return true;
+    }
     if (message.type === "QB_CHAT_REQUEST") {
       handleChatRequest(message).then((payload) => sendResponse({ ok: true, ...payload })).catch((error) => sendResponse({ ok: false, error: error.message }));
       return true;
@@ -81,6 +90,50 @@
           resolve();
         }
       );
+    });
+  }
+  function getOAuthClientId() {
+    const manifest = webext.runtime?.getManifest?.();
+    if (!manifest?.oauth2?.client_id) return null;
+    return manifest.oauth2.client_id;
+  }
+  async function handleAuthTokenRequest(interactive) {
+    const identity = webext.identity;
+    if (!identity?.getAuthToken) throw new Error("chrome.identity API not available.");
+    const clientId = getOAuthClientId();
+    if (!clientId) {
+      throw new Error(
+        "manifest.json \u306B oauth2.client_id \u304C\u3042\u308A\u307E\u305B\u3093\u3002Google Cloud Console \u3067 Chrome\u62E1\u5F35\u5411\u3051\u306EOAuth\u30AF\u30E9\u30A4\u30A2\u30F3\u30C8ID\u3092\u4F5C\u6210\u3057\u3066\u8A2D\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
+      );
+    }
+    return new Promise((resolve, reject) => {
+      identity.getAuthToken({ interactive }, (token) => {
+        const err = webext.runtime?.lastError;
+        if (err?.message) {
+          reject(new Error(err.message));
+          return;
+        }
+        if (!token) {
+          reject(new Error("OAuth token was not returned."));
+          return;
+        }
+        resolve(token);
+      });
+    });
+  }
+  async function handleAuthTokenRemoval(token) {
+    const identity = webext.identity;
+    if (!identity?.removeCachedAuthToken) return;
+    if (!token) return;
+    await new Promise((resolve, reject) => {
+      identity.removeCachedAuthToken({ token }, () => {
+        const err = webext.runtime?.lastError;
+        if (err?.message) {
+          reject(new Error(err.message));
+          return;
+        }
+        resolve();
+      });
     });
   }
   async function handleChatRequest(message) {

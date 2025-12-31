@@ -20,6 +20,21 @@ webext.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "QB_AUTH_GET_TOKEN") {
+    const interactive = message.interactive !== false;
+    handleAuthTokenRequest(interactive)
+      .then((token) => sendResponse({ ok: true, token }))
+      .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
+  if (message.type === "QB_AUTH_REMOVE_TOKEN") {
+    handleAuthTokenRemoval(message.token)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error: Error) => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+
   if (message.type === "QB_CHAT_REQUEST") {
     handleChatRequest(message)
       .then((payload) => sendResponse({ ok: true, ...payload }))
@@ -92,6 +107,53 @@ function sendMouseEvent(
         resolve();
       }
     );
+  });
+}
+
+function getOAuthClientId(): string | null {
+  const manifest = webext.runtime?.getManifest?.();
+  if (!manifest?.oauth2?.client_id) return null;
+  return manifest.oauth2.client_id;
+}
+
+async function handleAuthTokenRequest(interactive: boolean): Promise<string> {
+  const identity = webext.identity;
+  if (!identity?.getAuthToken) throw new Error("chrome.identity API not available.");
+  const clientId = getOAuthClientId();
+  if (!clientId) {
+    throw new Error(
+      "manifest.json に oauth2.client_id がありません。Google Cloud Console で Chrome拡張向けのOAuthクライアントIDを作成して設定してください。"
+    );
+  }
+  return new Promise<string>((resolve, reject) => {
+    identity.getAuthToken({ interactive }, (token) => {
+      const err = webext.runtime?.lastError;
+      if (err?.message) {
+        reject(new Error(err.message));
+        return;
+      }
+      if (!token) {
+        reject(new Error("OAuth token was not returned."));
+        return;
+      }
+      resolve(token);
+    });
+  });
+}
+
+async function handleAuthTokenRemoval(token?: string | null): Promise<void> {
+  const identity = webext.identity;
+  if (!identity?.removeCachedAuthToken) return;
+  if (!token) return;
+  await new Promise<void>((resolve, reject) => {
+    identity.removeCachedAuthToken({ token }, () => {
+      const err = webext.runtime?.lastError;
+      if (err?.message) {
+        reject(new Error(err.message));
+        return;
+      }
+      resolve();
+    });
   });
 }
 
