@@ -1,0 +1,61 @@
+# API Design
+
+## Core Types
+- `QuestionInfo`
+  - `id`: string | null
+  - `progressText`: string | null
+  - `pageRef`: string | null
+  - `optionCount`: number | null
+  - `tags`: string[]
+  - `updatedAt`: number (epoch ms)
+
+- `QuestionSnapshot`
+  - `id`: string | null
+  - `url`: string
+  - `questionText`: string | null
+  - `optionTexts`: string[]
+  - `progressText`: string | null
+  - `pageRef`: string | null
+  - `tags`: string[]
+  - `updatedAt`: number
+
+- `Settings`
+  - `enabled`: boolean
+  - `shortcutsEnabled`: boolean
+  - `debugEnabled`: boolean
+  - `searchVisible`: boolean
+  - `noteVisible`: boolean
+  - `navPrevKey`: string
+  - `navNextKey`: string
+  - `revealKey`: string
+  - `optionKeys`: string[]
+  - `position`: "top-left" | "top-right" | "bottom-left" | "bottom-right"
+  - `shortcut`: string (例: `Alt+Q`)
+  - `chatOpen`: boolean
+  - `chatDock`: "left" | "right"
+  - `chatApiKey`: string
+  - `chatModel`: string
+
+## Core Functions
+- `extractQuestionInfo(doc: Document, url: string): QuestionInfo | null`
+  - DOMから問題情報を抽出
+- `extractQuestionSnapshot(doc: Document, url: string): QuestionSnapshot | null`
+  - 問題文/選択肢のスナップショットを生成
+- `normalizeSettings(input?: Partial<Settings>): Settings`
+  - 設定のデフォルト補完
+- `normalizeShortcut(input?: string): string`
+  - ショートカット文字列を正規化
+- `shortcutFromEvent(event: KeyboardEvent): string`
+  - キー入力からショートカット文字列を生成
+- `isShortcutMatch(event: KeyboardEvent, shortcut: string): boolean`
+  - 入力と設定ショートカットの一致判定
+
+## Message Types
+- `QB_ACTION`
+  - top → iframe: ナビ/選択肢/解答操作
+- `QB_QUESTION_REQUEST`
+  - top → iframe: 問題スナップショット要求
+- `QB_QUESTION_SNAPSHOT`
+  - iframe → top: 問題スナップショット返却
+- `QB_CHAT_REQUEST`
+  - content → background: OpenAI API呼び出し
