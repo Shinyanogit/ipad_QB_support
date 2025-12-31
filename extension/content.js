@@ -13873,8 +13873,13 @@
   }
   function updateChatToggleLabel() {
     if (!chatToggle) return;
+    const layout = document.documentElement.dataset.qbChatLayout;
     const open = settings.chatOpen;
-    chatToggle.textContent = open ? "\u25BC" : "\u25B2";
+    if (layout === "overlay-bottom") {
+      chatToggle.textContent = open ? "\u25BC" : "\u25B2";
+    } else {
+      chatToggle.textContent = open ? ">" : "<";
+    }
     chatToggle.setAttribute("aria-label", open ? "\u30C1\u30E3\u30C3\u30C8\u3092\u9589\u3058\u308B" : "\u30C1\u30E3\u30C3\u30C8\u3092\u958B\u304F");
   }
   function focusChatInput() {

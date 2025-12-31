@@ -1884,8 +1884,13 @@ function startChatResize(event: PointerEvent) {
 
 function updateChatToggleLabel() {
   if (!chatToggle) return;
+  const layout = document.documentElement.dataset.qbChatLayout;
   const open = settings.chatOpen;
-  chatToggle.textContent = open ? "▼" : "▲";
+  if (layout === "overlay-bottom") {
+    chatToggle.textContent = open ? "▼" : "▲";
+  } else {
+    chatToggle.textContent = open ? ">" : "<";
+  }
   chatToggle.setAttribute("aria-label", open ? "チャットを閉じる" : "チャットを開く");
 }
 
