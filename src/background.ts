@@ -2,7 +2,7 @@ import { webext } from "./lib/webext";
 
 const AUTH_LOG_PREFIX = "[QB_SUPPORT][auth-bg]";
 const AUTH_METHOD_TIMEOUT_MS = 8000;
-const AUTH_INTERACTIVE_TIMEOUT_MS = 120000;
+const AUTH_INTERACTIVE_TIMEOUT_MS = 30000;
 
 const ATTACHED_TABS = new Set<number>();
 
@@ -385,19 +385,7 @@ async function handleAuthTokenRequest(interactive: boolean): Promise<string> {
     launchWebAuthFlow: Boolean(identity.launchWebAuthFlow),
     getAuthToken: Boolean(identity.getAuthToken),
   });
-  if (identity.launchWebAuthFlow) {
-    try {
-      const token = await withAuthTimeout(
-        launchWebAuthFlowToken(identity, interactive),
-        "launchWebAuthFlow",
-        getAuthTimeout(interactive)
-      );
-      console.log(AUTH_LOG_PREFIX, "token success", { method: "launchWebAuthFlow" });
-      return token;
-    } catch (error) {
-      console.warn("[QB_SUPPORT][auth]", "launchWebAuthFlow failed", error);
-    }
-  }
+  const methodTimeout = getAuthTimeout(interactive);
   if (identity.getAuthToken) {
     try {
       console.log(AUTH_LOG_PREFIX, "getAuthToken:start");
@@ -421,21 +409,29 @@ async function handleAuthTokenRequest(interactive: boolean): Promise<string> {
           });
         }),
         "getAuthToken",
-        getAuthTimeout(interactive)
+        methodTimeout
       );
       console.log(AUTH_LOG_PREFIX, "token success", { method: "getAuthToken" });
       return token;
     } catch (error) {
       console.warn("[QB_SUPPORT][auth]", "getAuthToken failed", error);
+      throw error;
     }
   }
-  const token = await withAuthTimeout(
-    launchTabAuthFlowToken(identity, interactive),
-    "tabsAuthFlow",
-    getAuthTimeout(interactive)
-  );
-  console.log(AUTH_LOG_PREFIX, "token success", { method: "tabsAuthFlow" });
-  return token;
+  if (identity.launchWebAuthFlow) {
+    try {
+      const token = await withAuthTimeout(
+        launchWebAuthFlowToken(identity, interactive),
+        "launchWebAuthFlow",
+        methodTimeout
+      );
+      console.log(AUTH_LOG_PREFIX, "token success", { method: "launchWebAuthFlow" });
+      return token;
+    } catch (error) {
+      console.warn("[QB_SUPPORT][auth]", "launchWebAuthFlow failed", error);
+    }
+  }
+  throw new Error("No supported auth flow. Check chrome.identity permissions.");
 }
 
 async function handleAuthTokenRemoval(token?: string | null): Promise<void> {

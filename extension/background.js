@@ -7,7 +7,7 @@
   // src/background.ts
   var AUTH_LOG_PREFIX = "[QB_SUPPORT][auth-bg]";
   var AUTH_METHOD_TIMEOUT_MS = 8e3;
-  var AUTH_INTERACTIVE_TIMEOUT_MS = 12e4;
+  var AUTH_INTERACTIVE_TIMEOUT_MS = 3e4;
   var ATTACHED_TABS = /* @__PURE__ */ new Set();
   webext.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
     if (!message || typeof message.type !== "string") return;
@@ -128,6 +128,35 @@
       );
     });
   }
+  function resolveBackendChatUrl(base) {
+    return resolveBackendEndpoint(base, "chat");
+  }
+  function resolveBackendStreamUrl(base) {
+    return resolveBackendEndpoint(base, "chat/stream");
+  }
+  function resolveBackendEndpoint(base, suffix) {
+    const trimmed = base.trim();
+    if (!trimmed) return null;
+    let url;
+    try {
+      url = new URL(trimmed);
+    } catch {
+      return null;
+    }
+    let path = url.pathname.replace(/\/+$/, "");
+    if (!path) {
+      path = `/${suffix}`;
+    } else if (path.endsWith(`/${suffix}`)) {
+    } else if (suffix === "chat/stream" && path.endsWith("/chat")) {
+      path = `${path}/stream`;
+    } else if (suffix === "chat" && path.endsWith("/chat/stream")) {
+      path = path.replace(/\/chat\/stream$/, "/chat");
+    } else {
+      path = `${path}/${suffix}`;
+    }
+    url.pathname = path;
+    return url.toString();
+  }
   function getOAuthClientId() {
     const manifest = webext.runtime?.getManifest?.();
     if (!manifest?.oauth2?.client_id) return null;
@@ -213,136 +242,61 @@
       });
     });
   }
-  async function launchTabAuthFlowToken(identity, interactive) {
-    const tabs = webext.tabs;
-    if (!tabs?.create || !tabs.onUpdated) {
-      throw new Error("chrome.tabs API not available.");
-    }
-    const url = buildOAuthUrl(identity);
-    const redirectBase = identity.getRedirectURL("qb-support-auth");
-    console.log(AUTH_LOG_PREFIX, "tabs.create:start", { url });
-    const tab = await new Promise((resolve, reject) => {
-      tabs.create({ url, active: interactive }, (created) => {
-        const err = webext.runtime?.lastError;
-        console.log(AUTH_LOG_PREFIX, "tabs.create:callback", {
-          tabId: created?.id ?? null,
-          lastError: err?.message ?? null
-        });
-        if (err?.message) {
-          reject(new Error(err.message));
-          return;
-        }
-        if (!created) {
-          reject(new Error("Failed to create auth tab."));
-          return;
-        }
-        resolve(created);
-      });
-    });
-    const tabId = tab.id;
-    if (typeof tabId !== "number") {
-      throw new Error("Auth tab id is missing.");
-    }
-    return new Promise((resolve, reject) => {
-      let lastUrl = null;
-      const timeoutId = setTimeout(() => {
-        cleanup();
-        reject(new Error("OAuth tab flow timed out."));
-      }, AUTH_METHOD_TIMEOUT_MS);
-      const onUpdated = (updatedTabId, info) => {
-        if (updatedTabId !== tabId) return;
-        if (!info.url) return;
-        lastUrl = info.url;
-        console.log(AUTH_LOG_PREFIX, "tabs.onUpdated", {
-          tabId: updatedTabId,
-          url: info.url,
-          status: info.status ?? null
-        });
-        if (!info.url.startsWith(redirectBase)) return;
-        const redirectUrl = info.url;
-        let parsed;
-        try {
-          parsed = new URL(redirectUrl);
-        } catch (parseError) {
-          cleanup();
-          reject(new Error(`Invalid redirect URL: ${String(parseError)}`));
-          return;
-        }
-        const params = new URLSearchParams(parsed.hash.replace(/^#/, ""));
-        const error = params.get("error");
-        if (error) {
-          cleanup();
-          reject(new Error(`OAuth error: ${error}`));
-          return;
-        }
-        const token = params.get("access_token");
-        if (!token) {
-          cleanup();
-          reject(new Error("OAuth access_token was not returned."));
-          return;
-        }
-        cleanup();
-        resolve(token);
-      };
-      const cleanup = () => {
-        clearTimeout(timeoutId);
-        tabs.onUpdated.removeListener(onUpdated);
-        tabs.remove(tabId);
-        if (lastUrl) {
-          console.log(AUTH_LOG_PREFIX, "tabs.onUpdated:last", { tabId, url: lastUrl });
-        }
-      };
-      tabs.onUpdated.addListener(onUpdated);
-    });
-  }
   async function handleAuthTokenRequest(interactive) {
     const identity = webext.identity;
     if (!identity) throw new Error("chrome.identity API not available.");
-    if (identity.launchWebAuthFlow) {
-      try {
-        return await withAuthTimeout(
-          launchWebAuthFlowToken(identity, interactive),
-          "launchWebAuthFlow",
-          getAuthTimeout(interactive)
-        );
-      } catch (error) {
-        console.warn("[QB_SUPPORT][auth]", "launchWebAuthFlow failed", error);
-      }
-    }
+    console.log(AUTH_LOG_PREFIX, "token request", {
+      interactive,
+      launchWebAuthFlow: Boolean(identity.launchWebAuthFlow),
+      getAuthToken: Boolean(identity.getAuthToken)
+    });
+    const methodTimeout = getAuthTimeout(interactive);
     if (identity.getAuthToken) {
       try {
         console.log(AUTH_LOG_PREFIX, "getAuthToken:start");
-        return await withAuthTimeout(
+        const token = await withAuthTimeout(
           new Promise((resolve, reject) => {
-            identity.getAuthToken({ interactive }, (token) => {
+            identity.getAuthToken({ interactive }, (token2) => {
               const err = webext.runtime?.lastError;
               console.log(AUTH_LOG_PREFIX, "getAuthToken:callback", {
-                tokenPresent: Boolean(token),
+                tokenPresent: Boolean(token2),
                 lastError: err?.message ?? null
               });
               if (err?.message) {
                 reject(new Error(err.message));
                 return;
               }
-              if (!token) {
+              if (!token2) {
                 reject(new Error("OAuth token was not returned."));
                 return;
               }
-              resolve(token);
+              resolve(token2);
             });
           }),
           "getAuthToken",
-          getAuthTimeout(interactive)
+          methodTimeout
         );
+        console.log(AUTH_LOG_PREFIX, "token success", { method: "getAuthToken" });
+        return token;
       } catch (error) {
         console.warn("[QB_SUPPORT][auth]", "getAuthToken failed", error);
+        throw error;
       }
     }
-    return withAuthTimeout(
-      launchTabAuthFlowToken(identity, interactive),
-      "tabsAuthFlow",
-      getAuthTimeout(interactive)
-    );
+    if (identity.launchWebAuthFlow) {
+      try {
+        const token = await withAuthTimeout(
+          launchWebAuthFlowToken(identity, interactive),
+          "launchWebAuthFlow",
+          methodTimeout
+        );
+        console.log(AUTH_LOG_PREFIX, "token success", { method: "launchWebAuthFlow" });
+        return token;
+      } catch (error) {
+        console.warn("[QB_SUPPORT][auth]", "launchWebAuthFlow failed", error);
+      }
+    }
+    throw new Error("No supported auth flow. Check chrome.identity permissions.");
   }
   async function handleAuthTokenRemoval(token) {
     const identity = webext.identity;
@@ -361,8 +315,13 @@
   }
   async function handleChatRequest(message) {
     const apiKey = typeof message.apiKey === "string" ? message.apiKey.trim() : "";
-    if (!apiKey) throw new Error("API key is not set.");
-    const model = typeof message.model === "string" && message.model ? message.model : "gpt-4o-mini";
+    const backendBaseUrl = typeof message.backendUrl === "string" ? message.backendUrl.trim() : "";
+    const authToken = typeof message.authToken === "string" ? message.authToken.trim() : "";
+    const backendUrl = backendBaseUrl ? resolveBackendChatUrl(backendBaseUrl) : "";
+    const useBackend = !apiKey && Boolean(backendUrl && authToken);
+    if (!apiKey && !useBackend) throw new Error("API key is not set.");
+    const requestedModel = typeof message.model === "string" && message.model ? message.model : "gpt-4o-mini";
+    const model = useBackend ? "gpt-4.1" : requestedModel;
     const messages = Array.isArray(message.messages) ? message.messages : [];
     const supportsTemperature = model === "gpt-5.2";
     const payload = {
@@ -372,14 +331,17 @@
     if (supportsTemperature) {
       payload.temperature = 0.2;
     }
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(payload)
-    });
+    const response = await fetch(
+      useBackend && backendUrl ? backendUrl : "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${useBackend ? authToken : apiKey}`
+        },
+        body: JSON.stringify(payload)
+      }
+    );
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`API Error: ${response.status} - ${errorText}`);
@@ -392,8 +354,13 @@
   async function handleChatStream(port, message) {
     const requestId = message.requestId;
     const apiKey = typeof message.apiKey === "string" ? message.apiKey.trim() : "";
-    if (!apiKey) throw new Error("API key is not set.");
-    const model = typeof message.model === "string" && message.model ? message.model : "gpt-4o-mini";
+    const backendBaseUrl = typeof message.backendUrl === "string" ? message.backendUrl.trim() : "";
+    const authToken = typeof message.authToken === "string" ? message.authToken.trim() : "";
+    const backendUrl = backendBaseUrl ? resolveBackendStreamUrl(backendBaseUrl) : "";
+    const useBackend = !apiKey && Boolean(backendUrl && authToken);
+    if (!apiKey && !useBackend) throw new Error("API key is not set.");
+    const requestedModel = typeof message.model === "string" && message.model ? message.model : "gpt-4o-mini";
+    const model = useBackend ? "gpt-4.1" : requestedModel;
     const input = message.input ?? [];
     const instructions = typeof message.instructions === "string" ? message.instructions.trim() : "";
     const previousResponseId = typeof message.previousResponseId === "string" && message.previousResponseId ? message.previousResponseId : null;
@@ -410,15 +377,18 @@
     if (model === "gpt-5.2") {
       payload.temperature = 0.2;
     }
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal
-    });
+    const response = await fetch(
+      useBackend && backendUrl ? backendUrl : "https://api.openai.com/v1/responses",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${useBackend ? authToken : apiKey}`
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      }
+    );
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`API Error: ${response.status} - ${errorText}`);

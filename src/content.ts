@@ -337,7 +337,7 @@ function setAuthSyncStatus(message: string, isError: boolean) {
 }
 
 async function requestGoogleAuthToken(interactive: boolean): Promise<string> {
-  const timeoutMs = interactive ? 130000 : 15000;
+  const timeoutMs = interactive ? 30000 : 15000;
   const startedAt = Date.now();
   console.log("[QB_SUPPORT][auth-ui] token request start", { timeoutMs, interactive });
   let timeoutId: number | null = null;
