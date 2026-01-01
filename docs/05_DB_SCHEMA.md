@@ -17,7 +17,7 @@
   - `chatOpen`: boolean
   - `chatDock`: "left" | "right"
   - `chatApiKey`: string
-  - `chatBackendUrl`: string
+  - `chatApiKeyEnabled`: boolean
   - `chatModel`: string
   - `chatTemplates`: { enabled/label/shortcut/prompt }[]
   - `chatTemplateCount`: number

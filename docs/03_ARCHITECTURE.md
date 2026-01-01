@@ -19,10 +19,15 @@
 2. MutationObserver + URL監視で問題情報を更新
 3. `core/qbDom.ts` が問題情報/本文を抽出
 4. チャット送信時に問題スナップショット（画像含む）を生成
-5. backgroundへ `QB_CHAT_STREAM_REQUEST` を送信 → OpenAI Responses API（SSE）→ ストリーミング応答
-6. Firebaseログイン時は `chrome.identity` → OAuth token → `signInWithCredential` で認証
-7. 認証済みユーザーは Firestore に設定を同期
+5. backgroundへ `QB_CHAT_STREAM_REQUEST` を送信 → OpenAI Responses API（SSE）/backend proxy → ストリーミング応答
+6. ログインは backend `/auth/start` → Google OAuth → `/auth/callback` → `/auth/session` でセッション取得
+7. 認証済みユーザーは backend `/settings` 経由で Firestore に同期
 8. チャット表示はドックのみ（オーバーレイは使用しない）
+
+## Backend（Cloud Run）
+- エンドポイント: `/health`, `/auth/start`, `/auth/session`, `/auth/callback`, `/auth/me`, `/settings`, `/chat`, `/chat/stream`
+- `/chat` は `chat/completions`、`/chat/stream` は `responses` を使用
+- APIキー未設定ユーザーは backend の OpenAI APIキーで代理実行（モデルは `gpt-5-mini` / `gpt-4.1` のみ）
 
 ## フレーム間通信
 - top → iframe: `QB_ACTION` / `QB_QUESTION_REQUEST`
@@ -35,4 +40,4 @@
 ## Safari差分
 - `chrome.debugger` は使用不可。CDPクリックは自動でフォールバック。
 - ストレージは `storage.sync` がなければ `storage.local` を利用。
- - `chrome.identity` を使ったGoogle認証は未対応のため、環境差分の扱いが必要。
+- Google認証は backend OAuth を利用（`chrome.identity` に依存しない）。

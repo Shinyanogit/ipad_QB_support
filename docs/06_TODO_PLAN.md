@@ -12,7 +12,8 @@
 - Chatストリーミング表示（Responses API）
 - Markdown表示/コピー/トークン消費表示
 - テンプレート送信（ショートカット/編集UI）
-- Firebase認証と設定のリモート同期
+- Backend OAuthとFirestore設定同期
+- バックエンド経由のOpenAI呼び出し（認証済みユーザー向け）
 - テーマ（ライト/ダーク/システム）とページ配色切替
 
 ## Debug Notes
@@ -20,7 +21,7 @@
 - B: `[QB_SUPPORT][nav]/[submit]/[reveal]` の target が `null` → DOM取得失敗
 - C: クリックログが出るが反応しない → サイト側イベント要件
 - D: Chatが無応答 → APIキー未設定 or background未動作
-- E: `auth/internal-error` → CSPでgapiがブロックされるケース（`chrome.identity` 移行で回避）
+- E: OAuthが進まない → backend `/auth/start` のURL/redirect_uri設定を確認
 - F: 「デバッグを開始しました」警告 → `chrome.debugger` 使用時のChrome強制表示（非表示不可）
 
 ## Next
@@ -29,4 +30,3 @@
 - チャット履歴のUX調整（質問切替時の扱い）
 - OpenAIモデル選択/エラー表示の改善
 - 単体テスト雛形（coreのDOM抽出）
-- バックエンド経由のOpenAI呼び出し（認証済みユーザー向け）

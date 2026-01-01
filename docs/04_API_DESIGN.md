@@ -35,7 +35,7 @@
   - `chatOpen`: boolean
   - `chatDock`: "left" | "right"
   - `chatApiKey`: string
-  - `chatBackendUrl`: string
+  - `chatApiKeyEnabled`: boolean
   - `chatModel`: string
   - `chatTemplates`: { enabled/label/shortcut/prompt }[]
   - `chatTemplateCount`: number
@@ -45,6 +45,28 @@
   - `explanationPrompts`: Record<explanationLevel, string>
   - `themePreference`: "system" | "light" | "dark"
   - `pageAccentEnabled`: boolean
+
+## Backend Endpoints
+- `GET /health`
+  - 常に `200 { ok: true }`
+- `GET /auth/start`
+  - Google OAuth URL と state を返却
+- `GET /auth/session?state=...`
+  - OAuth完了後のセッション情報を取得
+- `GET /auth/callback`
+  - Google OAuth リダイレクト先
+- `GET /auth/me`
+  - セッション検証（`Authorization: Bearer <token>`）
+- `GET /settings`
+  - リモート設定取得（要認証）
+- `POST /settings`
+  - リモート設定保存（要認証）
+- `POST /chat`
+  - OpenAI `chat/completions` へのプロキシ（要認証）
+  - backend利用時は 60 req/hour のレート制限
+- `POST /chat/stream`
+  - OpenAI `responses` のストリーミング（要認証）
+  - backend利用時は 60 req/hour のレート制限
 
 ## Core Functions
 - `extractQuestionInfo(doc: Document, url: string): QuestionInfo | null`
@@ -77,7 +99,3 @@
   - background → content: 完了通知（usage/response_id含む）
 - `QB_CHAT_STREAM_ERROR`
   - background → content: ストリーミング失敗
-- `QB_AUTH_GET_TOKEN`
-  - content → background: `chrome.identity` のOAuthトークン取得
-- `QB_AUTH_REMOVE_TOKEN`
-  - content → background: OAuthトークンのキャッシュ削除
