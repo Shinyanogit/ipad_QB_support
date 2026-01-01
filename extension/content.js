@@ -387,6 +387,7 @@
     chatOpen: false,
     chatDock: "right",
     chatApiKey: "",
+    chatApiKeyEnabled: true,
     chatModel: "gpt-5.2",
     chatTemplates: DEFAULT_CHAT_TEMPLATES,
     chatTemplateCount: 3,
@@ -416,6 +417,7 @@
       chatOpen: typeof input.chatOpen === "boolean" ? input.chatOpen : defaultSettings.chatOpen,
       chatDock: isChatDock(input.chatDock) ? input.chatDock : defaultSettings.chatDock,
       chatApiKey: typeof input.chatApiKey === "string" ? input.chatApiKey.trim() : defaultSettings.chatApiKey,
+      chatApiKeyEnabled: typeof input.chatApiKeyEnabled === "boolean" ? input.chatApiKeyEnabled : defaultSettings.chatApiKeyEnabled,
       chatModel: normalizeChatModel(input.chatModel) ?? defaultSettings.chatModel,
       chatTemplates: normalizeChatTemplates(input.chatTemplates),
       chatTemplateCount: (() => {
@@ -12280,6 +12282,9 @@
   var QB_TOP_ORIGIN = "https://qb.medilink-study.com";
   var FIREBASE_SETTINGS_COLLECTION = "qb_support_settings";
   var FIREBASE_SETTINGS_VERSION = 1;
+  var BACKEND_FORCED_MODEL = "gpt-4.1";
+  var DEFAULT_BACKEND_URL = "https://ipad-qb-support-400313981210.asia-northeast1.run.app";
+  var USAGE_META_EMAIL = "ymgtsny7@gmail.com";
   var EXPLANATION_LEVEL_LABELS = {
     highschool: "\u9AD8\u6821\u751F\u3067\u3082\u308F\u304B\u308B",
     "med-junior": "\u533B\u5B66\u90E8\u4F4E\u5B66\u5E74",
@@ -12303,11 +12308,15 @@
   var chatInputWrap = null;
   var chatApiInput = null;
   var chatApiSaveButton = null;
+  var chatApiKeyToggle = null;
+  var chatApiKeyVisibilityButton = null;
+  var chatApiKeyStatus = null;
   var chatModelInput = null;
   var chatModelSaveButton = null;
   var chatSettingsPanel = null;
   var chatSettingsButton = null;
   var chatSettingsOpen = false;
+  var chatApiKeyVisible = false;
   var chatTemplateBar = null;
   var chatTemplateRows = [];
   var templateCountLabel = null;
@@ -12423,7 +12432,13 @@
     });
     onAuthStateChanged(auth, (user) => {
       authUser = user;
+      console.log("[QB_SUPPORT][auth] state", {
+        uid: user?.uid ?? null,
+        email: user?.email ?? null,
+        provider: user?.providerData?.map((item) => item.providerId) ?? []
+      });
       updateAuthUI();
+      applyChatSettings();
       if (!user) {
         remoteSettingsLoadedFor = null;
         setAuthSyncStatus("\u672A\u30ED\u30B0\u30A4\u30F3", false);
@@ -12465,20 +12480,35 @@
     authSyncField.classList.toggle("is-error", isError);
   }
   async function requestGoogleAuthToken() {
-    const timeoutMs = 2e4;
+    const timeoutMs = 13e4;
+    const startedAt = Date.now();
+    console.log("[QB_SUPPORT][auth-ui] token request start", { timeoutMs });
     let timeoutId = null;
     const timeoutPromise = new Promise((_, reject) => {
       timeoutId = window.setTimeout(() => {
-        reject(new Error("\u30ED\u30B0\u30A4\u30F3\u753B\u9762\u306E\u8D77\u52D5\u304C\u30BF\u30A4\u30E0\u30A2\u30A6\u30C8\u3057\u307E\u3057\u305F\u3002"));
+        console.warn("[QB_SUPPORT][auth-ui] token request timeout", { timeoutMs });
+        reject(new Error("\u30ED\u30B0\u30A4\u30F3\u753B\u9762\u306E\u8D77\u52D5\u304C\u30BF\u30A4\u30E0\u30A2\u30A6\u30C8\u3057\u307E\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002"));
       }, timeoutMs);
     });
-    const response = await Promise.race([
-      sendRuntimeMessage({
-        type: "QB_AUTH_GET_TOKEN",
-        interactive: true
-      }),
-      timeoutPromise
-    ]);
+    const responsePromise = sendRuntimeMessage({
+      type: "QB_AUTH_GET_TOKEN",
+      interactive: true
+    }).then((response2) => {
+      console.log("[QB_SUPPORT][auth-ui] token request response", {
+        ok: response2?.ok ?? false,
+        tokenPresent: Boolean(response2?.token),
+        error: response2?.error ?? null,
+        ms: Date.now() - startedAt
+      });
+      return response2;
+    }).catch((error) => {
+      console.warn("[QB_SUPPORT][auth-ui] token request error", {
+        message: error instanceof Error ? error.message : String(error),
+        ms: Date.now() - startedAt
+      });
+      throw error;
+    });
+    const response = await Promise.race([responsePromise, timeoutPromise]);
     if (timeoutId) window.clearTimeout(timeoutId);
     if (!response?.ok) {
       const message = response?.error ?? "OAuth token request failed.";
@@ -12494,10 +12524,12 @@
     setAuthStatus("\u30ED\u30B0\u30A4\u30F3\u4E2D...", false);
     console.log("[QB_SUPPORT][auth] ORIGIN", location.origin);
     console.log("[QB_SUPPORT][auth] HREF", location.href);
+    console.log("[QB_SUPPORT][auth] EXT_ID", webext.runtime?.id ?? null);
     try {
       const token = await requestGoogleAuthToken();
       const credential = GoogleAuthProvider.credential(null, token);
       await signInWithCredential(getFirebaseAuth(), credential);
+      console.log("[QB_SUPPORT][auth] signInWithCredential success");
     } catch (error) {
       console.log("[QB_SUPPORT][auth] AUTH_ERR_RAW", error);
       const err = error;
@@ -13178,6 +13210,15 @@
           ".qb-support-chat-save"
         );
       }
+      chatApiKeyToggle = chatRoot.querySelector(
+        ".qb-support-chat-api-key-toggle"
+      );
+      chatApiKeyVisibilityButton = chatRoot.querySelector(
+        ".qb-support-chat-api-visibility"
+      );
+      chatApiKeyStatus = chatRoot.querySelector(
+        ".qb-support-chat-api-key-status"
+      );
       const modelNode = chatRoot.querySelector(".qb-support-chat-model");
       chatModelInput = modelNode instanceof HTMLSelectElement ? modelNode : null;
       chatModelSaveButton = chatRoot.querySelector(
@@ -13191,12 +13232,89 @@
       );
       if (chatApiInput) {
         chatApiInput.classList.add("qb-support-chat-api-key");
+        if (chatApiInput.dataset.handlers !== "true") {
+          chatApiInput.dataset.handlers = "true";
+          chatApiInput.addEventListener("input", () => {
+            updateChatApiKeyStatus();
+            if (chatApiKeyVisibilityButton) {
+              chatApiKeyVisibilityButton.disabled = !chatApiInput?.value.trim();
+            }
+          });
+        }
       }
       if (chatApiSaveButton) {
         chatApiSaveButton.classList.add("qb-support-chat-api-save");
       }
+      const apiSection2 = chatRoot.querySelector(".qb-support-chat-api");
+      if (apiSection2) {
+        let apiKeyRow2 = apiSection2.querySelector(
+          ".qb-support-chat-api-row"
+        );
+        if (!apiKeyRow2) {
+          apiKeyRow2 = document.createElement("div");
+          apiKeyRow2.className = "qb-support-chat-api-row";
+          if (chatApiInput && chatApiInput.parentElement === apiSection2) {
+            apiSection2.insertBefore(apiKeyRow2, chatApiInput);
+            apiKeyRow2.appendChild(chatApiInput);
+          } else {
+            apiSection2.appendChild(apiKeyRow2);
+            if (chatApiInput) apiKeyRow2.appendChild(chatApiInput);
+          }
+        }
+        if (!chatApiKeyVisibilityButton) {
+          chatApiKeyVisibilityButton = document.createElement("button");
+          chatApiKeyVisibilityButton.type = "button";
+          chatApiKeyVisibilityButton.className = "qb-support-chat-api-visibility";
+          chatApiKeyVisibilityButton.textContent = "\u8868\u793A";
+        }
+        if (chatApiKeyVisibilityButton) {
+          applyButtonVariant(chatApiKeyVisibilityButton, "ghost");
+        }
+        if (apiKeyRow2 && chatApiKeyVisibilityButton && !apiKeyRow2.contains(chatApiKeyVisibilityButton)) {
+          apiKeyRow2.appendChild(chatApiKeyVisibilityButton);
+        }
+        if (chatApiKeyVisibilityButton && chatApiKeyVisibilityButton.dataset.handlers !== "true") {
+          chatApiKeyVisibilityButton.dataset.handlers = "true";
+          chatApiKeyVisibilityButton.addEventListener("click", () => {
+            chatApiKeyVisible = !chatApiKeyVisible;
+            if (chatApiInput) {
+              chatApiInput.type = chatApiKeyVisible ? "text" : "password";
+            }
+            if (chatApiKeyVisibilityButton) {
+              chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "\u975E\u8868\u793A" : "\u8868\u793A";
+            }
+          });
+        }
+        if (!chatApiKeyStatus) {
+          chatApiKeyStatus = document.createElement("div");
+          chatApiKeyStatus.className = "qb-support-chat-api-key-status";
+        }
+        if (chatApiKeyStatus && chatApiSaveButton && !apiSection2.contains(chatApiKeyStatus)) {
+          apiSection2.insertBefore(chatApiKeyStatus, chatApiSaveButton);
+        } else if (chatApiKeyStatus && !apiSection2.contains(chatApiKeyStatus)) {
+          apiSection2.appendChild(chatApiKeyStatus);
+        }
+        if (!chatApiKeyToggle) {
+          const apiKeyToggleLabel2 = document.createElement("label");
+          apiKeyToggleLabel2.className = "qb-support-toggle qb-support-chat-api-toggle";
+          chatApiKeyToggle = document.createElement("input");
+          chatApiKeyToggle.type = "checkbox";
+          chatApiKeyToggle.className = "qb-support-toggle-input qb-support-chat-api-key-toggle";
+          apiKeyToggleLabel2.appendChild(chatApiKeyToggle);
+          apiKeyToggleLabel2.appendChild(makeSpan("\u624B\u52D5API\u30AD\u30FC\u3092\u4F7F\u7528"));
+          apiSection2.appendChild(apiKeyToggleLabel2);
+        }
+        if (chatApiKeyToggle && chatApiKeyToggle.dataset.handlers !== "true") {
+          chatApiKeyToggle.dataset.handlers = "true";
+          chatApiKeyToggle.addEventListener("change", () => {
+            void saveSettings({
+              ...settings,
+              chatApiKeyEnabled: chatApiKeyToggle?.checked ?? true
+            });
+          });
+        }
+      }
       if (!chatModelInput || !chatModelSaveButton) {
-        const apiSection2 = chatRoot.querySelector(".qb-support-chat-api");
         if (apiSection2) {
           let modelLabel2 = apiSection2.querySelector(
             ".qb-support-chat-model-label"
@@ -13242,10 +13360,10 @@
           const panel2 = document.createElement("div");
           panel2.className = "qb-support-chat-settings";
           panel2.dataset.open = "false";
-          const apiSection2 = chatRoot.querySelector(".qb-support-chat-api");
-          if (apiSection2) {
-            apiSection2.classList.add("qb-support-chat-settings-section");
-            panel2.appendChild(apiSection2);
+          const apiSection3 = chatRoot.querySelector(".qb-support-chat-api");
+          if (apiSection3) {
+            apiSection3.classList.add("qb-support-chat-settings-section");
+            panel2.appendChild(apiSection3);
           }
           if (chatPanel && chatMessagesEl) {
             chatPanel.insertBefore(panel2, chatMessagesEl);
@@ -13321,6 +13439,32 @@
     chatApiInput.type = "password";
     chatApiInput.className = "qb-support-chat-input qb-support-chat-api-key";
     chatApiInput.placeholder = "sk-...";
+    chatApiInput.addEventListener("input", () => {
+      updateChatApiKeyStatus();
+      if (chatApiKeyVisibilityButton) {
+        chatApiKeyVisibilityButton.disabled = !chatApiInput?.value.trim();
+      }
+    });
+    const apiKeyRow = document.createElement("div");
+    apiKeyRow.className = "qb-support-chat-api-row";
+    apiKeyRow.appendChild(chatApiInput);
+    chatApiKeyVisibilityButton = document.createElement("button");
+    chatApiKeyVisibilityButton.type = "button";
+    chatApiKeyVisibilityButton.className = "qb-support-chat-api-visibility";
+    chatApiKeyVisibilityButton.textContent = "\u8868\u793A";
+    applyButtonVariant(chatApiKeyVisibilityButton, "ghost");
+    chatApiKeyVisibilityButton.addEventListener("click", () => {
+      chatApiKeyVisible = !chatApiKeyVisible;
+      if (chatApiInput) {
+        chatApiInput.type = chatApiKeyVisible ? "text" : "password";
+      }
+      if (chatApiKeyVisibilityButton) {
+        chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "\u975E\u8868\u793A" : "\u8868\u793A";
+      }
+    });
+    apiKeyRow.appendChild(chatApiKeyVisibilityButton);
+    chatApiKeyStatus = document.createElement("div");
+    chatApiKeyStatus.className = "qb-support-chat-api-key-status";
     chatApiSaveButton = document.createElement("button");
     chatApiSaveButton.type = "button";
     chatApiSaveButton.className = "qb-support-chat-save qb-support-chat-api-save";
@@ -13340,6 +13484,19 @@
       if (chatApiInput) chatApiInput.value = "";
       setChatStatus("API\u30AD\u30FC\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F", false);
     });
+    const apiKeyToggleLabel = document.createElement("label");
+    apiKeyToggleLabel.className = "qb-support-toggle qb-support-chat-api-toggle";
+    chatApiKeyToggle = document.createElement("input");
+    chatApiKeyToggle.type = "checkbox";
+    chatApiKeyToggle.className = "qb-support-toggle-input qb-support-chat-api-key-toggle";
+    apiKeyToggleLabel.appendChild(chatApiKeyToggle);
+    apiKeyToggleLabel.appendChild(makeSpan("\u624B\u52D5API\u30AD\u30FC\u3092\u4F7F\u7528"));
+    chatApiKeyToggle.addEventListener("change", () => {
+      void saveSettings({
+        ...settings,
+        chatApiKeyEnabled: chatApiKeyToggle?.checked ?? true
+      });
+    });
     const modelLabel = document.createElement("label");
     modelLabel.textContent = "Model";
     modelLabel.className = "qb-support-chat-api-label qb-support-chat-model-label";
@@ -13350,8 +13507,10 @@
     chatModelSaveButton.textContent = "\u9069\u7528";
     applyButtonVariant(chatModelSaveButton, "primary");
     apiSection.appendChild(apiLabel);
-    apiSection.appendChild(chatApiInput);
+    apiSection.appendChild(apiKeyRow);
+    apiSection.appendChild(chatApiKeyStatus);
     apiSection.appendChild(chatApiSaveButton);
+    apiSection.appendChild(apiKeyToggleLabel);
     apiSection.appendChild(modelLabel);
     apiSection.appendChild(chatModelInput);
     apiSection.appendChild(chatModelSaveButton);
@@ -13454,12 +13613,48 @@
       toggleChatSettings(false);
     }
     if (chatApiInput && document.activeElement !== chatApiInput) {
-      chatApiInput.value = "";
-      chatApiInput.placeholder = settings.chatApiKey ? "\u4FDD\u5B58\u6E08\u307F (\u518D\u5165\u529B\u3067\u66F4\u65B0)" : "sk-...";
+      const apiKeySaved = Boolean(settings.chatApiKey);
+      chatApiInput.value = apiKeySaved ? settings.chatApiKey : "";
+      chatApiInput.placeholder = apiKeySaved ? "\u4FDD\u5B58\u6E08\u307F (\u7DE8\u96C6\u53EF)" : "sk-...";
     }
-    if (chatModelInput && document.activeElement !== chatModelInput) {
-      chatModelInput.value = settings.chatModel;
+    updateChatApiKeyStatus();
+    if (chatApiKeyToggle) {
+      chatApiKeyToggle.checked = settings.chatApiKeyEnabled;
     }
+    if (chatApiKeyVisibilityButton) {
+      const hasKey = Boolean(settings.chatApiKey || chatApiInput?.value);
+      if (!hasKey) chatApiKeyVisible = false;
+      if (chatApiInput) {
+        chatApiInput.type = chatApiKeyVisible ? "text" : "password";
+      }
+      chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "\u975E\u8868\u793A" : "\u8868\u793A";
+      chatApiKeyVisibilityButton.disabled = !hasKey;
+    }
+    const backendMode = isBackendModelLocked();
+    if (chatModelInput) {
+      if (backendMode) {
+        chatModelInput.value = BACKEND_FORCED_MODEL;
+      } else if (document.activeElement !== chatModelInput) {
+        chatModelInput.value = settings.chatModel;
+      }
+      chatModelInput.disabled = backendMode;
+    }
+    if (chatModelSaveButton) {
+      chatModelSaveButton.disabled = backendMode;
+    }
+  }
+  function updateChatApiKeyStatus() {
+    if (!chatApiKeyStatus) return;
+    const saved = Boolean(settings.chatApiKey);
+    const currentValue = chatApiInput?.value.trim() ?? "";
+    let status = "\u672A\u5165\u529B";
+    if (saved) {
+      status = "\u5165\u529B\u6E08\u307F";
+    } else if (currentValue) {
+      status = "\u5165\u529B\u4E2D";
+    }
+    const suffix = saved && !settings.chatApiKeyEnabled ? " (\u4F7F\u7528\u30AA\u30D5)" : "";
+    chatApiKeyStatus.textContent = `API\u30AD\u30FC: ${status}${suffix}`;
   }
   function ensureThemeListener() {
     if (themeQuery) return;
@@ -13766,14 +13961,56 @@
     });
     chatSettingsPanel.dataset.populated = "true";
   }
+  function resolveBackendBaseUrl() {
+    const raw = DEFAULT_BACKEND_URL.trim();
+    if (!raw) return null;
+    try {
+      return new URL(raw).toString();
+    } catch {
+      return null;
+    }
+  }
+  function isBackendModelLocked() {
+    const apiKey = settings.chatApiKey?.trim() ?? "";
+    if (apiKey && settings.chatApiKeyEnabled) return false;
+    if (!authUser) return false;
+    return Boolean(resolveBackendBaseUrl());
+  }
+  async function resolveChatAuth() {
+    const apiKey = settings.chatApiKey?.trim() ?? "";
+    if (apiKey && settings.chatApiKeyEnabled) {
+      return { mode: "apiKey", apiKey };
+    }
+    if (!authUser) {
+      if (apiKey) {
+        throw new Error("API\u30AD\u30FC\u3092\u6709\u52B9\u306B\u3059\u308B\u304B\u3001Google\u3067\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044");
+      }
+      throw new Error("API\u30AD\u30FC\u3092\u8A2D\u5B9A\u3059\u308B\u304B\u3001Google\u3067\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044");
+    }
+    const backendBaseUrl = resolveBackendBaseUrl();
+    if (!backendBaseUrl) {
+      throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
+    }
+    const idToken = await authUser.getIdToken();
+    if (!idToken) {
+      throw new Error("\u8A8D\u8A3C\u30C8\u30FC\u30AF\u30F3\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+    }
+    return { mode: "backend", backendUrl: backendBaseUrl, authToken: idToken };
+  }
+  async function resolveChatAuthWithStatus() {
+    try {
+      return await resolveChatAuth();
+    } catch (error) {
+      setChatStatus(error instanceof Error ? error.message : String(error), true);
+      return null;
+    }
+  }
   async function sendTemplateMessage(template) {
     const rawMessage = typeof template === "string" ? template : template.prompt;
     if (!rawMessage.trim()) return;
     const message = applyTemplateConstraints(rawMessage, template);
-    if (!settings.chatApiKey) {
-      setChatStatus("API\u30AD\u30FC\u3092\u8A2D\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044", true);
-      return;
-    }
+    const auth = await resolveChatAuthWithStatus();
+    if (!auth) return;
     if (!chatInput || !chatMessagesEl) {
       ensureChatUI();
     }
@@ -13928,10 +14165,8 @@
     if (chatRequestPending) return;
     const userMessage = chatInput.value.trim();
     if (!userMessage) return;
-    if (!settings.chatApiKey) {
-      setChatStatus("API\u30AD\u30FC\u3092\u8A2D\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044", true);
-      return;
-    }
+    const auth = await resolveChatAuthWithStatus();
+    if (!auth) return;
     chatInput.value = "";
     setChatStatus("", false);
     chatHistory.push({ role: "user", content: userMessage });
@@ -13941,7 +14176,8 @@
     const requestId = createChatRequestId();
     activeChatRequestId = requestId;
     const placeholder = appendChatMessage("assistant", "\u56DE\u7B54\u4E2D...", { pending: true });
-    const useThinking = settings.chatModel.startsWith("gpt-5");
+    const effectiveModel = auth.mode === "backend" ? BACKEND_FORCED_MODEL : settings.chatModel;
+    const useThinking = effectiveModel.startsWith("gpt-5");
     let thinkingTimer = null;
     let gotDelta = false;
     try {
@@ -13971,6 +14207,7 @@
           instructions,
           previousResponseId: chatLastResponseId
         },
+        auth,
         (delta) => {
           gotDelta = true;
           if (thinkingTimer) {
@@ -13993,14 +14230,14 @@
       } else if (finalText) {
         const message = appendChatMessage("assistant", finalText);
         if (message && response.usage) {
-          const meta = formatUsageMeta(response.usage, settings.chatModel);
+          const meta = formatUsageMeta(response.usage, effectiveModel, auth.mode);
           if (meta) {
             setChatMessageMeta(message, meta);
           }
         }
       }
       if (placeholder && response.usage) {
-        const meta = formatUsageMeta(response.usage, settings.chatModel);
+        const meta = formatUsageMeta(response.usage, effectiveModel, auth.mode);
         if (meta) {
           setChatMessageMeta(placeholder, meta);
         }
@@ -14175,7 +14412,12 @@
     "gpt-4o": { input: 5, output: 15 }
   };
   var USD_TO_JPY = 155;
-  function formatUsageMeta(usage, model) {
+  function shouldShowUsageMeta() {
+    const email = authUser?.email?.trim().toLowerCase() ?? "";
+    return email === USAGE_META_EMAIL;
+  }
+  function formatUsageMeta(usage, model, mode) {
+    if (!shouldShowUsageMeta()) return null;
     const inputTokens = usage.input_tokens ?? 0;
     const outputTokens = usage.output_tokens ?? 0;
     const totalTokens = usage.total_tokens ?? inputTokens + outputTokens;
@@ -14183,7 +14425,8 @@
     const pricing = MODEL_PRICING_USD_PER_1M[model];
     const cost = pricing ? (inputTokens * pricing.input + outputTokens * pricing.output) / 1e6 * USD_TO_JPY : null;
     const costLabel = cost !== null ? `\xA5${cost.toFixed(2)} (\u6982\u7B97)` : "\xA5-";
-    return `tokens: ${totalTokens} (in ${inputTokens} / out ${outputTokens}) \u30FB ${costLabel}`;
+    const source = mode === "backend" ? "backend" : "frontend";
+    return `source: ${source} \u30FB model: ${model} \u30FB tokens: ${totalTokens} (in ${inputTokens} / out ${outputTokens}) \u30FB ${costLabel}`;
   }
   function createChatRequestId() {
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -14338,7 +14581,7 @@
     activeChatRequestId = null;
     chatRequestPending = false;
   }
-  async function requestChatResponseStream(request, onDelta) {
+  async function requestChatResponseStream(request, auth, onDelta) {
     if (!webext.runtime?.connect) {
       throw new Error("background\u63A5\u7D9A\u304C\u5229\u7528\u3067\u304D\u307E\u305B\u3093");
     }
@@ -14435,12 +14678,18 @@
       }, 12e4);
       port.onMessage.addListener(onMessage);
       port.onDisconnect.addListener(onDisconnect);
+      const model = auth.mode === "backend" ? BACKEND_FORCED_MODEL : settings.chatModel;
+      const apiKey = auth.mode === "apiKey" ? auth.apiKey ?? "" : "";
+      const backendUrl = auth.mode === "backend" ? auth.backendUrl ?? "" : "";
+      const authToken = auth.mode === "backend" ? auth.authToken ?? "" : "";
       try {
         port.postMessage({
           type: "QB_CHAT_STREAM_REQUEST",
           requestId: request.requestId,
-          apiKey: settings.chatApiKey,
-          model: settings.chatModel,
+          apiKey,
+          backendUrl,
+          authToken,
+          model,
           input: request.input,
           instructions: request.instructions,
           previousResponseId: request.previousResponseId ?? null

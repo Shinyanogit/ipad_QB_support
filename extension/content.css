@@ -780,7 +780,50 @@ body.qb-support-chat-dock .desc {
   padding: 10px 12px 12px;
 }
 
+.qb-support-chat-api-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  position: relative;
+}
+
+.qb-support-chat-api-row .qb-support-chat-input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 40px;
+}
+
 .qb-support-chat-api-label {
+  font-size: 11px;
+  color: rgba(231, 239, 248, 0.7);
+}
+
+.qb-support-chat-api-visibility {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px 4px;
+  font-size: 11px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: rgba(231, 239, 248, 0.6);
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.qb-support-chat-api-row:focus-within .qb-support-chat-api-visibility {
+  opacity: 0.95;
+}
+
+.qb-support-chat-api-visibility:disabled {
+  opacity: 0;
+  cursor: default;
+  pointer-events: none;
+}
+
+.qb-support-chat-api-key-status {
   font-size: 11px;
   color: rgba(231, 239, 248, 0.7);
 }
@@ -1000,6 +1043,7 @@ html[data-qb-theme="light"] .qb-support-chat-title,
 html[data-qb-theme="light"] .qb-support-chat-status,
 html[data-qb-theme="light"] .qb-support-chat-api-label,
 html[data-qb-theme="light"] .qb-support-chat-api-toggle,
+html[data-qb-theme="light"] .qb-support-chat-api-key-status,
 html[data-qb-theme="light"] .qb-support-chat-meta {
   color: rgba(245, 251, 255, 0.85);
 }

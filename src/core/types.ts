@@ -48,7 +48,6 @@ export interface Settings {
   chatDock: ChatDock;
   chatApiKey: string;
   chatApiKeyEnabled: boolean;
-  chatBackendUrl: string;
   chatModel: string;
   chatTemplates: ChatTemplateSetting[];
   chatTemplateCount: number;

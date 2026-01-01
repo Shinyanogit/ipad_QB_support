@@ -2,12 +2,13 @@ import cors from "cors";
 import express from "express";
 import { readFileSync } from "node:fs";
 import { cert, getApps, initializeApp, type ServiceAccount } from "firebase-admin/app";
-import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
+import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 
 const PORT = Number(process.env.PORT ?? 8080);
 const OPENAI_API_KEY = (process.env.OPENAI_API_KEY ?? "").trim();
 const FIREBASE_PROJECT_ID = (process.env.FIREBASE_PROJECT_ID ?? "").trim();
+const GOOGLE_OAUTH_CLIENT_ID = (process.env.GOOGLE_OAUTH_CLIENT_ID ?? "").trim();
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS ?? "")
   .split(",")
   .map((value) => value.trim().toLowerCase())
@@ -17,6 +18,13 @@ const RATE_LIMIT_MAX = 60;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const RESTRICTED_MODEL = "gpt-4.1";
 const RATE_LIMIT_COLLECTION = "qb_support_rate_limits_v1";
+const SETTINGS_COLLECTION = "qb_support_settings";
+
+type AuthContext = {
+  uid: string;
+  email: string;
+  source: "firebase" | "google";
+};
 
 const missingEnv: string[] = [];
 if (!OPENAI_API_KEY) missingEnv.push("OPENAI_API_KEY");
@@ -26,12 +34,21 @@ if (missingEnv.length) {
     missing: missingEnv,
   });
 }
+if (!GOOGLE_OAUTH_CLIENT_ID) {
+  console.warn("GOOGLE_OAUTH_CLIENT_ID is not set. Google token audience checks are disabled.");
+}
 
 const app = express();
 app.disable("x-powered-by");
 
 app.use((req, _res, next) => {
-  if (req.url === "/" || req.url.startsWith("/health") || req.url.startsWith("/chat")) {
+  if (
+    req.url === "/" ||
+    req.url.startsWith("/health") ||
+    req.url.startsWith("/chat") ||
+    req.url.startsWith("/auth") ||
+    req.url.startsWith("/settings")
+  ) {
     console.log("[req]", req.method, req.url);
   }
   next();
@@ -48,13 +65,65 @@ app.get("/health", (_req, res) => {
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "25mb" }));
 
+app.get("/auth/me", async (req, res) => {
+  const auth = await authenticateRequest(req, res);
+  if (!auth) return;
+  res.status(200).json({ uid: auth.uid, email: auth.email, source: auth.source });
+});
+
+app.get("/settings", async (req, res) => {
+  const auth = await authenticateRequest(req, res);
+  if (!auth) return;
+  try {
+    const db = getFirestore();
+    const ref = db.collection(SETTINGS_COLLECTION).doc(auth.uid);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      res.status(200).json({ settings: null });
+      return;
+    }
+    const data = snap.data() as { settings?: Record<string, unknown> } | undefined;
+    res.status(200).json({ settings: data?.settings ?? null });
+  } catch (error) {
+    console.warn("Settings fetch failed", error);
+    res.status(503).json({ error: "Settings fetch failed." });
+  }
+});
+
+app.post("/settings", async (req, res) => {
+  const auth = await authenticateRequest(req, res);
+  if (!auth) return;
+  const body = req.body as { settings?: Record<string, unknown> } | undefined;
+  if (!body?.settings || typeof body.settings !== "object") {
+    res.status(400).json({ error: "Missing settings payload." });
+    return;
+  }
+  try {
+    const db = getFirestore();
+    const ref = db.collection(SETTINGS_COLLECTION).doc(auth.uid);
+    await ref.set(
+      {
+        settings: body.settings,
+        schemaVersion: 1,
+        updatedAt: Date.now(),
+        email: auth.email,
+      },
+      { merge: true }
+    );
+    res.status(200).json({ ok: true });
+  } catch (error) {
+    console.warn("Settings update failed", error);
+    res.status(503).json({ error: "Settings update failed." });
+  }
+});
+
 app.post("/chat", async (req, res) => {
   if (!assertRequiredConfig(res)) return;
-  const decoded = await authenticateRequest(req, res);
-  if (!decoded) return;
+  const auth = await authenticateRequest(req, res);
+  if (!auth) return;
 
   const body = req.body as { model?: string; messages?: unknown } | undefined;
-  const policyError = await enforceUsagePolicy(decoded.uid);
+  const policyError = await enforceUsagePolicy(auth.uid);
   if (policyError) {
     res.status(policyError.status).json(policyError.body);
     return;
@@ -83,8 +152,8 @@ app.post("/chat", async (req, res) => {
 
 app.post("/chat/stream", async (req, res) => {
   if (!assertRequiredConfig(res)) return;
-  const decoded = await authenticateRequest(req, res);
-  if (!decoded) return;
+  const auth = await authenticateRequest(req, res);
+  if (!auth) return;
 
   const body = req.body as
     | {
@@ -101,7 +170,7 @@ app.post("/chat/stream", async (req, res) => {
       ? body.previous_response_id
       : null;
 
-  const policyError = await enforceUsagePolicy(decoded.uid);
+  const policyError = await enforceUsagePolicy(auth.uid);
   if (policyError) {
     res.status(policyError.status).json(policyError.body);
     return;
@@ -258,30 +327,81 @@ function loadServiceAccount(): ServiceAccount | null {
 async function authenticateRequest(
   req: express.Request,
   res: express.Response
-): Promise<DecodedIdToken | null> {
+): Promise<AuthContext | null> {
   if (!ensureFirebaseInitialized(res)) return null;
   const token = getBearerToken(req);
   if (!token) {
     res.status(401).json({ error: "Missing Authorization bearer token." });
     return null;
   }
-  let decoded: DecodedIdToken;
+
+  const firebase = await verifyFirebaseIdToken(token);
+  if (firebase) {
+    if (!isAllowedEmail(firebase.email)) {
+      res.status(403).json({ error: "User not allowed." });
+      return null;
+    }
+    return { uid: firebase.uid, email: firebase.email, source: "firebase" };
+  }
+
+  const google = await verifyGoogleAccessToken(token);
+  if (google) {
+    if (!isAllowedEmail(google.email)) {
+      res.status(403).json({ error: "User not allowed." });
+      return null;
+    }
+    return { uid: google.uid, email: google.email, source: "google" };
+  }
+
+  res.status(401).json({ error: "Invalid auth token." });
+  return null;
+}
+
+async function verifyFirebaseIdToken(
+  token: string
+): Promise<{ uid: string; email: string } | null> {
   try {
-    decoded = await getAuth().verifyIdToken(token);
+    const decoded = await getAuth().verifyIdToken(token);
+    const email = decoded.email?.toLowerCase() ?? "";
+    if (decoded.email_verified === false) return null;
+    if (!email) return null;
+    return { uid: decoded.uid, email };
   } catch (error) {
-    console.warn("Token verification failed", error);
-    res.status(401).json({ error: "Invalid Firebase ID token." });
+    console.warn("Firebase token verification failed", error);
     return null;
   }
-  if (decoded.email_verified === false) {
-    res.status(403).json({ error: "Email not verified." });
+}
+
+async function verifyGoogleAccessToken(
+  token: string
+): Promise<{ uid: string; email: string } | null> {
+  try {
+    const url = new URL("https://oauth2.googleapis.com/tokeninfo");
+    url.searchParams.set("access_token", token);
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      const detail = await response.text();
+      console.warn("Google tokeninfo failed", response.status, detail);
+      return null;
+    }
+    const data = (await response.json()) as {
+      sub?: string;
+      email?: string;
+      email_verified?: string;
+      aud?: string;
+    };
+    const email = (data.email ?? "").toLowerCase();
+    if (!data.sub || !email) return null;
+    if (data.email_verified === "false") return null;
+    if (GOOGLE_OAUTH_CLIENT_ID && data.aud !== GOOGLE_OAUTH_CLIENT_ID) {
+      console.warn("Google token aud mismatch", data.aud);
+      return null;
+    }
+    return { uid: data.sub, email };
+  } catch (error) {
+    console.warn("Google token verification failed", error);
     return null;
   }
-  if (!isAllowedUser(decoded)) {
-    res.status(403).json({ error: "User not allowed." });
-    return null;
-  }
-  return decoded;
 }
 
 function assertRequiredConfig(res: express.Response): boolean {
@@ -375,11 +495,11 @@ function getBearerToken(req: express.Request): string | null {
   return null;
 }
 
-function isAllowedUser(decoded: DecodedIdToken): boolean {
+function isAllowedEmail(email: string): boolean {
   if (!ALLOWED_EMAILS.length && !ALLOWED_DOMAIN) return true;
-  const email = decoded.email?.toLowerCase() ?? "";
-  if (!email) return false;
-  if (ALLOWED_EMAILS.length && !ALLOWED_EMAILS.includes(email)) return false;
-  if (ALLOWED_DOMAIN && !email.endsWith(`@${ALLOWED_DOMAIN}`)) return false;
+  const normalized = email.toLowerCase();
+  if (!normalized) return false;
+  if (ALLOWED_EMAILS.length && !ALLOWED_EMAILS.includes(normalized)) return false;
+  if (ALLOWED_DOMAIN && !normalized.endsWith(`@${ALLOWED_DOMAIN}`)) return false;
   return true;
 }

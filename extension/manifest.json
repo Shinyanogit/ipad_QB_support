@@ -8,6 +8,7 @@
     "https://qb.medilink-study.com/*",
     "https://input.medilink-study.com/*",
     "https://api.openai.com/*",
+    "https://ipad-qb-support-400313981210.asia-northeast1.run.app/*",
     "https://accounts.google.com/*",
     "https://identitytoolkit.googleapis.com/*",
     "https://securetoken.googleapis.com/*",

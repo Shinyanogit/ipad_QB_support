@@ -380,13 +380,20 @@ async function launchTabAuthFlowToken(
 async function handleAuthTokenRequest(interactive: boolean): Promise<string> {
   const identity = webext.identity;
   if (!identity) throw new Error("chrome.identity API not available.");
+  console.log(AUTH_LOG_PREFIX, "token request", {
+    interactive,
+    launchWebAuthFlow: Boolean(identity.launchWebAuthFlow),
+    getAuthToken: Boolean(identity.getAuthToken),
+  });
   if (identity.launchWebAuthFlow) {
     try {
-      return await withAuthTimeout(
+      const token = await withAuthTimeout(
         launchWebAuthFlowToken(identity, interactive),
         "launchWebAuthFlow",
         getAuthTimeout(interactive)
       );
+      console.log(AUTH_LOG_PREFIX, "token success", { method: "launchWebAuthFlow" });
+      return token;
     } catch (error) {
       console.warn("[QB_SUPPORT][auth]", "launchWebAuthFlow failed", error);
     }
@@ -394,7 +401,7 @@ async function handleAuthTokenRequest(interactive: boolean): Promise<string> {
   if (identity.getAuthToken) {
     try {
       console.log(AUTH_LOG_PREFIX, "getAuthToken:start");
-      return await withAuthTimeout(
+      const token = await withAuthTimeout(
         new Promise<string>((resolve, reject) => {
           identity.getAuthToken({ interactive }, (token) => {
             const err = webext.runtime?.lastError;
@@ -416,15 +423,19 @@ async function handleAuthTokenRequest(interactive: boolean): Promise<string> {
         "getAuthToken",
         getAuthTimeout(interactive)
       );
+      console.log(AUTH_LOG_PREFIX, "token success", { method: "getAuthToken" });
+      return token;
     } catch (error) {
       console.warn("[QB_SUPPORT][auth]", "getAuthToken failed", error);
     }
   }
-  return withAuthTimeout(
+  const token = await withAuthTimeout(
     launchTabAuthFlowToken(identity, interactive),
     "tabsAuthFlow",
     getAuthTimeout(interactive)
   );
+  console.log(AUTH_LOG_PREFIX, "token success", { method: "tabsAuthFlow" });
+  return token;
 }
 
 async function handleAuthTokenRemoval(token?: string | null): Promise<void> {

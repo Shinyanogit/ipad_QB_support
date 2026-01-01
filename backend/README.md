@@ -4,6 +4,9 @@ This service proxies OpenAI Responses API for logged-in users. It verifies Fireb
 
 ## Endpoints
 - `GET /health`
+- `GET /auth/me`
+- `GET /settings`
+- `POST /settings`
 - `POST /chat/stream` (streaming)
 - `POST /chat` (non-stream)
 
@@ -22,6 +25,7 @@ curl -i "$SERVICE_URL/health"
 - `FIREBASE_PROJECT_ID` (required)
 - `FIREBASE_SERVICE_ACCOUNT_JSON` (optional, JSON string)
 - `FIREBASE_SERVICE_ACCOUNT_PATH` (optional, file path)
+- `GOOGLE_OAUTH_CLIENT_ID` (optional, enables Google token audience check)
 - `ALLOWED_EMAILS` (optional, comma-separated list)
 - `ALLOWED_DOMAIN` (optional, single domain, example: `example.com`)
 

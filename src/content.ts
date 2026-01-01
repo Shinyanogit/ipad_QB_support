@@ -30,8 +30,7 @@ import {
   signInWithCredential,
   signOut,
 } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore/lite";
-import { getFirebaseAuth, getFirebaseDb } from "./lib/firebase";
+import { getFirebaseAuth } from "./lib/firebase";
 import {
   getManifest,
   getStorageArea,
@@ -59,9 +58,10 @@ const CHAT_DOCK_TARGET_RATIO = 0.45;
 const CHAT_DOCK_GAP = 20;
 const QB_ACTION_ORIGIN = "https://input.medilink-study.com";
 const QB_TOP_ORIGIN = "https://qb.medilink-study.com";
-const FIREBASE_SETTINGS_COLLECTION = "qb_support_settings";
 const FIREBASE_SETTINGS_VERSION = 1;
 const BACKEND_FORCED_MODEL = "gpt-4.1";
+const DEFAULT_BACKEND_URL = "https://ipad-qb-support-400313981210.asia-northeast1.run.app";
+const USAGE_META_EMAIL = "ymgtsny7@gmail.com";
 const EXPLANATION_LEVEL_LABELS: Record<string, string> = {
   highschool: "高校生でもわかる",
   "med-junior": "医学部低学年",
@@ -125,13 +125,14 @@ let chatInputWrap: HTMLDivElement | null = null;
 let chatApiInput: HTMLInputElement | null = null;
 let chatApiSaveButton: HTMLButtonElement | null = null;
 let chatApiKeyToggle: HTMLInputElement | null = null;
-let chatBackendInput: HTMLInputElement | null = null;
-let chatBackendSaveButton: HTMLButtonElement | null = null;
+let chatApiKeyVisibilityButton: HTMLButtonElement | null = null;
+let chatApiKeyStatus: HTMLElement | null = null;
 let chatModelInput: HTMLSelectElement | null = null;
 let chatModelSaveButton: HTMLButtonElement | null = null;
 let chatSettingsPanel: HTMLDivElement | null = null;
 let chatSettingsButton: HTMLButtonElement | null = null;
 let chatSettingsOpen = false;
+let chatApiKeyVisible = false;
 let chatTemplateBar: HTMLDivElement | null = null;
 let chatTemplateRows: ChatTemplateRow[] = [];
 let templateCountLabel: HTMLSpanElement | null = null;
@@ -225,20 +226,77 @@ async function initFrame() {
 }
 
 async function loadSettings() {
-  const area = getStorageArea(true);
-  if (!area) {
+  const primary = getStorageArea(true);
+  const fallback = getStorageArea(false);
+  let stored: Record<string, any> = {};
+  let storageLabel = "none";
+  if (!primary && !fallback) {
     settings = normalizeSettings(undefined);
     return;
   }
-  const stored = await storageGet(area, STORAGE_KEY);
-  settings = normalizeSettings(stored[STORAGE_KEY]);
+  if (primary) {
+    try {
+      stored = await storageGet(primary, STORAGE_KEY);
+      storageLabel = primary === webext.storage?.sync ? "sync" : "local";
+    } catch (error) {
+      console.warn("[QB_SUPPORT][settings] load failed", {
+        storage: primary === webext.storage?.sync ? "sync" : "local",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  if ((!stored || typeof stored !== "object" || !(STORAGE_KEY in stored)) && fallback) {
+    try {
+      stored = await storageGet(fallback, STORAGE_KEY);
+      storageLabel = fallback === webext.storage?.sync ? "sync" : "local";
+    } catch (error) {
+      console.warn("[QB_SUPPORT][settings] load fallback failed", {
+        storage: fallback === webext.storage?.sync ? "sync" : "local",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  settings = normalizeSettings(stored?.[STORAGE_KEY]);
+  console.log("[QB_SUPPORT][settings] loaded", {
+    storage: storageLabel,
+    apiKeyLength: settings.chatApiKey?.length ?? 0,
+    apiKeyEnabled: settings.chatApiKeyEnabled,
+  });
 }
 
 async function saveSettings(next: Settings, options?: { skipRemote?: boolean }) {
   settings = normalizeSettings(next);
   const area = getStorageArea(true);
   if (area) {
-    await storageSet(area, { [STORAGE_KEY]: settings });
+    try {
+      await storageSet(area, { [STORAGE_KEY]: settings });
+      console.log("[QB_SUPPORT][settings] saved", {
+        storage: area === webext.storage?.sync ? "sync" : "local",
+        apiKeyLength: settings.chatApiKey?.length ?? 0,
+        apiKeyEnabled: settings.chatApiKeyEnabled,
+      });
+    } catch (error) {
+      console.warn("[QB_SUPPORT][settings] save failed", {
+        storage: area === webext.storage?.sync ? "sync" : "local",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      const fallback = getStorageArea(false);
+      if (fallback && fallback !== area) {
+        try {
+          await storageSet(fallback, { [STORAGE_KEY]: settings });
+          console.log("[QB_SUPPORT][settings] saved fallback", {
+            storage: fallback === webext.storage?.sync ? "sync" : "local",
+            apiKeyLength: settings.chatApiKey?.length ?? 0,
+            apiKeyEnabled: settings.chatApiKeyEnabled,
+          });
+        } catch (fallbackError) {
+          console.warn("[QB_SUPPORT][settings] save fallback failed", {
+            storage: fallback === webext.storage?.sync ? "sync" : "local",
+            message: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          });
+        }
+      }
+    }
   }
   applySettings();
   if (!options?.skipRemote) {
@@ -256,6 +314,11 @@ function initAuth() {
   });
   onAuthStateChanged(auth, (user) => {
     authUser = user;
+    console.log("[QB_SUPPORT][auth] state", {
+      uid: user?.uid ?? null,
+      email: user?.email ?? null,
+      provider: user?.providerData?.map((item) => item.providerId) ?? [],
+    });
     updateAuthUI();
     applyChatSettings();
     if (!user) {
@@ -303,24 +366,41 @@ function setAuthSyncStatus(message: string, isError: boolean) {
 }
 
 async function requestGoogleAuthToken(): Promise<string> {
-  const timeoutMs = 20000;
+  const timeoutMs = 130000;
+  const startedAt = Date.now();
+  console.log("[QB_SUPPORT][auth-ui] token request start", { timeoutMs });
   let timeoutId: number | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = window.setTimeout(() => {
-      reject(new Error("ログイン画面の起動がタイムアウトしました。"));
+      console.warn("[QB_SUPPORT][auth-ui] token request timeout", { timeoutMs });
+      reject(new Error("ログイン画面の起動がタイムアウトしました。もう一度お試しください。"));
     }, timeoutMs);
   });
-  const response = await Promise.race([
-    sendRuntimeMessage<{
-      ok: boolean;
-      token?: string;
-      error?: string;
-    }>({
-      type: "QB_AUTH_GET_TOKEN",
-      interactive: true,
-    }),
-    timeoutPromise,
-  ]);
+  const responsePromise = sendRuntimeMessage<{
+    ok: boolean;
+    token?: string;
+    error?: string;
+  }>({
+    type: "QB_AUTH_GET_TOKEN",
+    interactive: true,
+  })
+    .then((response) => {
+      console.log("[QB_SUPPORT][auth-ui] token request response", {
+        ok: response?.ok ?? false,
+        tokenPresent: Boolean(response?.token),
+        error: response?.error ?? null,
+        ms: Date.now() - startedAt,
+      });
+      return response;
+    })
+    .catch((error) => {
+      console.warn("[QB_SUPPORT][auth-ui] token request error", {
+        message: error instanceof Error ? error.message : String(error),
+        ms: Date.now() - startedAt,
+      });
+      throw error;
+    });
+  const response = await Promise.race([responsePromise, timeoutPromise]);
   if (timeoutId) window.clearTimeout(timeoutId);
   if (!response?.ok) {
     const message = response?.error ?? "OAuth token request failed.";
@@ -337,10 +417,12 @@ async function handleAuthSignIn() {
   setAuthStatus("ログイン中...", false);
   console.log("[QB_SUPPORT][auth] ORIGIN", location.origin);
   console.log("[QB_SUPPORT][auth] HREF", location.href);
+  console.log("[QB_SUPPORT][auth] EXT_ID", webext.runtime?.id ?? null);
   try {
     const token = await requestGoogleAuthToken();
     const credential = GoogleAuthProvider.credential(null, token);
     await signInWithCredential(getFirebaseAuth(), credential);
+    console.log("[QB_SUPPORT][auth] signInWithCredential success");
   } catch (error) {
     console.log("[QB_SUPPORT][auth] AUTH_ERR_RAW", error);
     const err = error as { code?: string; message?: string; customData?: unknown; stack?: string };
@@ -403,7 +485,14 @@ function scheduleRemoteSettingsSync() {
 async function syncSettingsFromRemote(uid: string) {
   setAuthSyncStatus("同期中...", false);
   try {
-    const remoteSettings = await fetchRemoteSettings(uid);
+    const remoteSettings = await fetchRemoteSettings();
+    console.log("[QB_SUPPORT][auth-sync] pull", {
+      hasSettings: Boolean(remoteSettings),
+      apiKeyLength:
+        remoteSettings && typeof remoteSettings.chatApiKey === "string"
+          ? remoteSettings.chatApiKey.length
+          : 0,
+    });
     if (remoteSettings) {
       const merged = normalizeSettings({
         ...settings,
@@ -426,12 +515,21 @@ async function syncSettingsFromRemote(uid: string) {
   }
 }
 
-async function fetchRemoteSettings(uid: string): Promise<Partial<Settings> | null> {
-  const db = getFirebaseDb();
-  const ref = doc(db, FIREBASE_SETTINGS_COLLECTION, uid);
-  const snapshot = await getDoc(ref);
-  if (!snapshot.exists()) return null;
-  const data = snapshot.data() as { settings?: Partial<Settings> } | undefined;
+async function fetchRemoteSettings(): Promise<Partial<Settings> | null> {
+  if (!authUser) return null;
+  const token = await authUser.getIdToken();
+  const url = resolveBackendSettingsUrl();
+  if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`設定取得に失敗しました: ${response.status} ${detail}`);
+  }
+  const data = (await response.json()) as { settings?: Partial<Settings> | null } | null;
   if (!data?.settings || typeof data.settings !== "object") return null;
   return data.settings;
 }
@@ -455,17 +553,29 @@ async function syncSettingsToRemote() {
   authSyncInFlight = true;
   setAuthSyncStatus("同期中...", false);
   try {
-    const db = getFirebaseDb();
-    const ref = doc(db, FIREBASE_SETTINGS_COLLECTION, authUser.uid);
-    await setDoc(
-      ref,
-      {
+    console.log("[QB_SUPPORT][auth-sync] push", {
+      apiKeyLength: settings.chatApiKey?.length ?? 0,
+      apiKeyEnabled: settings.chatApiKeyEnabled,
+    });
+    const token = await authUser.getIdToken();
+    const url = resolveBackendSettingsUrl();
+    if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
         settings: buildRemoteSettingsPayload(settings),
         schemaVersion: FIREBASE_SETTINGS_VERSION,
         updatedAt: Date.now(),
-      },
-      { merge: true }
-    );
+      }),
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`設定保存に失敗しました: ${response.status} ${detail}`);
+    }
     setAuthSyncStatus("同期完了", false);
   } catch (error) {
     console.warn("[QB_SUPPORT][auth-sync]", error);
@@ -1119,12 +1229,12 @@ function ensureChatUI() {
     chatApiKeyToggle = chatRoot.querySelector(
       ".qb-support-chat-api-key-toggle"
     ) as HTMLInputElement | null;
-    chatBackendInput = chatRoot.querySelector(
-      ".qb-support-chat-backend-url"
-    ) as HTMLInputElement | null;
-    chatBackendSaveButton = chatRoot.querySelector(
-      ".qb-support-chat-backend-save"
+    chatApiKeyVisibilityButton = chatRoot.querySelector(
+      ".qb-support-chat-api-visibility"
     ) as HTMLButtonElement | null;
+    chatApiKeyStatus = chatRoot.querySelector(
+      ".qb-support-chat-api-key-status"
+    ) as HTMLElement | null;
     const modelNode = chatRoot.querySelector(".qb-support-chat-model");
     chatModelInput = modelNode instanceof HTMLSelectElement ? modelNode : null;
     chatModelSaveButton = chatRoot.querySelector(
@@ -1138,12 +1248,72 @@ function ensureChatUI() {
     ) as HTMLButtonElement | null;
     if (chatApiInput) {
       chatApiInput.classList.add("qb-support-chat-api-key");
+      if (chatApiInput.dataset.handlers !== "true") {
+        chatApiInput.dataset.handlers = "true";
+        chatApiInput.addEventListener("input", () => {
+          updateChatApiKeyStatus();
+          if (chatApiKeyVisibilityButton) {
+            chatApiKeyVisibilityButton.disabled = !chatApiInput?.value.trim();
+          }
+        });
+      }
     }
     if (chatApiSaveButton) {
       chatApiSaveButton.classList.add("qb-support-chat-api-save");
     }
     const apiSection = chatRoot.querySelector(".qb-support-chat-api");
     if (apiSection) {
+      let apiKeyRow = apiSection.querySelector(
+        ".qb-support-chat-api-row"
+      ) as HTMLDivElement | null;
+      if (!apiKeyRow) {
+        apiKeyRow = document.createElement("div");
+        apiKeyRow.className = "qb-support-chat-api-row";
+        if (chatApiInput && chatApiInput.parentElement === apiSection) {
+          apiSection.insertBefore(apiKeyRow, chatApiInput);
+          apiKeyRow.appendChild(chatApiInput);
+        } else {
+          apiSection.appendChild(apiKeyRow);
+          if (chatApiInput) apiKeyRow.appendChild(chatApiInput);
+        }
+      }
+      if (!chatApiKeyVisibilityButton) {
+        chatApiKeyVisibilityButton = document.createElement("button");
+        chatApiKeyVisibilityButton.type = "button";
+        chatApiKeyVisibilityButton.className = "qb-support-chat-api-visibility";
+        chatApiKeyVisibilityButton.textContent = "表示";
+      }
+      if (chatApiKeyVisibilityButton) {
+        applyButtonVariant(chatApiKeyVisibilityButton, "ghost");
+      }
+      if (apiKeyRow && chatApiKeyVisibilityButton && !apiKeyRow.contains(chatApiKeyVisibilityButton)) {
+        apiKeyRow.appendChild(chatApiKeyVisibilityButton);
+      }
+      if (chatApiKeyVisibilityButton && chatApiKeyVisibilityButton.dataset.handlers !== "true") {
+        chatApiKeyVisibilityButton.dataset.handlers = "true";
+        chatApiKeyVisibilityButton.addEventListener("click", () => {
+          chatApiKeyVisible = !chatApiKeyVisible;
+          if (chatApiInput) {
+            chatApiInput.type = chatApiKeyVisible ? "text" : "password";
+          }
+          if (chatApiKeyVisibilityButton) {
+            chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "非表示" : "表示";
+          }
+        });
+      }
+      if (!chatApiKeyStatus) {
+        chatApiKeyStatus = document.createElement("div");
+        chatApiKeyStatus.className = "qb-support-chat-api-key-status";
+      }
+      if (
+        chatApiKeyStatus &&
+        chatApiSaveButton &&
+        !apiSection.contains(chatApiKeyStatus)
+      ) {
+        apiSection.insertBefore(chatApiKeyStatus, chatApiSaveButton);
+      } else if (chatApiKeyStatus && !apiSection.contains(chatApiKeyStatus)) {
+        apiSection.appendChild(chatApiKeyStatus);
+      }
       if (!chatApiKeyToggle) {
         const apiKeyToggleLabel = document.createElement("label");
         apiKeyToggleLabel.className = "qb-support-toggle qb-support-chat-api-toggle";
@@ -1163,42 +1333,6 @@ function ensureChatUI() {
             chatApiKeyEnabled: chatApiKeyToggle?.checked ?? true,
           });
         });
-      }
-      if (!chatBackendInput) {
-        const backendLabel = document.createElement("label");
-        backendLabel.textContent = "Chat Backend URL";
-        backendLabel.className = "qb-support-chat-api-label";
-        chatBackendInput = document.createElement("input");
-        chatBackendInput.type = "text";
-        chatBackendInput.className = "qb-support-chat-input qb-support-chat-backend-url";
-        chatBackendInput.placeholder = "https://your-service.example";
-        apiSection.appendChild(backendLabel);
-        apiSection.appendChild(chatBackendInput);
-      }
-      if (!chatBackendSaveButton) {
-        chatBackendSaveButton = document.createElement("button");
-        chatBackendSaveButton.type = "button";
-        chatBackendSaveButton.className =
-          "qb-support-chat-save qb-support-chat-backend-save";
-        chatBackendSaveButton.textContent = "適用";
-        apiSection.appendChild(chatBackendSaveButton);
-        chatBackendSaveButton.addEventListener("click", () => {
-          const nextUrl = chatBackendInput?.value.trim() ?? "";
-          if (!nextUrl) {
-            if (settings.chatBackendUrl) {
-              void saveSettings({ ...settings, chatBackendUrl: "" });
-              setChatStatus("バックエンドURLをクリアしました", false);
-              return;
-            }
-            setChatStatus("バックエンドURLを入力してください", true);
-            return;
-          }
-          void saveSettings({ ...settings, chatBackendUrl: nextUrl });
-          setChatStatus("バックエンドURLを保存しました", false);
-        });
-      }
-      if (chatBackendSaveButton) {
-        applyButtonVariant(chatBackendSaveButton, "primary");
       }
     }
     if (!chatModelInput || !chatModelSaveButton) {
@@ -1279,7 +1413,6 @@ function ensureChatUI() {
     ) as HTMLButtonElement | null;
     applyButtonVariant(chatNewButton, "ghost");
     applyButtonVariant(chatApiSaveButton, "primary");
-    applyButtonVariant(chatBackendSaveButton, "primary");
     applyButtonVariant(chatModelSaveButton, "primary");
     applyButtonVariant(chatSendButton, "primary");
     attachChatSettingsHandlers();
@@ -1343,6 +1476,35 @@ function ensureChatUI() {
   chatApiInput.type = "password";
   chatApiInput.className = "qb-support-chat-input qb-support-chat-api-key";
   chatApiInput.placeholder = "sk-...";
+  chatApiInput.addEventListener("input", () => {
+    updateChatApiKeyStatus();
+    if (chatApiKeyVisibilityButton) {
+      chatApiKeyVisibilityButton.disabled = !chatApiInput?.value.trim();
+    }
+  });
+
+  const apiKeyRow = document.createElement("div");
+  apiKeyRow.className = "qb-support-chat-api-row";
+  apiKeyRow.appendChild(chatApiInput);
+
+  chatApiKeyVisibilityButton = document.createElement("button");
+  chatApiKeyVisibilityButton.type = "button";
+  chatApiKeyVisibilityButton.className = "qb-support-chat-api-visibility";
+  chatApiKeyVisibilityButton.textContent = "表示";
+  applyButtonVariant(chatApiKeyVisibilityButton, "ghost");
+  chatApiKeyVisibilityButton.addEventListener("click", () => {
+    chatApiKeyVisible = !chatApiKeyVisible;
+    if (chatApiInput) {
+      chatApiInput.type = chatApiKeyVisible ? "text" : "password";
+    }
+    if (chatApiKeyVisibilityButton) {
+      chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "非表示" : "表示";
+    }
+  });
+  apiKeyRow.appendChild(chatApiKeyVisibilityButton);
+
+  chatApiKeyStatus = document.createElement("div");
+  chatApiKeyStatus.className = "qb-support-chat-api-key-status";
 
   chatApiSaveButton = document.createElement("button");
   chatApiSaveButton.type = "button";
@@ -1378,35 +1540,6 @@ function ensureChatUI() {
     });
   });
 
-  const backendLabel = document.createElement("label");
-  backendLabel.textContent = "Chat Backend URL";
-  backendLabel.className = "qb-support-chat-api-label";
-
-  chatBackendInput = document.createElement("input");
-  chatBackendInput.type = "text";
-  chatBackendInput.className = "qb-support-chat-input qb-support-chat-backend-url";
-  chatBackendInput.placeholder = "https://your-service.example";
-
-  chatBackendSaveButton = document.createElement("button");
-  chatBackendSaveButton.type = "button";
-  chatBackendSaveButton.className = "qb-support-chat-save qb-support-chat-backend-save";
-  chatBackendSaveButton.textContent = "適用";
-  applyButtonVariant(chatBackendSaveButton, "primary");
-  chatBackendSaveButton.addEventListener("click", () => {
-    const nextUrl = chatBackendInput?.value.trim() ?? "";
-    if (!nextUrl) {
-      if (settings.chatBackendUrl) {
-        void saveSettings({ ...settings, chatBackendUrl: "" });
-        setChatStatus("バックエンドURLをクリアしました", false);
-        return;
-      }
-      setChatStatus("バックエンドURLを入力してください", true);
-      return;
-    }
-    void saveSettings({ ...settings, chatBackendUrl: nextUrl });
-    setChatStatus("バックエンドURLを保存しました", false);
-  });
-
   const modelLabel = document.createElement("label");
   modelLabel.textContent = "Model";
   modelLabel.className = "qb-support-chat-api-label qb-support-chat-model-label";
@@ -1420,12 +1553,10 @@ function ensureChatUI() {
   applyButtonVariant(chatModelSaveButton, "primary");
 
   apiSection.appendChild(apiLabel);
-  apiSection.appendChild(chatApiInput);
+  apiSection.appendChild(apiKeyRow);
+  apiSection.appendChild(chatApiKeyStatus);
   apiSection.appendChild(chatApiSaveButton);
   apiSection.appendChild(apiKeyToggleLabel);
-  apiSection.appendChild(backendLabel);
-  apiSection.appendChild(chatBackendInput);
-  apiSection.appendChild(chatBackendSaveButton);
   apiSection.appendChild(modelLabel);
   apiSection.appendChild(chatModelInput);
   apiSection.appendChild(chatModelSaveButton);
@@ -1543,22 +1674,25 @@ function applyChatSettings() {
   }
 
   if (chatApiInput && document.activeElement !== chatApiInput) {
-    chatApiInput.value = "";
     const apiKeySaved = Boolean(settings.chatApiKey);
-    const apiKeyDisabled = apiKeySaved && !settings.chatApiKeyEnabled;
-    chatApiInput.placeholder = apiKeySaved
-      ? apiKeyDisabled
-        ? "保存済み (使用オフ)"
-        : "保存済み (再入力で更新)"
-      : "sk-...";
+    chatApiInput.value = apiKeySaved ? settings.chatApiKey : "";
+    chatApiInput.placeholder = apiKeySaved ? "保存済み (編集可)" : "sk-...";
   }
+
+  updateChatApiKeyStatus();
 
   if (chatApiKeyToggle) {
     chatApiKeyToggle.checked = settings.chatApiKeyEnabled;
   }
 
-  if (chatBackendInput && document.activeElement !== chatBackendInput) {
-    chatBackendInput.value = settings.chatBackendUrl ?? "";
+  if (chatApiKeyVisibilityButton) {
+    const hasKey = Boolean(settings.chatApiKey || chatApiInput?.value);
+    if (!hasKey) chatApiKeyVisible = false;
+    if (chatApiInput) {
+      chatApiInput.type = chatApiKeyVisible ? "text" : "password";
+    }
+    chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "非表示" : "表示";
+    chatApiKeyVisibilityButton.disabled = !hasKey;
   }
 
   const backendMode = isBackendModelLocked();
@@ -1574,6 +1708,20 @@ function applyChatSettings() {
   if (chatModelSaveButton) {
     chatModelSaveButton.disabled = backendMode;
   }
+}
+
+function updateChatApiKeyStatus() {
+  if (!chatApiKeyStatus) return;
+  const saved = Boolean(settings.chatApiKey);
+  const currentValue = chatApiInput?.value.trim() ?? "";
+  let status = "未入力";
+  if (saved) {
+    status = "入力済み";
+  } else if (currentValue) {
+    status = "入力中";
+  }
+  const suffix = saved && !settings.chatApiKeyEnabled ? " (使用オフ)" : "";
+  chatApiKeyStatus.textContent = `APIキー: ${status}${suffix}`;
 }
 
 function ensureThemeListener() {
@@ -1910,10 +2058,28 @@ function populateChatSettingsPanel() {
 }
 
 function resolveBackendBaseUrl(): string | null {
-  const raw = settings.chatBackendUrl?.trim() ?? "";
+  const raw = DEFAULT_BACKEND_URL.trim();
   if (!raw) return null;
   try {
     return new URL(raw).toString();
+  } catch {
+    return null;
+  }
+}
+
+function resolveBackendSettingsUrl(): string | null {
+  const base = resolveBackendBaseUrl();
+  if (!base) return null;
+  try {
+    const url = new URL(base);
+    let path = url.pathname.replace(/\/+$/, "");
+    if (!path) {
+      path = "/settings";
+    } else if (!path.endsWith("/settings")) {
+      path = `${path}/settings`;
+    }
+    url.pathname = path;
+    return url.toString();
   } catch {
     return null;
   }
@@ -1941,7 +2107,7 @@ async function resolveChatAuth(): Promise<ChatAuth> {
 
   const backendBaseUrl = resolveBackendBaseUrl();
   if (!backendBaseUrl) {
-    throw new Error("バックエンドURLを設定してください");
+    throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
   }
 
   const idToken = await authUser.getIdToken();
@@ -2215,14 +2381,14 @@ async function handleChatSend() {
     } else if (finalText) {
       const message = appendChatMessage("assistant", finalText);
       if (message && response.usage) {
-        const meta = formatUsageMeta(response.usage, effectiveModel);
+        const meta = formatUsageMeta(response.usage, effectiveModel, auth.mode);
         if (meta) {
           setChatMessageMeta(message, meta);
         }
       }
     }
     if (placeholder && response.usage) {
-      const meta = formatUsageMeta(response.usage, effectiveModel);
+      const meta = formatUsageMeta(response.usage, effectiveModel, auth.mode);
       if (meta) {
         setChatMessageMeta(placeholder, meta);
       }
@@ -2418,7 +2584,17 @@ const MODEL_PRICING_USD_PER_1M: Record<string, { input: number; output: number }
 };
 const USD_TO_JPY = 155;
 
-function formatUsageMeta(usage: ResponseUsage, model: string): string | null {
+function shouldShowUsageMeta(): boolean {
+  const email = authUser?.email?.trim().toLowerCase() ?? "";
+  return email === USAGE_META_EMAIL;
+}
+
+function formatUsageMeta(
+  usage: ResponseUsage,
+  model: string,
+  mode: ChatAuthMode
+): string | null {
+  if (!shouldShowUsageMeta()) return null;
   const inputTokens = usage.input_tokens ?? 0;
   const outputTokens = usage.output_tokens ?? 0;
   const totalTokens = usage.total_tokens ?? inputTokens + outputTokens;
@@ -2430,7 +2606,8 @@ function formatUsageMeta(usage: ResponseUsage, model: string): string | null {
         USD_TO_JPY
       : null;
   const costLabel = cost !== null ? `¥${cost.toFixed(2)} (概算)` : "¥-";
-  return `tokens: ${totalTokens} (in ${inputTokens} / out ${outputTokens}) ・ ${costLabel}`;
+  const source = mode === "backend" ? "backend" : "frontend";
+  return `source: ${source} ・ model: ${model} ・ tokens: ${totalTokens} (in ${inputTokens} / out ${outputTokens}) ・ ${costLabel}`;
 }
 
 function createChatRequestId(): string {
