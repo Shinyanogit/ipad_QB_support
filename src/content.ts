@@ -456,9 +456,15 @@ async function requestBackendAuthSession(): Promise<StoredAuthSession> {
   const start = await fetchBackendAuthStart();
   const popup = window.open(start.authUrl, "_blank", "noopener,noreferrer");
   if (!popup) {
-    throw new Error("ログイン画面を開けませんでした。ポップアップブロックをご確認ください。");
+    console.warn("[QB_SUPPORT][auth-ui] popup blocked", { authUrl: start.authUrl });
+    setAuthStatus(
+      "ポップアップがブロックされました。ログインURLを新規タブで開いてください。",
+      true
+    );
+    console.log("[QB_SUPPORT][auth-ui] login url", start.authUrl);
+  } else {
+    setAuthStatus("ブラウザでログインを完了してください", false);
   }
-  setAuthStatus("ブラウザでログインを完了してください", false);
   const session = await pollBackendAuthSession(start.state);
   const expiresAt =
     typeof session.expiresAt === "number"

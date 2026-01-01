@@ -248,7 +248,7 @@ app.get("/auth/callback", async (req, res) => {
     .status(200)
     .type("text/html")
     .send(
-      "<!doctype html><html><head><meta charset=\"utf-8\"><title>Login Complete</title></head><body>ログインが完了しました。このタブを閉じて拡張機能に戻ってください。</body></html>"
+      "<!doctype html><html><head><meta charset=\"utf-8\"><title>Login Complete</title><script>setTimeout(function(){window.close();},200);</script></head><body>ログインが完了しました。このタブを閉じて拡張機能に戻ってください。</body></html>"
     );
 });
 

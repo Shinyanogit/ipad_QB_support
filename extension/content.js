@@ -986,9 +986,15 @@
     const start2 = await fetchBackendAuthStart();
     const popup = window.open(start2.authUrl, "_blank", "noopener,noreferrer");
     if (!popup) {
-      throw new Error("\u30ED\u30B0\u30A4\u30F3\u753B\u9762\u3092\u958B\u3051\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u30DD\u30C3\u30D7\u30A2\u30C3\u30D7\u30D6\u30ED\u30C3\u30AF\u3092\u3054\u78BA\u8A8D\u304F\u3060\u3055\u3044\u3002");
+      console.warn("[QB_SUPPORT][auth-ui] popup blocked", { authUrl: start2.authUrl });
+      setAuthStatus(
+        "\u30DD\u30C3\u30D7\u30A2\u30C3\u30D7\u304C\u30D6\u30ED\u30C3\u30AF\u3055\u308C\u307E\u3057\u305F\u3002\u30ED\u30B0\u30A4\u30F3URL\u3092\u65B0\u898F\u30BF\u30D6\u3067\u958B\u3044\u3066\u304F\u3060\u3055\u3044\u3002",
+        true
+      );
+      console.log("[QB_SUPPORT][auth-ui] login url", start2.authUrl);
+    } else {
+      setAuthStatus("\u30D6\u30E9\u30A6\u30B6\u3067\u30ED\u30B0\u30A4\u30F3\u3092\u5B8C\u4E86\u3057\u3066\u304F\u3060\u3055\u3044", false);
     }
-    setAuthStatus("\u30D6\u30E9\u30A6\u30B6\u3067\u30ED\u30B0\u30A4\u30F3\u3092\u5B8C\u4E86\u3057\u3066\u304F\u3060\u3055\u3044", false);
     const session = await pollBackendAuthSession(start2.state);
     const expiresAt = typeof session.expiresAt === "number" ? session.expiresAt : Date.now() + AUTH_SESSION_FALLBACK_MS;
     return { token: session.token, profile: session.profile, expiresAt };
