@@ -18,16 +18,14 @@ const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const RESTRICTED_MODEL = "gpt-4.1";
 const RATE_LIMIT_COLLECTION = "qb_support_rate_limits_v1";
 
-if (!OPENAI_API_KEY) {
-  console.error("Missing OPENAI_API_KEY.");
-  process.exit(1);
+const missingEnv: string[] = [];
+if (!OPENAI_API_KEY) missingEnv.push("OPENAI_API_KEY");
+if (!FIREBASE_PROJECT_ID) missingEnv.push("FIREBASE_PROJECT_ID");
+if (missingEnv.length) {
+  console.warn("Missing required envs. Service will start, but requests may fail.", {
+    missing: missingEnv,
+  });
 }
-if (!FIREBASE_PROJECT_ID) {
-  console.error("Missing FIREBASE_PROJECT_ID.");
-  process.exit(1);
-}
-
-initializeFirebase();
 
 const app = express();
 app.disable("x-powered-by");
@@ -45,6 +43,7 @@ app.use(cors({ origin: true }));
 app.use(express.json({ limit: "25mb" }));
 
 app.post("/chat", async (req, res) => {
+  if (!assertRequiredConfig(res)) return;
   const decoded = await authenticateRequest(req, res);
   if (!decoded) return;
 
@@ -77,6 +76,7 @@ app.post("/chat", async (req, res) => {
 });
 
 app.post("/chat/stream", async (req, res) => {
+  if (!assertRequiredConfig(res)) return;
   const decoded = await authenticateRequest(req, res);
   if (!decoded) return;
 
@@ -159,7 +159,7 @@ app.post("/chat/stream", async (req, res) => {
 
 logRoutes(app);
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`qb-support-backend listening on :${PORT}`);
 });
 
@@ -203,6 +203,22 @@ function initializeFirebase() {
   initializeApp({ projectId: FIREBASE_PROJECT_ID });
 }
 
+function ensureFirebaseInitialized(res: express.Response): boolean {
+  if (!FIREBASE_PROJECT_ID) {
+    res.status(503).json({ error: "Missing FIREBASE_PROJECT_ID." });
+    return false;
+  }
+  if (getApps().length) return true;
+  try {
+    initializeFirebase();
+    return true;
+  } catch (error) {
+    console.warn("Firebase initialization failed", error);
+    res.status(503).json({ error: "Firebase initialization failed." });
+    return false;
+  }
+}
+
 function loadServiceAccount(): ServiceAccount | null {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (raw) {
@@ -228,6 +244,7 @@ async function authenticateRequest(
   req: express.Request,
   res: express.Response
 ): Promise<DecodedIdToken | null> {
+  if (!ensureFirebaseInitialized(res)) return null;
   const token = getBearerToken(req);
   if (!token) {
     res.status(401).json({ error: "Missing Authorization bearer token." });
@@ -250,6 +267,15 @@ async function authenticateRequest(
     return null;
   }
   return decoded;
+}
+
+function assertRequiredConfig(res: express.Response): boolean {
+  const missing: string[] = [];
+  if (!OPENAI_API_KEY) missing.push("OPENAI_API_KEY");
+  if (!FIREBASE_PROJECT_ID) missing.push("FIREBASE_PROJECT_ID");
+  if (!missing.length) return true;
+  res.status(503).json({ error: "Missing required configuration.", missing });
+  return false;
 }
 
 async function enforceUsagePolicy(
