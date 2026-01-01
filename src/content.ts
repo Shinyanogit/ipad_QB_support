@@ -21,16 +21,11 @@ import type {
   QuestionSnapshot,
   Settings,
 } from "./core/types";
-import type { User } from "firebase/auth";
-import {
-  browserLocalPersistence,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  setPersistence,
-  signInWithCredential,
-  signOut,
-} from "firebase/auth";
-import { getFirebaseAuth } from "./lib/firebase";
+type AuthProfile = {
+  uid: string;
+  email: string;
+  source: "firebase" | "google";
+};
 import {
   getManifest,
   getStorageArea,
@@ -164,7 +159,7 @@ let navPrevInput: HTMLInputElement | null = null;
 let navNextInput: HTMLInputElement | null = null;
 let revealInput: HTMLInputElement | null = null;
 let optionInputs: HTMLInputElement[] = [];
-let authUser: User | null = null;
+let authProfile: AuthProfile | null = null;
 let authStatusField: HTMLElement | null = null;
 let authMetaField: HTMLElement | null = null;
 let authSyncField: HTMLElement | null = null;
@@ -177,7 +172,7 @@ let authSyncPending = false;
 let authRemoteFetchPending = false;
 let authNetworkBound = false;
 let remoteSettingsLoadedFor: string | null = null;
-let lastAuthAccessToken: string | null = null;
+let authAccessToken: string | null = null;
 let explanationLevelSelect: HTMLSelectElement | null = null;
 let explanationPromptInputs: Partial<Record<string, HTMLTextAreaElement>> = {};
 let commonPromptInput: HTMLTextAreaElement | null = null;
@@ -308,37 +303,13 @@ function initAuth() {
   if (authInitialized || window !== window.top) return;
   authInitialized = true;
   ensureAuthNetworkListeners();
-  const auth = getFirebaseAuth();
-  setPersistence(auth, browserLocalPersistence).catch((error) => {
-    console.warn("[QB_SUPPORT][auth-persistence]", error);
-  });
-  onAuthStateChanged(auth, (user) => {
-    authUser = user;
-    console.log("[QB_SUPPORT][auth] state", {
-      uid: user?.uid ?? null,
-      email: user?.email ?? null,
-      provider: user?.providerData?.map((item) => item.providerId) ?? [],
-    });
-    updateAuthUI();
-    applyChatSettings();
-    if (!user) {
-      remoteSettingsLoadedFor = null;
-      setAuthSyncStatus("未ログイン", false);
-      return;
-    }
-    if (remoteSettingsLoadedFor !== user.uid) {
-      remoteSettingsLoadedFor = user.uid;
-      void syncSettingsFromRemote(user.uid);
-    } else {
-      setAuthSyncStatus("同期済み", false);
-    }
-  });
+  void refreshAuthState(false);
 }
 
 function updateAuthUI() {
   if (!authStatusField || !authSignInButton || !authSignOutButton || !authMetaField) return;
   authStatusField.classList.remove("is-error");
-  if (!authUser) {
+  if (!authProfile) {
     authStatusField.textContent = "未ログイン";
     authMetaField.textContent = "";
     authSignInButton.disabled = false;
@@ -346,9 +317,9 @@ function updateAuthUI() {
     authSignOutButton.style.display = "none";
     return;
   }
-  const name = authUser.displayName || authUser.email || "Googleユーザー";
+  const name = authProfile.email || "Googleユーザー";
   authStatusField.textContent = `ログイン中: ${name}`;
-  authMetaField.textContent = authUser.email ?? "";
+  authMetaField.textContent = authProfile.email ?? "";
   authSignInButton.style.display = "none";
   authSignOutButton.style.display = "inline-flex";
 }
@@ -365,10 +336,10 @@ function setAuthSyncStatus(message: string, isError: boolean) {
   authSyncField.classList.toggle("is-error", isError);
 }
 
-async function requestGoogleAuthToken(): Promise<string> {
-  const timeoutMs = 130000;
+async function requestGoogleAuthToken(interactive: boolean): Promise<string> {
+  const timeoutMs = interactive ? 130000 : 15000;
   const startedAt = Date.now();
-  console.log("[QB_SUPPORT][auth-ui] token request start", { timeoutMs });
+  console.log("[QB_SUPPORT][auth-ui] token request start", { timeoutMs, interactive });
   let timeoutId: number | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = window.setTimeout(() => {
@@ -382,7 +353,7 @@ async function requestGoogleAuthToken(): Promise<string> {
     error?: string;
   }>({
     type: "QB_AUTH_GET_TOKEN",
-    interactive: true,
+    interactive,
   })
     .then((response) => {
       console.log("[QB_SUPPORT][auth-ui] token request response", {
@@ -407,8 +378,61 @@ async function requestGoogleAuthToken(): Promise<string> {
     throw new Error(message);
   }
   if (!response.token) throw new Error("OAuth token was not returned.");
-  lastAuthAccessToken = response.token;
+  authAccessToken = response.token;
   return response.token;
+}
+
+async function fetchBackendAuthProfile(token: string): Promise<AuthProfile> {
+  const baseUrl = resolveBackendBaseUrl();
+  if (!baseUrl) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
+  const url = new URL(baseUrl);
+  url.pathname = url.pathname.replace(/\/+$/, "") + "/auth/me";
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`認証に失敗しました: ${response.status} ${detail}`);
+  }
+  const data = (await response.json()) as AuthProfile;
+  return data;
+}
+
+async function ensureAuthAccessToken(interactive: boolean): Promise<string> {
+  if (authAccessToken) return authAccessToken;
+  const token = await requestGoogleAuthToken(interactive);
+  const profile = await fetchBackendAuthProfile(token);
+  authAccessToken = token;
+  authProfile = profile;
+  updateAuthUI();
+  applyChatSettings();
+  return token;
+}
+
+async function refreshAuthState(interactive: boolean) {
+  try {
+    const token = await requestGoogleAuthToken(interactive);
+    const profile = await fetchBackendAuthProfile(token);
+    authAccessToken = token;
+    authProfile = profile;
+    updateAuthUI();
+    applyChatSettings();
+    if (remoteSettingsLoadedFor !== profile.uid) {
+      remoteSettingsLoadedFor = profile.uid;
+      void syncSettingsFromRemote();
+    } else {
+      setAuthSyncStatus("同期済み", false);
+    }
+  } catch (error) {
+    if (!interactive) {
+      authAccessToken = null;
+      authProfile = null;
+      updateAuthUI();
+      setAuthSyncStatus("未ログイン", false);
+      return;
+    }
+    throw error;
+  }
 }
 
 async function handleAuthSignIn() {
@@ -419,29 +443,16 @@ async function handleAuthSignIn() {
   console.log("[QB_SUPPORT][auth] HREF", location.href);
   console.log("[QB_SUPPORT][auth] EXT_ID", webext.runtime?.id ?? null);
   try {
-    const token = await requestGoogleAuthToken();
-    const credential = GoogleAuthProvider.credential(null, token);
-    await signInWithCredential(getFirebaseAuth(), credential);
-    console.log("[QB_SUPPORT][auth] signInWithCredential success");
+    await refreshAuthState(true);
+    setAuthStatus("ログイン完了", false);
+    console.log("[QB_SUPPORT][auth] sign-in success");
   } catch (error) {
     console.log("[QB_SUPPORT][auth] AUTH_ERR_RAW", error);
-    const err = error as { code?: string; message?: string; customData?: unknown; stack?: string };
-    console.log("[QB_SUPPORT][auth] AUTH_ERR_CODE", err?.code);
+    const err = error as { message?: string; stack?: string };
     console.log("[QB_SUPPORT][auth] AUTH_ERR_MSG", err?.message);
-    console.log("[QB_SUPPORT][auth] AUTH_ERR_CUSTOM", err?.customData);
     console.log("[QB_SUPPORT][auth] AUTH_ERR_STACK", err?.stack);
-    const detail = err?.code ? `${err.code}: ${err.message ?? ""}`.trim() : String(error);
-    const extensionId = webext.runtime?.id;
-    const domainHint = extensionId
-      ? `chrome-extension://${extensionId}`
-      : "chrome-extension://<extension-id>";
-    const pageOrigin = location.origin;
-    const needsDomainHint =
-      err?.code === "auth/internal-error" || err?.code === "auth/unauthorized-domain";
-    const hint = needsDomainHint
-      ? ` (FirebaseのAuthorized domainsに ${domainHint} と ${pageOrigin} を追加してください)`
-      : "";
-    setAuthStatus(`ログイン失敗: ${detail}${hint}`, true);
+    const detail = err?.message ? err.message : String(error);
+    setAuthStatus(`ログイン失敗: ${detail}`, true);
     throw error;
   } finally {
     if (button) button.disabled = false;
@@ -452,15 +463,18 @@ async function handleAuthSignOut() {
   const button = authSignOutButton;
   if (button) button.disabled = true;
   try {
-    if (lastAuthAccessToken) {
+    if (authAccessToken) {
       await sendRuntimeMessage({
         type: "QB_AUTH_REMOVE_TOKEN",
-        token: lastAuthAccessToken,
+        token: authAccessToken,
       });
-      lastAuthAccessToken = null;
+      authAccessToken = null;
     }
-    await signOut(getFirebaseAuth());
+    authProfile = null;
+    remoteSettingsLoadedFor = null;
     setAuthStatus("ログアウトしました", false);
+    updateAuthUI();
+    applyChatSettings();
   } catch (error) {
     console.warn("[QB_SUPPORT][auth]", error);
     setAuthStatus(`ログアウト失敗: ${String(error)}`, true);
@@ -470,7 +484,7 @@ async function handleAuthSignOut() {
 }
 
 function scheduleRemoteSettingsSync() {
-  if (!authUser || window !== window.top) return;
+  if (!authProfile || window !== window.top) return;
   if (!navigator.onLine) {
     authSyncPending = true;
     setAuthSyncStatus("オフライン: 同期保留", false);
@@ -482,7 +496,7 @@ function scheduleRemoteSettingsSync() {
   }, 700);
 }
 
-async function syncSettingsFromRemote(uid: string) {
+async function syncSettingsFromRemote() {
   setAuthSyncStatus("同期中...", false);
   try {
     const remoteSettings = await fetchRemoteSettings();
@@ -516,8 +530,8 @@ async function syncSettingsFromRemote(uid: string) {
 }
 
 async function fetchRemoteSettings(): Promise<Partial<Settings> | null> {
-  if (!authUser) return null;
-  const token = await authUser.getIdToken();
+  if (!authProfile) return null;
+  const token = await ensureAuthAccessToken(false);
   const url = resolveBackendSettingsUrl();
   if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
   const response = await fetch(url, {
@@ -540,7 +554,7 @@ function buildRemoteSettingsPayload(current: Settings): Partial<Settings> {
 }
 
 async function syncSettingsToRemote() {
-  if (!authUser) return;
+  if (!authProfile) return;
   if (authSyncInFlight) {
     authSyncPending = true;
     return;
@@ -557,7 +571,7 @@ async function syncSettingsToRemote() {
       apiKeyLength: settings.chatApiKey?.length ?? 0,
       apiKeyEnabled: settings.chatApiKeyEnabled,
     });
-    const token = await authUser.getIdToken();
+    const token = await ensureAuthAccessToken(false);
     const url = resolveBackendSettingsUrl();
     if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
     const response = await fetch(url, {
@@ -598,10 +612,10 @@ function ensureAuthNetworkListeners() {
   if (authNetworkBound) return;
   authNetworkBound = true;
   window.addEventListener("online", () => {
-    if (!authUser) return;
+    if (!authProfile) return;
     if (authRemoteFetchPending) {
       authRemoteFetchPending = false;
-      void syncSettingsFromRemote(authUser.uid);
+      void syncSettingsFromRemote();
       return;
     }
     if (authSyncPending) {
@@ -610,7 +624,7 @@ function ensureAuthNetworkListeners() {
     }
   });
   window.addEventListener("offline", () => {
-    if (!authUser) return;
+    if (!authProfile) return;
     setAuthSyncStatus("オフライン: 同期保留", false);
   });
 }
@@ -2088,7 +2102,7 @@ function resolveBackendSettingsUrl(): string | null {
 function isBackendModelLocked(): boolean {
   const apiKey = settings.chatApiKey?.trim() ?? "";
   if (apiKey && settings.chatApiKeyEnabled) return false;
-  if (!authUser) return false;
+  if (!authProfile) return false;
   return Boolean(resolveBackendBaseUrl());
 }
 
@@ -2098,7 +2112,7 @@ async function resolveChatAuth(): Promise<ChatAuth> {
     return { mode: "apiKey", apiKey };
   }
 
-  if (!authUser) {
+  if (!authProfile) {
     if (apiKey) {
       throw new Error("APIキーを有効にするか、Googleでログインしてください");
     }
@@ -2110,12 +2124,12 @@ async function resolveChatAuth(): Promise<ChatAuth> {
     throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
   }
 
-  const idToken = await authUser.getIdToken();
-  if (!idToken) {
+  const token = await ensureAuthAccessToken(false);
+  if (!token) {
     throw new Error("認証トークンを取得できませんでした");
   }
 
-  return { mode: "backend", backendUrl: backendBaseUrl, authToken: idToken };
+  return { mode: "backend", backendUrl: backendBaseUrl, authToken: token };
 }
 
 async function resolveChatAuthWithStatus(): Promise<ChatAuth | null> {
@@ -2585,7 +2599,7 @@ const MODEL_PRICING_USD_PER_1M: Record<string, { input: number; output: number }
 const USD_TO_JPY = 155;
 
 function shouldShowUsageMeta(): boolean {
-  const email = authUser?.email?.trim().toLowerCase() ?? "";
+  const email = authProfile?.email?.trim().toLowerCase() ?? "";
   return email === USAGE_META_EMAIL;
 }
 
