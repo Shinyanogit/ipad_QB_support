@@ -31,7 +31,9 @@ const app = express();
 app.disable("x-powered-by");
 
 app.use((req, _res, next) => {
-  console.log("[req]", req.method, req.url);
+  if (req.url === "/" || req.url.startsWith("/health") || req.url.startsWith("/chat")) {
+    console.log("[req]", req.method, req.url);
+  }
   next();
 });
 
@@ -167,13 +169,23 @@ app.post("/chat/stream", async (req, res) => {
 
 logRoutes(app);
 
+app.use((req, res) => {
+  console.warn("[404]", req.method, req.url);
+  res.status(404).json({ error: "Not Found" });
+});
+
 app.listen(PORT, "0.0.0.0", () => {
+  console.log("[startup]", {
+    service: process.env.K_SERVICE ?? "",
+    revision: process.env.K_REVISION ?? "",
+    port: PORT,
+    missingEnv,
+  });
   console.log(`qb-support-backend listening on :${PORT}`);
 });
 
 function logRoutes(appInstance: express.Express) {
   const stack = (appInstance as any)?._router?.stack ?? [];
-  const routes: Array<{ method: string; path: string }> = [];
   for (const layer of stack) {
     if (!layer) continue;
     if (layer.route?.path && layer.route?.methods) {
@@ -181,7 +193,7 @@ function logRoutes(appInstance: express.Express) {
         .filter((method) => layer.route.methods[method])
         .map((method) => method.toUpperCase());
       for (const method of methods) {
-        routes.push({ method, path: String(layer.route.path) });
+        console.log("[route]", method, String(layer.route.path));
       }
     } else if (layer.name === "router" && layer.handle?.stack) {
       for (const nested of layer.handle.stack) {
@@ -190,12 +202,11 @@ function logRoutes(appInstance: express.Express) {
           .filter((method) => nested.route.methods[method])
           .map((method) => method.toUpperCase());
         for (const method of methods) {
-          routes.push({ method, path: String(nested.route.path) });
+          console.log("[route]", method, String(nested.route.path));
         }
       }
     }
   }
-  console.log("[routes]", routes);
 }
 
 function initializeFirebase() {
