@@ -162,6 +162,7 @@ export const defaultSettings: Settings = {
   chatOpen: false,
   chatDock: "right",
   chatApiKey: "",
+  chatApiKeyEnabled: true,
   chatBackendUrl: "",
   chatModel: "gpt-5.2",
   chatTemplates: DEFAULT_CHAT_TEMPLATES,
@@ -214,6 +215,10 @@ export function normalizeSettings(
       typeof input.chatApiKey === "string"
         ? input.chatApiKey.trim()
         : defaultSettings.chatApiKey,
+    chatApiKeyEnabled:
+      typeof input.chatApiKeyEnabled === "boolean"
+        ? input.chatApiKeyEnabled
+        : defaultSettings.chatApiKeyEnabled,
     chatBackendUrl:
       typeof input.chatBackendUrl === "string"
         ? input.chatBackendUrl.trim()

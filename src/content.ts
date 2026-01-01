@@ -124,6 +124,7 @@ let chatStatusField: HTMLElement | null = null;
 let chatInputWrap: HTMLDivElement | null = null;
 let chatApiInput: HTMLInputElement | null = null;
 let chatApiSaveButton: HTMLButtonElement | null = null;
+let chatApiKeyToggle: HTMLInputElement | null = null;
 let chatBackendInput: HTMLInputElement | null = null;
 let chatBackendSaveButton: HTMLButtonElement | null = null;
 let chatModelInput: HTMLSelectElement | null = null;
@@ -1115,6 +1116,9 @@ function ensureChatUI() {
         ".qb-support-chat-save"
       ) as HTMLButtonElement | null;
     }
+    chatApiKeyToggle = chatRoot.querySelector(
+      ".qb-support-chat-api-key-toggle"
+    ) as HTMLInputElement | null;
     chatBackendInput = chatRoot.querySelector(
       ".qb-support-chat-backend-url"
     ) as HTMLInputElement | null;
@@ -1140,6 +1144,26 @@ function ensureChatUI() {
     }
     const apiSection = chatRoot.querySelector(".qb-support-chat-api");
     if (apiSection) {
+      if (!chatApiKeyToggle) {
+        const apiKeyToggleLabel = document.createElement("label");
+        apiKeyToggleLabel.className = "qb-support-toggle qb-support-chat-api-toggle";
+        chatApiKeyToggle = document.createElement("input");
+        chatApiKeyToggle.type = "checkbox";
+        chatApiKeyToggle.className =
+          "qb-support-toggle-input qb-support-chat-api-key-toggle";
+        apiKeyToggleLabel.appendChild(chatApiKeyToggle);
+        apiKeyToggleLabel.appendChild(makeSpan("手動APIキーを使用"));
+        apiSection.appendChild(apiKeyToggleLabel);
+      }
+      if (chatApiKeyToggle && chatApiKeyToggle.dataset.handlers !== "true") {
+        chatApiKeyToggle.dataset.handlers = "true";
+        chatApiKeyToggle.addEventListener("change", () => {
+          void saveSettings({
+            ...settings,
+            chatApiKeyEnabled: chatApiKeyToggle?.checked ?? true,
+          });
+        });
+      }
       if (!chatBackendInput) {
         const backendLabel = document.createElement("label");
         backendLabel.textContent = "Chat Backend URL";
@@ -1340,6 +1364,20 @@ function ensureChatUI() {
     setChatStatus("APIキーを保存しました", false);
   });
 
+  const apiKeyToggleLabel = document.createElement("label");
+  apiKeyToggleLabel.className = "qb-support-toggle qb-support-chat-api-toggle";
+  chatApiKeyToggle = document.createElement("input");
+  chatApiKeyToggle.type = "checkbox";
+  chatApiKeyToggle.className = "qb-support-toggle-input qb-support-chat-api-key-toggle";
+  apiKeyToggleLabel.appendChild(chatApiKeyToggle);
+  apiKeyToggleLabel.appendChild(makeSpan("手動APIキーを使用"));
+  chatApiKeyToggle.addEventListener("change", () => {
+    void saveSettings({
+      ...settings,
+      chatApiKeyEnabled: chatApiKeyToggle?.checked ?? true,
+    });
+  });
+
   const backendLabel = document.createElement("label");
   backendLabel.textContent = "Chat Backend URL";
   backendLabel.className = "qb-support-chat-api-label";
@@ -1384,6 +1422,7 @@ function ensureChatUI() {
   apiSection.appendChild(apiLabel);
   apiSection.appendChild(chatApiInput);
   apiSection.appendChild(chatApiSaveButton);
+  apiSection.appendChild(apiKeyToggleLabel);
   apiSection.appendChild(backendLabel);
   apiSection.appendChild(chatBackendInput);
   apiSection.appendChild(chatBackendSaveButton);
@@ -1505,9 +1544,17 @@ function applyChatSettings() {
 
   if (chatApiInput && document.activeElement !== chatApiInput) {
     chatApiInput.value = "";
-    chatApiInput.placeholder = settings.chatApiKey
-      ? "保存済み (再入力で更新)"
+    const apiKeySaved = Boolean(settings.chatApiKey);
+    const apiKeyDisabled = apiKeySaved && !settings.chatApiKeyEnabled;
+    chatApiInput.placeholder = apiKeySaved
+      ? apiKeyDisabled
+        ? "保存済み (使用オフ)"
+        : "保存済み (再入力で更新)"
       : "sk-...";
+  }
+
+  if (chatApiKeyToggle) {
+    chatApiKeyToggle.checked = settings.chatApiKeyEnabled;
   }
 
   if (chatBackendInput && document.activeElement !== chatBackendInput) {
@@ -1874,18 +1921,21 @@ function resolveBackendBaseUrl(): string | null {
 
 function isBackendModelLocked(): boolean {
   const apiKey = settings.chatApiKey?.trim() ?? "";
-  if (apiKey) return false;
+  if (apiKey && settings.chatApiKeyEnabled) return false;
   if (!authUser) return false;
   return Boolean(resolveBackendBaseUrl());
 }
 
 async function resolveChatAuth(): Promise<ChatAuth> {
   const apiKey = settings.chatApiKey?.trim() ?? "";
-  if (apiKey) {
+  if (apiKey && settings.chatApiKeyEnabled) {
     return { mode: "apiKey", apiKey };
   }
 
   if (!authUser) {
+    if (apiKey) {
+      throw new Error("APIキーを有効にするか、Googleでログインしてください");
+    }
     throw new Error("APIキーを設定するか、Googleでログインしてください");
   }
 

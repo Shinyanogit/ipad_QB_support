@@ -785,6 +785,12 @@ body.qb-support-chat-dock .desc {
   color: rgba(231, 239, 248, 0.7);
 }
 
+.qb-support-chat-api-toggle {
+  font-size: 11px;
+  color: rgba(231, 239, 248, 0.7);
+  margin: 4px 0 6px;
+}
+
 .qb-support-chat-input {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(0, 150, 136, 0.2);
@@ -993,6 +999,7 @@ html[data-qb-theme="light"] .qb-support-chat-header {
 html[data-qb-theme="light"] .qb-support-chat-title,
 html[data-qb-theme="light"] .qb-support-chat-status,
 html[data-qb-theme="light"] .qb-support-chat-api-label,
+html[data-qb-theme="light"] .qb-support-chat-api-toggle,
 html[data-qb-theme="light"] .qb-support-chat-meta {
   color: rgba(245, 251, 255, 0.85);
 }
