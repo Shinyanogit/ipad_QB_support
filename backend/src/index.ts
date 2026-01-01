@@ -45,10 +45,6 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true });
 });
 
-app.get("/healthz", (_req, res) => {
-  res.status(200).type("text/plain").send("ok");
-});
-
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "25mb" }));
 

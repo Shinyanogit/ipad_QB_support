@@ -3,13 +3,13 @@
 This service proxies OpenAI Responses API for logged-in users. It verifies Firebase ID tokens and streams the upstream response back to the extension.
 
 ## Endpoints
-- `GET /healthz`
+- `GET /health`
 - `POST /chat/stream` (streaming)
 - `POST /chat` (non-stream)
 
 Health check example:
 ```bash
-curl -i "$SERVICE_URL/healthz"
+curl -i "$SERVICE_URL/health"
 ```
 
 ## Usage policy
