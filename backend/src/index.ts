@@ -19,7 +19,8 @@ const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS ?? "")
 const ALLOWED_DOMAIN = (process.env.ALLOWED_DOMAIN ?? "").trim().toLowerCase();
 const RATE_LIMIT_MAX = 60;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
-const RESTRICTED_MODEL = "gpt-4.1";
+const BACKEND_DEFAULT_MODEL = "gpt-5-mini";
+const BACKEND_ALLOWED_MODELS = new Set(["gpt-5-mini", "gpt-4.1"]);
 const RATE_LIMIT_COLLECTION = "qb_support_rate_limits_v1";
 const SETTINGS_COLLECTION = "qb_support_settings";
 const AUTH_SESSION_COLLECTION = "qb_support_auth_sessions";
@@ -30,6 +31,11 @@ type AuthContext = {
   uid: string;
   email: string;
   source: "firebase" | "google";
+};
+
+const resolveBackendModel = (requested?: string): string => {
+  const trimmed = typeof requested === "string" ? requested.trim() : "";
+  return BACKEND_ALLOWED_MODELS.has(trimmed) ? trimmed : BACKEND_DEFAULT_MODEL;
 };
 
 const missingEnv: string[] = [];
@@ -317,7 +323,8 @@ app.post("/chat", async (req, res) => {
   }
   const messages = Array.isArray(body?.messages) ? body?.messages : [];
 
-  const payload: Record<string, unknown> = { model: RESTRICTED_MODEL, messages };
+  const model = resolveBackendModel(body?.model);
+  const payload: Record<string, unknown> = { model, messages };
 
   const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -344,7 +351,7 @@ app.post("/chat/stream", async (req, res) => {
 
   const body = req.body as
     | {
-        model?: string;
+      model?: string;
         input?: unknown;
         instructions?: string;
         previous_response_id?: string | null;
@@ -363,8 +370,9 @@ app.post("/chat/stream", async (req, res) => {
     return;
   }
 
+  const model = resolveBackendModel(body?.model);
   const payload: Record<string, unknown> = {
-    model: RESTRICTED_MODEL,
+    model,
     input,
     instructions: instructions || undefined,
     previous_response_id: previousResponseId ?? undefined,

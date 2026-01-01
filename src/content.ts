@@ -69,7 +69,8 @@ const CHAT_DOCK_GAP = 20;
 const QB_ACTION_ORIGIN = "https://input.medilink-study.com";
 const QB_TOP_ORIGIN = "https://qb.medilink-study.com";
 const FIREBASE_SETTINGS_VERSION = 1;
-const BACKEND_FORCED_MODEL = "gpt-4.1";
+const BACKEND_DEFAULT_MODEL = "gpt-5-mini";
+const BACKEND_ALLOWED_MODELS = ["gpt-5-mini", "gpt-4.1"];
 const DEFAULT_BACKEND_URL = "https://ipad-qb-support-400313981210.asia-northeast1.run.app";
 const USAGE_META_EMAIL = "ymgtsny7@gmail.com";
 const AUTH_STORAGE_KEY = "qb_support_auth_session_v1";
@@ -137,16 +138,16 @@ let chatSendButton: HTMLButtonElement | null = null;
 let chatStatusField: HTMLElement | null = null;
 let chatInputWrap: HTMLDivElement | null = null;
 let chatApiInput: HTMLInputElement | null = null;
-let chatApiSaveButton: HTMLButtonElement | null = null;
 let chatApiKeyToggle: HTMLInputElement | null = null;
 let chatApiKeyVisibilityButton: HTMLButtonElement | null = null;
 let chatApiKeyStatus: HTMLElement | null = null;
 let chatModelInput: HTMLSelectElement | null = null;
-let chatModelSaveButton: HTMLButtonElement | null = null;
+let chatHeaderModelSelect: HTMLSelectElement | null = null;
 let chatSettingsPanel: HTMLDivElement | null = null;
 let chatSettingsButton: HTMLButtonElement | null = null;
 let chatSettingsOpen = false;
 let chatApiKeyVisible = false;
+let chatAuthPromptActive = false;
 let chatTemplateBar: HTMLDivElement | null = null;
 let chatTemplateRows: ChatTemplateRow[] = [];
 let templateCountLabel: HTMLSpanElement | null = null;
@@ -174,6 +175,7 @@ let debugToggle: HTMLInputElement | null = null;
 let noteToggle: HTMLInputElement | null = null;
 let searchToggle: HTMLInputElement | null = null;
 let pageAccentToggle: HTMLInputElement | null = null;
+let themeToggle: HTMLInputElement | null = null;
 let navPrevInput: HTMLInputElement | null = null;
 let navNextInput: HTMLInputElement | null = null;
 let revealInput: HTMLInputElement | null = null;
@@ -200,7 +202,6 @@ let displaySectionEl: HTMLDivElement | null = null;
 let templateSectionEl: HTMLDivElement | null = null;
 let explanationSectionEl: HTMLDivElement | null = null;
 let authSectionEl: HTMLDivElement | null = null;
-let themeSelect: HTMLSelectElement | null = null;
 let themeQuery: MediaQueryList | null = null;
 
 const start = () => {
@@ -826,35 +827,23 @@ function ensureUI() {
     });
   });
 
-  searchToggle = document.createElement("input");
-  searchToggle.type = "checkbox";
-  searchToggle.className = "qb-support-toggle-input";
-  searchToggle.addEventListener("change", () => {
+  const searchSwitch = createSwitch("検索バー表示", settings.searchVisible, (checked) => {
     void saveSettings({
       ...settings,
-      searchVisible: searchToggle?.checked ?? true,
+      searchVisible: checked,
     });
   });
+  searchToggle = searchSwitch.input;
+  const searchLabel = searchSwitch.label;
 
-  const searchLabel = document.createElement("label");
-  searchLabel.className = "qb-support-toggle qb-support-toggle-btn";
-  searchLabel.appendChild(searchToggle);
-  searchLabel.appendChild(makeSpan("検索バー表示"));
-
-  noteToggle = document.createElement("input");
-  noteToggle.type = "checkbox";
-  noteToggle.className = "qb-support-toggle-input";
-  noteToggle.addEventListener("change", () => {
+  const noteSwitch = createSwitch("ノート表示", settings.noteVisible, (checked) => {
     void saveSettings({
       ...settings,
-      noteVisible: noteToggle?.checked ?? true,
+      noteVisible: checked,
     });
   });
-
-  const noteLabel = document.createElement("label");
-  noteLabel.className = "qb-support-toggle qb-support-toggle-btn";
-  noteLabel.appendChild(noteToggle);
-  noteLabel.appendChild(makeSpan("ノート表示"));
+  noteToggle = noteSwitch.input;
+  const noteLabel = noteSwitch.label;
 
   pageAccentToggle = document.createElement("input");
   pageAccentToggle.type = "checkbox";
@@ -871,30 +860,19 @@ function ensureUI() {
   pageAccentLabel.appendChild(pageAccentToggle);
   pageAccentLabel.appendChild(makeSpan("ページに緑アクセント"));
 
-  themeSelect = document.createElement("select");
-  themeSelect.className = "qb-support-select";
-  [
-    { value: "system", label: "システム" },
-    { value: "light", label: "ライト" },
-    { value: "dark", label: "ダーク" },
-  ].forEach((optionData) => {
-    const option = document.createElement("option");
-    option.value = optionData.value;
-    option.textContent = optionData.label;
-    themeSelect?.appendChild(option);
-  });
-  themeSelect.addEventListener("change", () => {
-    const nextTheme = themeSelect?.value ?? "system";
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const isDark =
+    settings.themePreference === "dark" ||
+    (settings.themePreference === "system" && prefersDark);
+  const themeSwitch = createSwitch("ダークモード", isDark, (checked) => {
+    const nextTheme = checked ? "dark" : "light";
     void saveSettings({
       ...settings,
       themePreference: nextTheme,
     });
   });
-
-  const themeLabel = document.createElement("label");
-  themeLabel.className = "qb-support-field";
-  themeLabel.appendChild(makeSpan("テーマ"));
-  themeLabel.appendChild(themeSelect);
+  themeToggle = themeSwitch.input;
+  const themeLabel = themeSwitch.label;
 
   const shortcutSection = document.createElement("div");
   shortcutSection.className = "qb-support-section";
@@ -987,35 +965,6 @@ function ensureUI() {
   toggleShortcutLabel.appendChild(shortcutsToggle);
   toggleShortcutLabel.appendChild(makeSpan("ショートカット有効"));
 
-  const saveButton = document.createElement("button");
-  saveButton.type = "button";
-  saveButton.className = "qb-support-save";
-  applyButtonVariant(saveButton, "primary");
-  saveButton.textContent = "保存";
-  saveButton.addEventListener("click", () => {
-    const optionKeys = optionInputs
-      .map((input) => normalizeShortcut(input.value))
-      .filter(Boolean);
-    const navPrevKey = normalizeShortcut(navPrevInput?.value ?? "");
-    const navNextKey = normalizeShortcut(navNextInput?.value ?? "");
-    const revealKey = normalizeShortcut(revealInput?.value ?? "");
-    if (!navPrevKey || !navNextKey || !revealKey || optionKeys.length === 0) {
-      setStatus("ショートカットを入力してください", true);
-      return;
-    }
-    void saveSettings({
-      ...settings,
-      shortcutsEnabled: shortcutsToggle?.checked ?? true,
-      searchVisible: searchToggle?.checked ?? true,
-      noteVisible: noteToggle?.checked ?? true,
-      navPrevKey,
-      navNextKey,
-      revealKey,
-      optionKeys,
-    });
-    setStatus("保存しました", false);
-  });
-
   statusField = document.createElement("div");
   statusField.className = "qb-support-status";
 
@@ -1030,7 +979,6 @@ function ensureUI() {
   shortcutSection.appendChild(navNextField.label);
   shortcutSection.appendChild(revealField.label);
   shortcutSection.appendChild(optionsWrap);
-  shortcutSection.appendChild(saveButton);
 
   const templateSection = document.createElement("div");
   templateSection.className = "qb-support-section";
@@ -1151,37 +1099,8 @@ function ensureUI() {
     });
   }
 
-  const templateSaveButton = document.createElement("button");
-  templateSaveButton.type = "button";
-  templateSaveButton.className = "qb-support-save qb-support-template-save";
-  applyButtonVariant(templateSaveButton, "primary");
-  templateSaveButton.textContent = "テンプレ保存";
-  templateSaveButton.addEventListener("click", () => {
-    const nextTemplates = chatTemplateRows.map((row, index) => {
-      const label = row.label.value.trim() || `テンプレ${index + 1}`;
-      const shortcut = normalizeShortcut(row.shortcut.value);
-      const prompt = row.prompt.value.trim();
-      return {
-        enabled: row.enabled.checked,
-        label,
-        shortcut,
-        prompt,
-      };
-    });
-    if (nextTemplates.some((template) => template.enabled && !template.prompt)) {
-      setStatus("有効なテンプレはプロンプト必須です", true);
-      return;
-    }
-    void saveSettings({
-      ...settings,
-      chatTemplates: nextTemplates,
-    });
-    setStatus("テンプレを保存しました", false);
-  });
 
   templateSection.appendChild(templateList);
-
-  templateSection.appendChild(templateSaveButton);
 
   const explanationSection = document.createElement("div");
   explanationSection.className = "qb-support-section";
@@ -1199,14 +1118,13 @@ function ensureUI() {
   commonPromptInput.placeholder = "全ての会話に付与する共通プロンプト";
   commonPromptLabel.appendChild(commonPromptInput);
 
-  explanationLevelSelect = document.createElement("select");
-  explanationLevelSelect.className = "qb-support-select qb-support-explanation-level";
-  Object.entries(EXPLANATION_LEVEL_LABELS).forEach(([value, label]) => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = label;
-    explanationLevelSelect?.appendChild(option);
-  });
+  explanationLevelSelect = createOverlaySelect(
+    Object.entries(EXPLANATION_LEVEL_LABELS).map(([value, label]) => ({
+      value,
+      label,
+    })),
+    "qb-support-explanation-level"
+  );
 
   const explanationSelectLabel = document.createElement("label");
   explanationSelectLabel.className = "qb-support-field";
@@ -1236,36 +1154,9 @@ function ensureUI() {
     buildExplanationPromptField("医学部高学年〜研修医", "med-senior")
   );
 
-  const explanationSaveButton = document.createElement("button");
-  explanationSaveButton.type = "button";
-  explanationSaveButton.className = "qb-support-save qb-support-explanation-save";
-  applyButtonVariant(explanationSaveButton, "primary");
-  explanationSaveButton.textContent = "解説設定を保存";
-  explanationSaveButton.addEventListener("click", () => {
-    const level = explanationLevelSelect?.value ?? "med-junior";
-    const commonPrompt = commonPromptInput?.value.trim() ?? "";
-    const nextPrompts = {
-      highschool: explanationPromptInputs.highschool?.value.trim() ?? "",
-      "med-junior": explanationPromptInputs["med-junior"]?.value.trim() ?? "",
-      "med-senior": explanationPromptInputs["med-senior"]?.value.trim() ?? "",
-    };
-    if (!nextPrompts.highschool || !nextPrompts["med-junior"] || !nextPrompts["med-senior"]) {
-      setStatus("解説プロンプトを入力してください", true);
-      return;
-    }
-    void saveSettings({
-      ...settings,
-      commonPrompt,
-      explanationLevel: level,
-      explanationPrompts: nextPrompts,
-    });
-    setStatus("解説レベルを保存しました", false);
-  });
-
   explanationSection.appendChild(commonPromptLabel);
   explanationSection.appendChild(explanationSelectLabel);
   explanationSection.appendChild(promptWrap);
-  explanationSection.appendChild(explanationSaveButton);
 
   const authSection = document.createElement("div");
   authSection.className = "qb-support-section";
@@ -1327,7 +1218,12 @@ function ensureUI() {
   launcher.setAttribute("aria-label", "QB設定");
   launcher.appendChild(createGearIcon());
   launcher.addEventListener("click", () => {
-    void saveSettings({ ...settings, enabled: !settings.enabled });
+    const next = !settings.enabled;
+    if (next) {
+      void saveSettings({ ...settings, enabled: true });
+    } else {
+      void closeSettingsPanel();
+    }
   });
 
   root.appendChild(panel);
@@ -1359,14 +1255,6 @@ function ensureChatUI() {
         ".qb-support-chat-api input"
       ) as HTMLInputElement | null;
     }
-    chatApiSaveButton = chatRoot.querySelector(
-      ".qb-support-chat-api-save"
-    ) as HTMLButtonElement | null;
-    if (!chatApiSaveButton) {
-      chatApiSaveButton = chatRoot.querySelector(
-        ".qb-support-chat-save"
-      ) as HTMLButtonElement | null;
-    }
     chatApiKeyToggle = chatRoot.querySelector(
       ".qb-support-chat-api-key-toggle"
     ) as HTMLInputElement | null;
@@ -1378,9 +1266,32 @@ function ensureChatUI() {
     ) as HTMLElement | null;
     const modelNode = chatRoot.querySelector(".qb-support-chat-model");
     chatModelInput = modelNode instanceof HTMLSelectElement ? modelNode : null;
-    chatModelSaveButton = chatRoot.querySelector(
-      ".qb-support-chat-model-save"
-    ) as HTMLButtonElement | null;
+    const headerModelNode = chatRoot.querySelector(".qb-support-chat-model-inline");
+    chatHeaderModelSelect =
+      headerModelNode instanceof HTMLSelectElement ? headerModelNode : null;
+    const headerNode = chatRoot.querySelector(".qb-support-chat-header");
+    if (headerNode instanceof HTMLDivElement) {
+      let titleWrap = headerNode.querySelector(".qb-support-chat-title-wrap");
+      if (!(titleWrap instanceof HTMLDivElement)) {
+        const legacyTitle = headerNode.querySelector(".qb-support-chat-title");
+        const wrap = document.createElement("div");
+        wrap.className = "qb-support-chat-title-wrap";
+        if (legacyTitle) {
+          wrap.appendChild(legacyTitle);
+        }
+        headerNode.insertBefore(wrap, headerNode.firstChild);
+        titleWrap = wrap;
+      }
+      if (titleWrap instanceof HTMLDivElement && !chatHeaderModelSelect) {
+        chatHeaderModelSelect = createOverlaySelect(
+          CHAT_MODEL_OPTIONS.map((model) => ({ value: model, label: model })),
+          "qb-support-chat-model-inline"
+        );
+        chatHeaderModelSelect.value = settings.chatModel;
+        chatHeaderModelSelect.setAttribute("aria-label", "モデル選択");
+        titleWrap.appendChild(chatHeaderModelSelect);
+      }
+    }
     chatSettingsPanel = chatRoot.querySelector(
       ".qb-support-chat-settings"
     ) as HTMLDivElement | null;
@@ -1399,8 +1310,13 @@ function ensureChatUI() {
         });
       }
     }
-    if (chatApiSaveButton) {
-      chatApiSaveButton.classList.add("qb-support-chat-api-save");
+    const apiSaveButton = chatRoot.querySelector(".qb-support-chat-api-save");
+    if (apiSaveButton instanceof HTMLButtonElement) {
+      apiSaveButton.remove();
+    }
+    const modelSaveButton = chatRoot.querySelector(".qb-support-chat-model-save");
+    if (modelSaveButton instanceof HTMLButtonElement) {
+      modelSaveButton.remove();
     }
     const apiSection = chatRoot.querySelector(".qb-support-chat-api");
     if (apiSection) {
@@ -1446,13 +1362,7 @@ function ensureChatUI() {
         chatApiKeyStatus = document.createElement("div");
         chatApiKeyStatus.className = "qb-support-chat-api-key-status";
       }
-      if (
-        chatApiKeyStatus &&
-        chatApiSaveButton &&
-        !apiSection.contains(chatApiKeyStatus)
-      ) {
-        apiSection.insertBefore(chatApiKeyStatus, chatApiSaveButton);
-      } else if (chatApiKeyStatus && !apiSection.contains(chatApiKeyStatus)) {
+      if (chatApiKeyStatus && !apiSection.contains(chatApiKeyStatus)) {
         apiSection.appendChild(chatApiKeyStatus);
       }
       if (!chatApiKeyToggle) {
@@ -1476,7 +1386,7 @@ function ensureChatUI() {
         });
       }
     }
-    if (!chatModelInput || !chatModelSaveButton) {
+    if (!chatModelInput) {
       if (apiSection) {
         let modelLabel = apiSection.querySelector(
           ".qb-support-chat-model-label"
@@ -1494,15 +1404,6 @@ function ensureChatUI() {
         }
         chatModelInput = createChatModelSelect();
         apiSection.appendChild(chatModelInput);
-
-        if (!chatModelSaveButton) {
-          chatModelSaveButton = document.createElement("button");
-          chatModelSaveButton.type = "button";
-          chatModelSaveButton.className =
-            "qb-support-chat-save qb-support-chat-model-save";
-          chatModelSaveButton.textContent = "適用";
-          apiSection.appendChild(chatModelSaveButton);
-        }
       }
     }
     if (!chatSettingsButton) {
@@ -1553,8 +1454,6 @@ function ensureChatUI() {
       ".qb-support-chat-new"
     ) as HTMLButtonElement | null;
     applyButtonVariant(chatNewButton, "ghost");
-    applyButtonVariant(chatApiSaveButton, "primary");
-    applyButtonVariant(chatModelSaveButton, "primary");
     applyButtonVariant(chatSendButton, "primary");
     attachChatSettingsHandlers();
     populateChatSettingsPanel();
@@ -1570,9 +1469,22 @@ function ensureChatUI() {
   const header = document.createElement("div");
   header.className = "qb-support-chat-header";
 
+  const titleWrap = document.createElement("div");
+  titleWrap.className = "qb-support-chat-title-wrap";
+
   const title = document.createElement("div");
   title.className = "qb-support-chat-title";
   title.textContent = "QB Chat";
+
+  chatHeaderModelSelect = createOverlaySelect(
+    CHAT_MODEL_OPTIONS.map((model) => ({ value: model, label: model })),
+    "qb-support-chat-model-inline"
+  );
+  chatHeaderModelSelect.value = settings.chatModel;
+  chatHeaderModelSelect.setAttribute("aria-label", "モデル選択");
+
+  titleWrap.appendChild(title);
+  titleWrap.appendChild(chatHeaderModelSelect);
 
   const actions = document.createElement("div");
   actions.className = "qb-support-chat-actions";
@@ -1599,7 +1511,7 @@ function ensureChatUI() {
   actions.appendChild(settingsButton);
   actions.appendChild(resetButton);
 
-  header.appendChild(title);
+  header.appendChild(titleWrap);
   header.appendChild(actions);
 
   chatSettingsPanel = document.createElement("div");
@@ -1647,25 +1559,6 @@ function ensureChatUI() {
   chatApiKeyStatus = document.createElement("div");
   chatApiKeyStatus.className = "qb-support-chat-api-key-status";
 
-  chatApiSaveButton = document.createElement("button");
-  chatApiSaveButton.type = "button";
-  chatApiSaveButton.className = "qb-support-chat-save qb-support-chat-api-save";
-  chatApiSaveButton.textContent = "保存";
-  applyButtonVariant(chatApiSaveButton, "primary");
-  chatApiSaveButton.addEventListener("click", () => {
-    const nextKey = chatApiInput?.value.trim() ?? "";
-    if (!nextKey) {
-      if (settings.chatApiKey) {
-        setChatStatus("APIキーは保存済みです", false);
-        return;
-      }
-      setChatStatus("APIキーを入力してください", true);
-      return;
-    }
-    void saveSettings({ ...settings, chatApiKey: nextKey });
-    if (chatApiInput) chatApiInput.value = "";
-    setChatStatus("APIキーを保存しました", false);
-  });
 
   const apiKeyToggleLabel = document.createElement("label");
   apiKeyToggleLabel.className = "qb-support-toggle qb-support-chat-api-toggle";
@@ -1687,20 +1580,12 @@ function ensureChatUI() {
 
   chatModelInput = createChatModelSelect();
 
-  chatModelSaveButton = document.createElement("button");
-  chatModelSaveButton.type = "button";
-  chatModelSaveButton.className = "qb-support-chat-save qb-support-chat-model-save";
-  chatModelSaveButton.textContent = "適用";
-  applyButtonVariant(chatModelSaveButton, "primary");
-
   apiSection.appendChild(apiLabel);
   apiSection.appendChild(apiKeyRow);
   apiSection.appendChild(chatApiKeyStatus);
-  apiSection.appendChild(chatApiSaveButton);
   apiSection.appendChild(apiKeyToggleLabel);
   apiSection.appendChild(modelLabel);
   apiSection.appendChild(chatModelInput);
-  apiSection.appendChild(chatModelSaveButton);
   attachChatModelHandlers();
 
   chatSettingsPanel.appendChild(apiSection);
@@ -1836,28 +1721,29 @@ function applyChatSettings() {
     chatApiKeyVisibilityButton.disabled = !hasKey;
   }
 
-  const backendMode = isBackendModelLocked();
+  const backendMode = isBackendMode();
+  const modelOptions = getChatModelOptions(backendMode);
+  const resolvedModel = backendMode
+    ? resolveBackendModel(settings.chatModel)
+    : settings.chatModel;
 
-  if (chatModelInput) {
-    if (backendMode) {
-      chatModelInput.value = BACKEND_FORCED_MODEL;
-    } else if (document.activeElement !== chatModelInput) {
-      chatModelInput.value = settings.chatModel;
-    }
-    chatModelInput.disabled = backendMode;
+  if (backendMode && resolvedModel !== settings.chatModel) {
+    void saveSettings({ ...settings, chatModel: resolvedModel });
   }
-  if (chatModelSaveButton) {
-    chatModelSaveButton.disabled = backendMode;
-  }
+
+  updateModelSelectOptions(chatModelInput, modelOptions, resolvedModel);
+  updateModelSelectOptions(chatHeaderModelSelect, modelOptions, resolvedModel);
 }
 
 function updateChatApiKeyStatus() {
   if (!chatApiKeyStatus) return;
   const saved = Boolean(settings.chatApiKey);
+  const savedValue = settings.chatApiKey?.trim() ?? "";
+  const valid = savedValue ? isValidApiKey(savedValue) : false;
   const currentValue = chatApiInput?.value.trim() ?? "";
   let status = "未入力";
   if (saved) {
-    status = "入力済み";
+    status = valid ? "入力済み" : "無効";
   } else if (currentValue) {
     status = "入力中";
   }
@@ -2132,37 +2018,31 @@ function updateChatTemplatesUI() {
 }
 
 function createChatModelSelect(): HTMLSelectElement {
-  const select = document.createElement("select");
-  select.className = "qb-support-chat-input qb-support-chat-model";
-  for (const model of CHAT_MODEL_OPTIONS) {
-    const option = document.createElement("option");
-    option.value = model;
-    option.textContent = model;
-    select.appendChild(option);
-  }
-  select.value = settings.chatModel;
+  const backendMode = isBackendMode();
+  const options = getChatModelOptions(backendMode);
+  const select = createOverlaySelect(
+    options.map((model) => ({ value: model, label: model })),
+    "qb-support-chat-input qb-support-chat-model"
+  );
+  select.value = backendMode ? resolveBackendModel(settings.chatModel) : settings.chatModel;
   return select;
 }
 
 function attachChatModelHandlers() {
-  if (!chatModelInput) return;
-  if (chatModelInput.dataset.handlers === "true") return;
-  chatModelInput.dataset.handlers = "true";
-  chatModelInput.addEventListener("change", () => {
-    const nextModel = chatModelInput?.value ?? "";
-    if (!nextModel) return;
-    void saveSettings({ ...settings, chatModel: nextModel });
-    setChatStatus(`モデルを ${nextModel} に設定しました`, false);
-  });
-  if (chatModelSaveButton && chatModelSaveButton.dataset.handlers !== "true") {
-    chatModelSaveButton.dataset.handlers = "true";
-    chatModelSaveButton.addEventListener("click", () => {
-      const nextModel = chatModelInput?.value ?? "";
+  const bind = (select: HTMLSelectElement | null) => {
+    if (!select) return;
+    if (select.dataset.handlers === "true") return;
+    select.dataset.handlers = "true";
+    select.addEventListener("change", () => {
+      const nextModel = select.value ?? "";
       if (!nextModel) return;
       void saveSettings({ ...settings, chatModel: nextModel });
       setChatStatus(`モデルを ${nextModel} に設定しました`, false);
     });
-  }
+  };
+
+  bind(chatModelInput);
+  bind(chatHeaderModelSelect);
 }
 
 function attachChatSettingsHandlers() {
@@ -2176,10 +2056,120 @@ function attachChatSettingsHandlers() {
 
 function toggleChatSettings(force?: boolean) {
   if (!chatSettingsPanel || !chatSettingsButton) return;
-  chatSettingsOpen = typeof force === "boolean" ? force : !chatSettingsOpen;
+  const nextOpen = typeof force === "boolean" ? force : !chatSettingsOpen;
+  if (chatSettingsOpen && !nextOpen) {
+    void commitSettingsFromPanel();
+  }
+  chatSettingsOpen = nextOpen;
   chatSettingsPanel.dataset.open = chatSettingsOpen ? "true" : "false";
   chatSettingsButton.dataset.open = chatSettingsOpen ? "true" : "false";
   chatSettingsButton.setAttribute("aria-expanded", chatSettingsOpen ? "true" : "false");
+}
+
+async function closeSettingsPanel() {
+  await commitSettingsFromPanel();
+  await saveSettings({ ...settings, enabled: false });
+}
+
+async function commitSettingsFromPanel() {
+  let next = { ...settings };
+  let hasChanges = false;
+
+  const applyUpdate = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+    if (settings[key] !== value) {
+      next = { ...next, [key]: value };
+      hasChanges = true;
+    }
+  };
+
+  const pendingApiKey = chatApiInput?.value.trim() ?? "";
+  if (pendingApiKey && pendingApiKey !== settings.chatApiKey) {
+    applyUpdate("chatApiKey", pendingApiKey);
+  }
+
+  if (chatApiKeyToggle) {
+    applyUpdate("chatApiKeyEnabled", chatApiKeyToggle.checked);
+  }
+
+  const commonPrompt = commonPromptInput?.value.trim() ?? "";
+  if (commonPrompt !== (settings.commonPrompt ?? "")) {
+    applyUpdate("commonPrompt", commonPrompt);
+  }
+
+  const nextLevel = explanationLevelSelect?.value ?? settings.explanationLevel;
+  if (nextLevel !== settings.explanationLevel) {
+    applyUpdate("explanationLevel", nextLevel as Settings["explanationLevel"]);
+  }
+
+  const nextPrompts = {
+    highschool: explanationPromptInputs.highschool?.value.trim() ?? "",
+    "med-junior": explanationPromptInputs["med-junior"]?.value.trim() ?? "",
+    "med-senior": explanationPromptInputs["med-senior"]?.value.trim() ?? "",
+  };
+  const currentPrompts = settings.explanationPrompts ?? {
+    highschool: "",
+    "med-junior": "",
+    "med-senior": "",
+  };
+  const promptsChanged =
+    nextPrompts.highschool !== (currentPrompts.highschool ?? "") ||
+    nextPrompts["med-junior"] !== (currentPrompts["med-junior"] ?? "") ||
+    nextPrompts["med-senior"] !== (currentPrompts["med-senior"] ?? "");
+  if (promptsChanged) {
+    applyUpdate("explanationPrompts", nextPrompts);
+  }
+
+  if (navPrevInput && navNextInput && revealInput && optionInputs.length) {
+    const optionKeys = optionInputs
+      .map((input) => normalizeShortcut(input.value))
+      .filter(Boolean);
+    const navPrevKey = normalizeShortcut(navPrevInput.value ?? "");
+    const navNextKey = normalizeShortcut(navNextInput.value ?? "");
+    const revealKey = normalizeShortcut(revealInput.value ?? "");
+    if (navPrevKey && navNextKey && revealKey && optionKeys.length) {
+      applyUpdate("navPrevKey", navPrevKey);
+      applyUpdate("navNextKey", navNextKey);
+      applyUpdate("revealKey", revealKey);
+      applyUpdate("optionKeys", optionKeys);
+      if (shortcutsToggle) {
+        applyUpdate("shortcutsEnabled", shortcutsToggle.checked);
+      }
+      if (searchToggle) {
+        applyUpdate("searchVisible", searchToggle.checked);
+      }
+      if (noteToggle) {
+        applyUpdate("noteVisible", noteToggle.checked);
+      }
+    }
+  }
+
+  if (chatTemplateRows.length) {
+    const nextTemplates = chatTemplateRows.map((row, index) => {
+      const label = row.label.value.trim() || `テンプレ${index + 1}`;
+      const shortcut = normalizeShortcut(row.shortcut.value);
+      const prompt = row.prompt.value.trim();
+      return {
+        enabled: row.enabled.checked,
+        label,
+        shortcut,
+        prompt,
+      };
+    });
+    const hasInvalidTemplate = nextTemplates.some(
+      (template) => template.enabled && !template.prompt
+    );
+    if (hasInvalidTemplate) {
+      setStatus("有効なテンプレはプロンプト必須です", true);
+    } else if (
+      JSON.stringify(nextTemplates) !== JSON.stringify(settings.chatTemplates ?? [])
+    ) {
+      applyUpdate("chatTemplates", nextTemplates);
+    }
+  }
+
+  if (hasChanges) {
+    await saveSettings(next);
+  }
 }
 
 function populateChatSettingsPanel() {
@@ -2226,6 +2216,10 @@ function resolveBackendSettingsUrl(): string | null {
   }
 }
 
+function isValidApiKey(raw: string): boolean {
+  return raw.startsWith("sk-pro");
+}
+
 function resolveBackendAuthStartUrl(): string | null {
   const base = resolveBackendBaseUrl();
   if (!base) return null;
@@ -2263,20 +2257,55 @@ function resolveBackendAuthSessionUrl(state: string): string | null {
   }
 }
 
-function isBackendModelLocked(): boolean {
+function isBackendMode(): boolean {
   const apiKey = settings.chatApiKey?.trim() ?? "";
-  if (apiKey && settings.chatApiKeyEnabled) return false;
+  if (apiKey && settings.chatApiKeyEnabled && isValidApiKey(apiKey)) return false;
   if (!authProfile) return false;
   return Boolean(resolveBackendBaseUrl());
 }
 
+function resolveBackendModel(model?: string | null): string {
+  const trimmed = typeof model === "string" ? model.trim() : "";
+  return BACKEND_ALLOWED_MODELS.includes(trimmed) ? trimmed : BACKEND_DEFAULT_MODEL;
+}
+
+function getChatModelOptions(backendMode: boolean): string[] {
+  return backendMode ? BACKEND_ALLOWED_MODELS : CHAT_MODEL_OPTIONS;
+}
+
+function updateModelSelectOptions(
+  select: HTMLSelectElement | null,
+  options: string[],
+  selected: string
+) {
+  if (!select) return;
+  const signature = options.join("|");
+  if (select.dataset.optionSignature !== signature) {
+    select.dataset.optionSignature = signature;
+    select.innerHTML = "";
+    options.forEach((model) => {
+      const option = document.createElement("option");
+      option.value = model;
+      option.textContent = model;
+      select.appendChild(option);
+    });
+  }
+  if (select.value !== selected && document.activeElement !== select) {
+    select.value = selected;
+  }
+}
+
 async function resolveChatAuth(): Promise<ChatAuth> {
   const apiKey = settings.chatApiKey?.trim() ?? "";
-  if (apiKey && settings.chatApiKeyEnabled) {
+  const apiKeyValid = apiKey ? isValidApiKey(apiKey) : false;
+  if (apiKey && settings.chatApiKeyEnabled && apiKeyValid) {
     return { mode: "apiKey", apiKey };
   }
 
   if (!authProfile) {
+    if (apiKey && !apiKeyValid) {
+      throw new Error("APIキーが無効です。Googleでログインしてください");
+    }
     if (apiKey) {
       throw new Error("APIキーを有効にするか、Googleでログインしてください");
     }
@@ -2300,7 +2329,13 @@ async function resolveChatAuthWithStatus(): Promise<ChatAuth | null> {
   try {
     return await resolveChatAuth();
   } catch (error) {
-    setChatStatus(error instanceof Error ? error.message : String(error), true);
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[QB_SUPPORT][auth]", message);
+    if (isAuthPromptMessage(message)) {
+      showChatAuthPrompt(message);
+    } else {
+      setChatStatus(message, true);
+    }
     return null;
   }
 }
@@ -2504,7 +2539,7 @@ async function handleChatSend() {
   activeChatRequestId = requestId;
   const placeholder = appendChatMessage("assistant", "回答中...", { pending: true });
   const effectiveModel =
-    auth.mode === "backend" ? BACKEND_FORCED_MODEL : settings.chatModel;
+    auth.mode === "backend" ? resolveBackendModel(settings.chatModel) : settings.chatModel;
   const useThinking = effectiveModel.startsWith("gpt-5");
   let thinkingTimer: number | null = null;
   let gotDelta = false;
@@ -3087,7 +3122,7 @@ async function requestChatResponseStream(
     port.onMessage.addListener(onMessage);
     port.onDisconnect.addListener(onDisconnect);
 
-    const model = auth.mode === "backend" ? BACKEND_FORCED_MODEL : settings.chatModel;
+    const model = auth.mode === "backend" ? resolveBackendModel(settings.chatModel) : settings.chatModel;
     const apiKey = auth.mode === "apiKey" ? auth.apiKey ?? "" : "";
     const backendUrl = auth.mode === "backend" ? auth.backendUrl ?? "" : "";
     const authToken = auth.mode === "backend" ? auth.authToken ?? "" : "";
@@ -3111,6 +3146,8 @@ async function requestChatResponseStream(
 
 function setChatStatus(message: string, isError: boolean) {
   if (!chatStatusField) return;
+  chatAuthPromptActive = false;
+  chatStatusField.classList.remove("is-auth-prompt");
   chatStatusField.textContent = message;
   chatStatusField.classList.toggle("is-error", isError);
   if (message) {
@@ -3120,6 +3157,42 @@ function setChatStatus(message: string, isError: boolean) {
       }
     }, 2600);
   }
+}
+
+function isAuthPromptMessage(message: string): boolean {
+  return (
+    message.includes("ログイン") ||
+    message.includes("APIキーを設定") ||
+    message.includes("APIキーを有効")
+  );
+}
+
+function showChatAuthPrompt(message: string) {
+  if (!chatStatusField) return;
+  chatStatusField.textContent = "";
+  chatStatusField.classList.remove("is-error");
+  chatStatusField.classList.add("is-auth-prompt");
+  chatAuthPromptActive = true;
+
+  const text = document.createElement("div");
+  text.className = "qb-support-chat-status-text";
+  text.textContent = message || "ログインして利用を開始してください。";
+
+  const actions = document.createElement("div");
+  actions.className = "qb-support-chat-status-actions";
+
+  const loginButton = document.createElement("button");
+  loginButton.type = "button";
+  loginButton.className = "qb-support-chat-auth-button";
+  loginButton.textContent = "Googleでログイン";
+  applyButtonVariant(loginButton, "primary");
+  loginButton.addEventListener("click", () => {
+    void handleAuthSignIn();
+  });
+
+  actions.appendChild(loginButton);
+  chatStatusField.appendChild(text);
+  chatStatusField.appendChild(actions);
 }
 
 function applySettings() {
@@ -3142,7 +3215,13 @@ function applySettings() {
   if (navPrevInput) navPrevInput.value = settings.navPrevKey;
   if (navNextInput) navNextInput.value = settings.navNextKey;
   if (revealInput) revealInput.value = settings.revealKey;
-  if (themeSelect) themeSelect.value = settings.themePreference;
+  if (themeToggle) {
+    const prefersDark = themeQuery?.matches ?? window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const isDark =
+      settings.themePreference === "dark" ||
+      (settings.themePreference === "system" && prefersDark);
+    themeToggle.checked = isDark;
+  }
   optionInputs.forEach((input, index) => {
     input.value = settings.optionKeys[index] ?? "";
   });
@@ -3371,7 +3450,12 @@ function attachEventHandlers() {
             target: describeElement(event.target),
           });
         }
-        void saveSettings({ ...settings, enabled: !settings.enabled });
+        const next = !settings.enabled;
+        if (next) {
+          void saveSettings({ ...settings, enabled: true });
+        } else {
+          void closeSettingsPanel();
+        }
         return;
       }
 
@@ -3597,7 +3681,7 @@ function attachEventHandlers() {
       if (!target) return;
       if (panel.contains(target)) return;
       if (launcher && launcher.contains(target)) return;
-      void saveSettings({ ...settings, enabled: false });
+      void closeSettingsPanel();
     },
     { capture: true }
   );
@@ -3707,6 +3791,48 @@ function makeSpan(text: string): HTMLElement {
   const span = document.createElement("span");
   span.textContent = text;
   return span;
+}
+
+function createSwitch(
+  labelText: string,
+  checked: boolean,
+  onChange: (checked: boolean) => void
+): { label: HTMLLabelElement; input: HTMLInputElement } {
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.className = "qb-support-toggle-input";
+  input.checked = checked;
+  input.addEventListener("change", () => {
+    onChange(input.checked);
+  });
+
+  const label = document.createElement("label");
+  label.className = "qb-support-toggle qb-support-switch";
+  label.appendChild(input);
+  label.appendChild(makeSpan(labelText));
+
+  const track = document.createElement("span");
+  track.className = "qb-support-switch-track";
+  label.appendChild(track);
+
+  return { label, input };
+}
+
+function createOverlaySelect(
+  options: Array<{ value: string; label: string }>,
+  className?: string
+): HTMLSelectElement {
+  const select = document.createElement("select");
+  select.className = `qb-support-select qb-support-select-overlay qb-support-select-pill${
+    className ? ` ${className}` : ""
+  }`;
+  options.forEach(({ value, label }) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    select.appendChild(option);
+  });
+  return select;
 }
 
 function formatTime(timestamp: number): string {

@@ -9,6 +9,7 @@ import type {
 
 const MODIFIER_LABELS = ["Ctrl", "Alt", "Shift", "Meta"] as const;
 export const CHAT_MODEL_OPTIONS = [
+  "gpt-5-mini",
   "gpt-5.2",
   "gpt-5.2-chat-latest",
   "gpt-5",
@@ -163,7 +164,7 @@ export const defaultSettings: Settings = {
   chatDock: "right",
   chatApiKey: "",
   chatApiKeyEnabled: true,
-  chatModel: "gpt-5.2",
+  chatModel: "gpt-5-mini",
   chatTemplates: DEFAULT_CHAT_TEMPLATES,
   chatTemplateCount: 3,
   commonPrompt: "",

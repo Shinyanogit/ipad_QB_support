@@ -239,6 +239,7 @@
   // src/core/settings.ts
   var MODIFIER_LABELS = ["Ctrl", "Alt", "Shift", "Meta"];
   var CHAT_MODEL_OPTIONS = [
+    "gpt-5-mini",
     "gpt-5.2",
     "gpt-5.2-chat-latest",
     "gpt-5",
@@ -388,7 +389,7 @@
     chatDock: "right",
     chatApiKey: "",
     chatApiKeyEnabled: true,
-    chatModel: "gpt-5.2",
+    chatModel: "gpt-5-mini",
     chatTemplates: DEFAULT_CHAT_TEMPLATES,
     chatTemplateCount: 3,
     commonPrompt: "",
@@ -660,7 +661,8 @@
   var QB_ACTION_ORIGIN = "https://input.medilink-study.com";
   var QB_TOP_ORIGIN = "https://qb.medilink-study.com";
   var FIREBASE_SETTINGS_VERSION = 1;
-  var BACKEND_FORCED_MODEL = "gpt-4.1";
+  var BACKEND_DEFAULT_MODEL = "gpt-5-mini";
+  var BACKEND_ALLOWED_MODELS = ["gpt-5-mini", "gpt-4.1"];
   var DEFAULT_BACKEND_URL = "https://ipad-qb-support-400313981210.asia-northeast1.run.app";
   var USAGE_META_EMAIL = "ymgtsny7@gmail.com";
   var AUTH_STORAGE_KEY = "qb_support_auth_session_v1";
@@ -689,16 +691,16 @@
   var chatStatusField = null;
   var chatInputWrap = null;
   var chatApiInput = null;
-  var chatApiSaveButton = null;
   var chatApiKeyToggle = null;
   var chatApiKeyVisibilityButton = null;
   var chatApiKeyStatus = null;
   var chatModelInput = null;
-  var chatModelSaveButton = null;
+  var chatHeaderModelSelect = null;
   var chatSettingsPanel = null;
   var chatSettingsButton = null;
   var chatSettingsOpen = false;
   var chatApiKeyVisible = false;
+  var chatAuthPromptActive = false;
   var chatTemplateBar = null;
   var chatTemplateRows = [];
   var templateCountLabel = null;
@@ -723,6 +725,7 @@
   var noteToggle = null;
   var searchToggle = null;
   var pageAccentToggle = null;
+  var themeToggle = null;
   var navPrevInput = null;
   var navNextInput = null;
   var revealInput = null;
@@ -749,7 +752,6 @@
   var templateSectionEl = null;
   var explanationSectionEl = null;
   var authSectionEl = null;
-  var themeSelect = null;
   var themeQuery = null;
   var start = () => {
     logInjectionOnce();
@@ -1317,32 +1319,22 @@
         debugEnabled: debugToggle?.checked ?? false
       });
     });
-    searchToggle = document.createElement("input");
-    searchToggle.type = "checkbox";
-    searchToggle.className = "qb-support-toggle-input";
-    searchToggle.addEventListener("change", () => {
+    const searchSwitch = createSwitch("\u691C\u7D22\u30D0\u30FC\u8868\u793A", settings.searchVisible, (checked) => {
       void saveSettings({
         ...settings,
-        searchVisible: searchToggle?.checked ?? true
+        searchVisible: checked
       });
     });
-    const searchLabel = document.createElement("label");
-    searchLabel.className = "qb-support-toggle qb-support-toggle-btn";
-    searchLabel.appendChild(searchToggle);
-    searchLabel.appendChild(makeSpan("\u691C\u7D22\u30D0\u30FC\u8868\u793A"));
-    noteToggle = document.createElement("input");
-    noteToggle.type = "checkbox";
-    noteToggle.className = "qb-support-toggle-input";
-    noteToggle.addEventListener("change", () => {
+    searchToggle = searchSwitch.input;
+    const searchLabel = searchSwitch.label;
+    const noteSwitch = createSwitch("\u30CE\u30FC\u30C8\u8868\u793A", settings.noteVisible, (checked) => {
       void saveSettings({
         ...settings,
-        noteVisible: noteToggle?.checked ?? true
+        noteVisible: checked
       });
     });
-    const noteLabel = document.createElement("label");
-    noteLabel.className = "qb-support-toggle qb-support-toggle-btn";
-    noteLabel.appendChild(noteToggle);
-    noteLabel.appendChild(makeSpan("\u30CE\u30FC\u30C8\u8868\u793A"));
+    noteToggle = noteSwitch.input;
+    const noteLabel = noteSwitch.label;
     pageAccentToggle = document.createElement("input");
     pageAccentToggle.type = "checkbox";
     pageAccentToggle.className = "qb-support-toggle-input";
@@ -1356,29 +1348,17 @@
     pageAccentLabel.className = "qb-support-toggle";
     pageAccentLabel.appendChild(pageAccentToggle);
     pageAccentLabel.appendChild(makeSpan("\u30DA\u30FC\u30B8\u306B\u7DD1\u30A2\u30AF\u30BB\u30F3\u30C8"));
-    themeSelect = document.createElement("select");
-    themeSelect.className = "qb-support-select";
-    [
-      { value: "system", label: "\u30B7\u30B9\u30C6\u30E0" },
-      { value: "light", label: "\u30E9\u30A4\u30C8" },
-      { value: "dark", label: "\u30C0\u30FC\u30AF" }
-    ].forEach((optionData) => {
-      const option = document.createElement("option");
-      option.value = optionData.value;
-      option.textContent = optionData.label;
-      themeSelect?.appendChild(option);
-    });
-    themeSelect.addEventListener("change", () => {
-      const nextTheme = themeSelect?.value ?? "system";
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const isDark = settings.themePreference === "dark" || settings.themePreference === "system" && prefersDark;
+    const themeSwitch = createSwitch("\u30C0\u30FC\u30AF\u30E2\u30FC\u30C9", isDark, (checked) => {
+      const nextTheme = checked ? "dark" : "light";
       void saveSettings({
         ...settings,
         themePreference: nextTheme
       });
     });
-    const themeLabel = document.createElement("label");
-    themeLabel.className = "qb-support-field";
-    themeLabel.appendChild(makeSpan("\u30C6\u30FC\u30DE"));
-    themeLabel.appendChild(themeSelect);
+    themeToggle = themeSwitch.input;
+    const themeLabel = themeSwitch.label;
     const shortcutSection = document.createElement("div");
     shortcutSection.className = "qb-support-section";
     shortcutSection.appendChild(makeSectionTitle("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8"));
@@ -1462,32 +1442,6 @@
     toggleShortcutLabel.className = "qb-support-toggle";
     toggleShortcutLabel.appendChild(shortcutsToggle);
     toggleShortcutLabel.appendChild(makeSpan("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8\u6709\u52B9"));
-    const saveButton = document.createElement("button");
-    saveButton.type = "button";
-    saveButton.className = "qb-support-save";
-    applyButtonVariant(saveButton, "primary");
-    saveButton.textContent = "\u4FDD\u5B58";
-    saveButton.addEventListener("click", () => {
-      const optionKeys = optionInputs.map((input) => normalizeShortcut(input.value)).filter(Boolean);
-      const navPrevKey = normalizeShortcut(navPrevInput?.value ?? "");
-      const navNextKey = normalizeShortcut(navNextInput?.value ?? "");
-      const revealKey = normalizeShortcut(revealInput?.value ?? "");
-      if (!navPrevKey || !navNextKey || !revealKey || optionKeys.length === 0) {
-        setStatus("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044", true);
-        return;
-      }
-      void saveSettings({
-        ...settings,
-        shortcutsEnabled: shortcutsToggle?.checked ?? true,
-        searchVisible: searchToggle?.checked ?? true,
-        noteVisible: noteToggle?.checked ?? true,
-        navPrevKey,
-        navNextKey,
-        revealKey,
-        optionKeys
-      });
-      setStatus("\u4FDD\u5B58\u3057\u307E\u3057\u305F", false);
-    });
     statusField = document.createElement("div");
     statusField.className = "qb-support-status";
     settingsSection.appendChild(searchLabel);
@@ -1500,7 +1454,6 @@
     shortcutSection.appendChild(navNextField.label);
     shortcutSection.appendChild(revealField.label);
     shortcutSection.appendChild(optionsWrap);
-    shortcutSection.appendChild(saveButton);
     const templateSection = document.createElement("div");
     templateSection.className = "qb-support-section";
     templateSection.appendChild(makeSectionTitle("\u30C1\u30E3\u30C3\u30C8\u30C6\u30F3\u30D7\u30EC"));
@@ -1600,35 +1553,7 @@
         prompt: promptInput
       });
     }
-    const templateSaveButton = document.createElement("button");
-    templateSaveButton.type = "button";
-    templateSaveButton.className = "qb-support-save qb-support-template-save";
-    applyButtonVariant(templateSaveButton, "primary");
-    templateSaveButton.textContent = "\u30C6\u30F3\u30D7\u30EC\u4FDD\u5B58";
-    templateSaveButton.addEventListener("click", () => {
-      const nextTemplates = chatTemplateRows.map((row, index) => {
-        const label = row.label.value.trim() || `\u30C6\u30F3\u30D7\u30EC${index + 1}`;
-        const shortcut = normalizeShortcut(row.shortcut.value);
-        const prompt = row.prompt.value.trim();
-        return {
-          enabled: row.enabled.checked,
-          label,
-          shortcut,
-          prompt
-        };
-      });
-      if (nextTemplates.some((template) => template.enabled && !template.prompt)) {
-        setStatus("\u6709\u52B9\u306A\u30C6\u30F3\u30D7\u30EC\u306F\u30D7\u30ED\u30F3\u30D7\u30C8\u5FC5\u9808\u3067\u3059", true);
-        return;
-      }
-      void saveSettings({
-        ...settings,
-        chatTemplates: nextTemplates
-      });
-      setStatus("\u30C6\u30F3\u30D7\u30EC\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F", false);
-    });
     templateSection.appendChild(templateList);
-    templateSection.appendChild(templateSaveButton);
     const explanationSection = document.createElement("div");
     explanationSection.className = "qb-support-section";
     explanationSection.appendChild(makeSectionTitle("\u30D7\u30ED\u30F3\u30D7\u30C8"));
@@ -1642,14 +1567,13 @@
     commonPromptInput.rows = 3;
     commonPromptInput.placeholder = "\u5168\u3066\u306E\u4F1A\u8A71\u306B\u4ED8\u4E0E\u3059\u308B\u5171\u901A\u30D7\u30ED\u30F3\u30D7\u30C8";
     commonPromptLabel.appendChild(commonPromptInput);
-    explanationLevelSelect = document.createElement("select");
-    explanationLevelSelect.className = "qb-support-select qb-support-explanation-level";
-    Object.entries(EXPLANATION_LEVEL_LABELS).forEach(([value, label]) => {
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = label;
-      explanationLevelSelect?.appendChild(option);
-    });
+    explanationLevelSelect = createOverlaySelect(
+      Object.entries(EXPLANATION_LEVEL_LABELS).map(([value, label]) => ({
+        value,
+        label
+      })),
+      "qb-support-explanation-level"
+    );
     const explanationSelectLabel = document.createElement("label");
     explanationSelectLabel.className = "qb-support-field";
     explanationSelectLabel.appendChild(makeSpan("\u30EC\u30D9\u30EB"));
@@ -1675,35 +1599,9 @@
     promptWrap.appendChild(
       buildExplanationPromptField("\u533B\u5B66\u90E8\u9AD8\u5B66\u5E74\u301C\u7814\u4FEE\u533B", "med-senior")
     );
-    const explanationSaveButton = document.createElement("button");
-    explanationSaveButton.type = "button";
-    explanationSaveButton.className = "qb-support-save qb-support-explanation-save";
-    applyButtonVariant(explanationSaveButton, "primary");
-    explanationSaveButton.textContent = "\u89E3\u8AAC\u8A2D\u5B9A\u3092\u4FDD\u5B58";
-    explanationSaveButton.addEventListener("click", () => {
-      const level = explanationLevelSelect?.value ?? "med-junior";
-      const commonPrompt = commonPromptInput?.value.trim() ?? "";
-      const nextPrompts = {
-        highschool: explanationPromptInputs.highschool?.value.trim() ?? "",
-        "med-junior": explanationPromptInputs["med-junior"]?.value.trim() ?? "",
-        "med-senior": explanationPromptInputs["med-senior"]?.value.trim() ?? ""
-      };
-      if (!nextPrompts.highschool || !nextPrompts["med-junior"] || !nextPrompts["med-senior"]) {
-        setStatus("\u89E3\u8AAC\u30D7\u30ED\u30F3\u30D7\u30C8\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044", true);
-        return;
-      }
-      void saveSettings({
-        ...settings,
-        commonPrompt,
-        explanationLevel: level,
-        explanationPrompts: nextPrompts
-      });
-      setStatus("\u89E3\u8AAC\u30EC\u30D9\u30EB\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F", false);
-    });
     explanationSection.appendChild(commonPromptLabel);
     explanationSection.appendChild(explanationSelectLabel);
     explanationSection.appendChild(promptWrap);
-    explanationSection.appendChild(explanationSaveButton);
     const authSection = document.createElement("div");
     authSection.className = "qb-support-section";
     authSection.appendChild(makeSectionTitle("\u8A8D\u8A3C"));
@@ -1755,7 +1653,12 @@
     launcher.setAttribute("aria-label", "QB\u8A2D\u5B9A");
     launcher.appendChild(createGearIcon());
     launcher.addEventListener("click", () => {
-      void saveSettings({ ...settings, enabled: !settings.enabled });
+      const next = !settings.enabled;
+      if (next) {
+        void saveSettings({ ...settings, enabled: true });
+      } else {
+        void closeSettingsPanel();
+      }
     });
     root.appendChild(panel);
     root.appendChild(launcher);
@@ -1785,14 +1688,6 @@
           ".qb-support-chat-api input"
         );
       }
-      chatApiSaveButton = chatRoot.querySelector(
-        ".qb-support-chat-api-save"
-      );
-      if (!chatApiSaveButton) {
-        chatApiSaveButton = chatRoot.querySelector(
-          ".qb-support-chat-save"
-        );
-      }
       chatApiKeyToggle = chatRoot.querySelector(
         ".qb-support-chat-api-key-toggle"
       );
@@ -1804,9 +1699,31 @@
       );
       const modelNode = chatRoot.querySelector(".qb-support-chat-model");
       chatModelInput = modelNode instanceof HTMLSelectElement ? modelNode : null;
-      chatModelSaveButton = chatRoot.querySelector(
-        ".qb-support-chat-model-save"
-      );
+      const headerModelNode = chatRoot.querySelector(".qb-support-chat-model-inline");
+      chatHeaderModelSelect = headerModelNode instanceof HTMLSelectElement ? headerModelNode : null;
+      const headerNode = chatRoot.querySelector(".qb-support-chat-header");
+      if (headerNode instanceof HTMLDivElement) {
+        let titleWrap2 = headerNode.querySelector(".qb-support-chat-title-wrap");
+        if (!(titleWrap2 instanceof HTMLDivElement)) {
+          const legacyTitle = headerNode.querySelector(".qb-support-chat-title");
+          const wrap = document.createElement("div");
+          wrap.className = "qb-support-chat-title-wrap";
+          if (legacyTitle) {
+            wrap.appendChild(legacyTitle);
+          }
+          headerNode.insertBefore(wrap, headerNode.firstChild);
+          titleWrap2 = wrap;
+        }
+        if (titleWrap2 instanceof HTMLDivElement && !chatHeaderModelSelect) {
+          chatHeaderModelSelect = createOverlaySelect(
+            CHAT_MODEL_OPTIONS.map((model) => ({ value: model, label: model })),
+            "qb-support-chat-model-inline"
+          );
+          chatHeaderModelSelect.value = settings.chatModel;
+          chatHeaderModelSelect.setAttribute("aria-label", "\u30E2\u30C7\u30EB\u9078\u629E");
+          titleWrap2.appendChild(chatHeaderModelSelect);
+        }
+      }
       chatSettingsPanel = chatRoot.querySelector(
         ".qb-support-chat-settings"
       );
@@ -1825,8 +1742,13 @@
           });
         }
       }
-      if (chatApiSaveButton) {
-        chatApiSaveButton.classList.add("qb-support-chat-api-save");
+      const apiSaveButton = chatRoot.querySelector(".qb-support-chat-api-save");
+      if (apiSaveButton instanceof HTMLButtonElement) {
+        apiSaveButton.remove();
+      }
+      const modelSaveButton = chatRoot.querySelector(".qb-support-chat-model-save");
+      if (modelSaveButton instanceof HTMLButtonElement) {
+        modelSaveButton.remove();
       }
       const apiSection2 = chatRoot.querySelector(".qb-support-chat-api");
       if (apiSection2) {
@@ -1872,9 +1794,7 @@
           chatApiKeyStatus = document.createElement("div");
           chatApiKeyStatus.className = "qb-support-chat-api-key-status";
         }
-        if (chatApiKeyStatus && chatApiSaveButton && !apiSection2.contains(chatApiKeyStatus)) {
-          apiSection2.insertBefore(chatApiKeyStatus, chatApiSaveButton);
-        } else if (chatApiKeyStatus && !apiSection2.contains(chatApiKeyStatus)) {
+        if (chatApiKeyStatus && !apiSection2.contains(chatApiKeyStatus)) {
           apiSection2.appendChild(chatApiKeyStatus);
         }
         if (!chatApiKeyToggle) {
@@ -1897,7 +1817,7 @@
           });
         }
       }
-      if (!chatModelInput || !chatModelSaveButton) {
+      if (!chatModelInput) {
         if (apiSection2) {
           let modelLabel2 = apiSection2.querySelector(
             ".qb-support-chat-model-label"
@@ -1914,13 +1834,6 @@
           }
           chatModelInput = createChatModelSelect();
           apiSection2.appendChild(chatModelInput);
-          if (!chatModelSaveButton) {
-            chatModelSaveButton = document.createElement("button");
-            chatModelSaveButton.type = "button";
-            chatModelSaveButton.className = "qb-support-chat-save qb-support-chat-model-save";
-            chatModelSaveButton.textContent = "\u9069\u7528";
-            apiSection2.appendChild(chatModelSaveButton);
-          }
         }
       }
       if (!chatSettingsButton) {
@@ -1971,8 +1884,6 @@
         ".qb-support-chat-new"
       );
       applyButtonVariant(chatNewButton, "ghost");
-      applyButtonVariant(chatApiSaveButton, "primary");
-      applyButtonVariant(chatModelSaveButton, "primary");
       applyButtonVariant(chatSendButton, "primary");
       attachChatSettingsHandlers();
       populateChatSettingsPanel();
@@ -1984,9 +1895,19 @@
     chatPanel.className = "qb-support-chat-panel";
     const header = document.createElement("div");
     header.className = "qb-support-chat-header";
+    const titleWrap = document.createElement("div");
+    titleWrap.className = "qb-support-chat-title-wrap";
     const title = document.createElement("div");
     title.className = "qb-support-chat-title";
     title.textContent = "QB Chat";
+    chatHeaderModelSelect = createOverlaySelect(
+      CHAT_MODEL_OPTIONS.map((model) => ({ value: model, label: model })),
+      "qb-support-chat-model-inline"
+    );
+    chatHeaderModelSelect.value = settings.chatModel;
+    chatHeaderModelSelect.setAttribute("aria-label", "\u30E2\u30C7\u30EB\u9078\u629E");
+    titleWrap.appendChild(title);
+    titleWrap.appendChild(chatHeaderModelSelect);
     const actions = document.createElement("div");
     actions.className = "qb-support-chat-actions";
     const settingsButton = document.createElement("button");
@@ -2008,7 +1929,7 @@
     applyButtonVariant(resetButton, "ghost");
     actions.appendChild(settingsButton);
     actions.appendChild(resetButton);
-    header.appendChild(title);
+    header.appendChild(titleWrap);
     header.appendChild(actions);
     chatSettingsPanel = document.createElement("div");
     chatSettingsPanel.className = "qb-support-chat-settings";
@@ -2048,25 +1969,6 @@
     apiKeyRow.appendChild(chatApiKeyVisibilityButton);
     chatApiKeyStatus = document.createElement("div");
     chatApiKeyStatus.className = "qb-support-chat-api-key-status";
-    chatApiSaveButton = document.createElement("button");
-    chatApiSaveButton.type = "button";
-    chatApiSaveButton.className = "qb-support-chat-save qb-support-chat-api-save";
-    chatApiSaveButton.textContent = "\u4FDD\u5B58";
-    applyButtonVariant(chatApiSaveButton, "primary");
-    chatApiSaveButton.addEventListener("click", () => {
-      const nextKey = chatApiInput?.value.trim() ?? "";
-      if (!nextKey) {
-        if (settings.chatApiKey) {
-          setChatStatus("API\u30AD\u30FC\u306F\u4FDD\u5B58\u6E08\u307F\u3067\u3059", false);
-          return;
-        }
-        setChatStatus("API\u30AD\u30FC\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044", true);
-        return;
-      }
-      void saveSettings({ ...settings, chatApiKey: nextKey });
-      if (chatApiInput) chatApiInput.value = "";
-      setChatStatus("API\u30AD\u30FC\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F", false);
-    });
     const apiKeyToggleLabel = document.createElement("label");
     apiKeyToggleLabel.className = "qb-support-toggle qb-support-chat-api-toggle";
     chatApiKeyToggle = document.createElement("input");
@@ -2084,19 +1986,12 @@
     modelLabel.textContent = "Model";
     modelLabel.className = "qb-support-chat-api-label qb-support-chat-model-label";
     chatModelInput = createChatModelSelect();
-    chatModelSaveButton = document.createElement("button");
-    chatModelSaveButton.type = "button";
-    chatModelSaveButton.className = "qb-support-chat-save qb-support-chat-model-save";
-    chatModelSaveButton.textContent = "\u9069\u7528";
-    applyButtonVariant(chatModelSaveButton, "primary");
     apiSection.appendChild(apiLabel);
     apiSection.appendChild(apiKeyRow);
     apiSection.appendChild(chatApiKeyStatus);
-    apiSection.appendChild(chatApiSaveButton);
     apiSection.appendChild(apiKeyToggleLabel);
     apiSection.appendChild(modelLabel);
     apiSection.appendChild(chatModelInput);
-    apiSection.appendChild(chatModelSaveButton);
     attachChatModelHandlers();
     chatSettingsPanel.appendChild(apiSection);
     chatMessagesEl = document.createElement("div");
@@ -2213,26 +2108,24 @@
       chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "\u975E\u8868\u793A" : "\u8868\u793A";
       chatApiKeyVisibilityButton.disabled = !hasKey;
     }
-    const backendMode = isBackendModelLocked();
-    if (chatModelInput) {
-      if (backendMode) {
-        chatModelInput.value = BACKEND_FORCED_MODEL;
-      } else if (document.activeElement !== chatModelInput) {
-        chatModelInput.value = settings.chatModel;
-      }
-      chatModelInput.disabled = backendMode;
+    const backendMode = isBackendMode();
+    const modelOptions = getChatModelOptions(backendMode);
+    const resolvedModel = backendMode ? resolveBackendModel(settings.chatModel) : settings.chatModel;
+    if (backendMode && resolvedModel !== settings.chatModel) {
+      void saveSettings({ ...settings, chatModel: resolvedModel });
     }
-    if (chatModelSaveButton) {
-      chatModelSaveButton.disabled = backendMode;
-    }
+    updateModelSelectOptions(chatModelInput, modelOptions, resolvedModel);
+    updateModelSelectOptions(chatHeaderModelSelect, modelOptions, resolvedModel);
   }
   function updateChatApiKeyStatus() {
     if (!chatApiKeyStatus) return;
     const saved = Boolean(settings.chatApiKey);
+    const savedValue = settings.chatApiKey?.trim() ?? "";
+    const valid = savedValue ? isValidApiKey(savedValue) : false;
     const currentValue = chatApiInput?.value.trim() ?? "";
     let status = "\u672A\u5165\u529B";
     if (saved) {
-      status = "\u5165\u529B\u6E08\u307F";
+      status = valid ? "\u5165\u529B\u6E08\u307F" : "\u7121\u52B9";
     } else if (currentValue) {
       status = "\u5165\u529B\u4E2D";
     }
@@ -2483,36 +2376,29 @@
     updateHintQuickButton();
   }
   function createChatModelSelect() {
-    const select = document.createElement("select");
-    select.className = "qb-support-chat-input qb-support-chat-model";
-    for (const model of CHAT_MODEL_OPTIONS) {
-      const option = document.createElement("option");
-      option.value = model;
-      option.textContent = model;
-      select.appendChild(option);
-    }
-    select.value = settings.chatModel;
+    const backendMode = isBackendMode();
+    const options = getChatModelOptions(backendMode);
+    const select = createOverlaySelect(
+      options.map((model) => ({ value: model, label: model })),
+      "qb-support-chat-input qb-support-chat-model"
+    );
+    select.value = backendMode ? resolveBackendModel(settings.chatModel) : settings.chatModel;
     return select;
   }
   function attachChatModelHandlers() {
-    if (!chatModelInput) return;
-    if (chatModelInput.dataset.handlers === "true") return;
-    chatModelInput.dataset.handlers = "true";
-    chatModelInput.addEventListener("change", () => {
-      const nextModel = chatModelInput?.value ?? "";
-      if (!nextModel) return;
-      void saveSettings({ ...settings, chatModel: nextModel });
-      setChatStatus(`\u30E2\u30C7\u30EB\u3092 ${nextModel} \u306B\u8A2D\u5B9A\u3057\u307E\u3057\u305F`, false);
-    });
-    if (chatModelSaveButton && chatModelSaveButton.dataset.handlers !== "true") {
-      chatModelSaveButton.dataset.handlers = "true";
-      chatModelSaveButton.addEventListener("click", () => {
-        const nextModel = chatModelInput?.value ?? "";
+    const bind = (select) => {
+      if (!select) return;
+      if (select.dataset.handlers === "true") return;
+      select.dataset.handlers = "true";
+      select.addEventListener("change", () => {
+        const nextModel = select.value ?? "";
         if (!nextModel) return;
         void saveSettings({ ...settings, chatModel: nextModel });
         setChatStatus(`\u30E2\u30C7\u30EB\u3092 ${nextModel} \u306B\u8A2D\u5B9A\u3057\u307E\u3057\u305F`, false);
       });
-    }
+    };
+    bind(chatModelInput);
+    bind(chatHeaderModelSelect);
   }
   function attachChatSettingsHandlers() {
     if (!chatSettingsButton) return;
@@ -2524,10 +2410,102 @@
   }
   function toggleChatSettings(force) {
     if (!chatSettingsPanel || !chatSettingsButton) return;
-    chatSettingsOpen = typeof force === "boolean" ? force : !chatSettingsOpen;
+    const nextOpen = typeof force === "boolean" ? force : !chatSettingsOpen;
+    if (chatSettingsOpen && !nextOpen) {
+      void commitSettingsFromPanel();
+    }
+    chatSettingsOpen = nextOpen;
     chatSettingsPanel.dataset.open = chatSettingsOpen ? "true" : "false";
     chatSettingsButton.dataset.open = chatSettingsOpen ? "true" : "false";
     chatSettingsButton.setAttribute("aria-expanded", chatSettingsOpen ? "true" : "false");
+  }
+  async function closeSettingsPanel() {
+    await commitSettingsFromPanel();
+    await saveSettings({ ...settings, enabled: false });
+  }
+  async function commitSettingsFromPanel() {
+    let next = { ...settings };
+    let hasChanges = false;
+    const applyUpdate = (key, value) => {
+      if (settings[key] !== value) {
+        next = { ...next, [key]: value };
+        hasChanges = true;
+      }
+    };
+    const pendingApiKey = chatApiInput?.value.trim() ?? "";
+    if (pendingApiKey && pendingApiKey !== settings.chatApiKey) {
+      applyUpdate("chatApiKey", pendingApiKey);
+    }
+    if (chatApiKeyToggle) {
+      applyUpdate("chatApiKeyEnabled", chatApiKeyToggle.checked);
+    }
+    const commonPrompt = commonPromptInput?.value.trim() ?? "";
+    if (commonPrompt !== (settings.commonPrompt ?? "")) {
+      applyUpdate("commonPrompt", commonPrompt);
+    }
+    const nextLevel = explanationLevelSelect?.value ?? settings.explanationLevel;
+    if (nextLevel !== settings.explanationLevel) {
+      applyUpdate("explanationLevel", nextLevel);
+    }
+    const nextPrompts = {
+      highschool: explanationPromptInputs.highschool?.value.trim() ?? "",
+      "med-junior": explanationPromptInputs["med-junior"]?.value.trim() ?? "",
+      "med-senior": explanationPromptInputs["med-senior"]?.value.trim() ?? ""
+    };
+    const currentPrompts = settings.explanationPrompts ?? {
+      highschool: "",
+      "med-junior": "",
+      "med-senior": ""
+    };
+    const promptsChanged = nextPrompts.highschool !== (currentPrompts.highschool ?? "") || nextPrompts["med-junior"] !== (currentPrompts["med-junior"] ?? "") || nextPrompts["med-senior"] !== (currentPrompts["med-senior"] ?? "");
+    if (promptsChanged) {
+      applyUpdate("explanationPrompts", nextPrompts);
+    }
+    if (navPrevInput && navNextInput && revealInput && optionInputs.length) {
+      const optionKeys = optionInputs.map((input) => normalizeShortcut(input.value)).filter(Boolean);
+      const navPrevKey = normalizeShortcut(navPrevInput.value ?? "");
+      const navNextKey = normalizeShortcut(navNextInput.value ?? "");
+      const revealKey = normalizeShortcut(revealInput.value ?? "");
+      if (navPrevKey && navNextKey && revealKey && optionKeys.length) {
+        applyUpdate("navPrevKey", navPrevKey);
+        applyUpdate("navNextKey", navNextKey);
+        applyUpdate("revealKey", revealKey);
+        applyUpdate("optionKeys", optionKeys);
+        if (shortcutsToggle) {
+          applyUpdate("shortcutsEnabled", shortcutsToggle.checked);
+        }
+        if (searchToggle) {
+          applyUpdate("searchVisible", searchToggle.checked);
+        }
+        if (noteToggle) {
+          applyUpdate("noteVisible", noteToggle.checked);
+        }
+      }
+    }
+    if (chatTemplateRows.length) {
+      const nextTemplates = chatTemplateRows.map((row, index) => {
+        const label = row.label.value.trim() || `\u30C6\u30F3\u30D7\u30EC${index + 1}`;
+        const shortcut = normalizeShortcut(row.shortcut.value);
+        const prompt = row.prompt.value.trim();
+        return {
+          enabled: row.enabled.checked,
+          label,
+          shortcut,
+          prompt
+        };
+      });
+      const hasInvalidTemplate = nextTemplates.some(
+        (template) => template.enabled && !template.prompt
+      );
+      if (hasInvalidTemplate) {
+        setStatus("\u6709\u52B9\u306A\u30C6\u30F3\u30D7\u30EC\u306F\u30D7\u30ED\u30F3\u30D7\u30C8\u5FC5\u9808\u3067\u3059", true);
+      } else if (JSON.stringify(nextTemplates) !== JSON.stringify(settings.chatTemplates ?? [])) {
+        applyUpdate("chatTemplates", nextTemplates);
+      }
+    }
+    if (hasChanges) {
+      await saveSettings(next);
+    }
   }
   function populateChatSettingsPanel() {
     if (!chatSettingsPanel) return;
@@ -2570,6 +2548,9 @@
       return null;
     }
   }
+  function isValidApiKey(raw) {
+    return raw.startsWith("sk-pro");
+  }
   function resolveBackendAuthStartUrl() {
     const base = resolveBackendBaseUrl();
     if (!base) return null;
@@ -2605,18 +2586,46 @@
       return null;
     }
   }
-  function isBackendModelLocked() {
+  function isBackendMode() {
     const apiKey = settings.chatApiKey?.trim() ?? "";
-    if (apiKey && settings.chatApiKeyEnabled) return false;
+    if (apiKey && settings.chatApiKeyEnabled && isValidApiKey(apiKey)) return false;
     if (!authProfile) return false;
     return Boolean(resolveBackendBaseUrl());
   }
+  function resolveBackendModel(model) {
+    const trimmed = typeof model === "string" ? model.trim() : "";
+    return BACKEND_ALLOWED_MODELS.includes(trimmed) ? trimmed : BACKEND_DEFAULT_MODEL;
+  }
+  function getChatModelOptions(backendMode) {
+    return backendMode ? BACKEND_ALLOWED_MODELS : CHAT_MODEL_OPTIONS;
+  }
+  function updateModelSelectOptions(select, options, selected) {
+    if (!select) return;
+    const signature = options.join("|");
+    if (select.dataset.optionSignature !== signature) {
+      select.dataset.optionSignature = signature;
+      select.innerHTML = "";
+      options.forEach((model) => {
+        const option = document.createElement("option");
+        option.value = model;
+        option.textContent = model;
+        select.appendChild(option);
+      });
+    }
+    if (select.value !== selected && document.activeElement !== select) {
+      select.value = selected;
+    }
+  }
   async function resolveChatAuth() {
     const apiKey = settings.chatApiKey?.trim() ?? "";
-    if (apiKey && settings.chatApiKeyEnabled) {
+    const apiKeyValid = apiKey ? isValidApiKey(apiKey) : false;
+    if (apiKey && settings.chatApiKeyEnabled && apiKeyValid) {
       return { mode: "apiKey", apiKey };
     }
     if (!authProfile) {
+      if (apiKey && !apiKeyValid) {
+        throw new Error("API\u30AD\u30FC\u304C\u7121\u52B9\u3067\u3059\u3002Google\u3067\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044");
+      }
       if (apiKey) {
         throw new Error("API\u30AD\u30FC\u3092\u6709\u52B9\u306B\u3059\u308B\u304B\u3001Google\u3067\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044");
       }
@@ -2636,7 +2645,13 @@
     try {
       return await resolveChatAuth();
     } catch (error) {
-      setChatStatus(error instanceof Error ? error.message : String(error), true);
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[QB_SUPPORT][auth]", message);
+      if (isAuthPromptMessage(message)) {
+        showChatAuthPrompt(message);
+      } else {
+        setChatStatus(message, true);
+      }
       return null;
     }
   }
@@ -2811,7 +2826,7 @@
     const requestId = createChatRequestId();
     activeChatRequestId = requestId;
     const placeholder = appendChatMessage("assistant", "\u56DE\u7B54\u4E2D...", { pending: true });
-    const effectiveModel = auth.mode === "backend" ? BACKEND_FORCED_MODEL : settings.chatModel;
+    const effectiveModel = auth.mode === "backend" ? resolveBackendModel(settings.chatModel) : settings.chatModel;
     const useThinking = effectiveModel.startsWith("gpt-5");
     let thinkingTimer = null;
     let gotDelta = false;
@@ -3313,7 +3328,7 @@
       }, 12e4);
       port.onMessage.addListener(onMessage);
       port.onDisconnect.addListener(onDisconnect);
-      const model = auth.mode === "backend" ? BACKEND_FORCED_MODEL : settings.chatModel;
+      const model = auth.mode === "backend" ? resolveBackendModel(settings.chatModel) : settings.chatModel;
       const apiKey = auth.mode === "apiKey" ? auth.apiKey ?? "" : "";
       const backendUrl = auth.mode === "backend" ? auth.backendUrl ?? "" : "";
       const authToken = auth.mode === "backend" ? auth.authToken ?? "" : "";
@@ -3336,6 +3351,8 @@
   }
   function setChatStatus(message, isError) {
     if (!chatStatusField) return;
+    chatAuthPromptActive = false;
+    chatStatusField.classList.remove("is-auth-prompt");
     chatStatusField.textContent = message;
     chatStatusField.classList.toggle("is-error", isError);
     if (message) {
@@ -3345,6 +3362,32 @@
         }
       }, 2600);
     }
+  }
+  function isAuthPromptMessage(message) {
+    return message.includes("\u30ED\u30B0\u30A4\u30F3") || message.includes("API\u30AD\u30FC\u3092\u8A2D\u5B9A") || message.includes("API\u30AD\u30FC\u3092\u6709\u52B9");
+  }
+  function showChatAuthPrompt(message) {
+    if (!chatStatusField) return;
+    chatStatusField.textContent = "";
+    chatStatusField.classList.remove("is-error");
+    chatStatusField.classList.add("is-auth-prompt");
+    chatAuthPromptActive = true;
+    const text = document.createElement("div");
+    text.className = "qb-support-chat-status-text";
+    text.textContent = message || "\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u5229\u7528\u3092\u958B\u59CB\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
+    const actions = document.createElement("div");
+    actions.className = "qb-support-chat-status-actions";
+    const loginButton = document.createElement("button");
+    loginButton.type = "button";
+    loginButton.className = "qb-support-chat-auth-button";
+    loginButton.textContent = "Google\u3067\u30ED\u30B0\u30A4\u30F3";
+    applyButtonVariant(loginButton, "primary");
+    loginButton.addEventListener("click", () => {
+      void handleAuthSignIn();
+    });
+    actions.appendChild(loginButton);
+    chatStatusField.appendChild(text);
+    chatStatusField.appendChild(actions);
   }
   function applySettings() {
     if (!root || !panel || !launcher) return;
@@ -3366,7 +3409,11 @@
     if (navPrevInput) navPrevInput.value = settings.navPrevKey;
     if (navNextInput) navNextInput.value = settings.navNextKey;
     if (revealInput) revealInput.value = settings.revealKey;
-    if (themeSelect) themeSelect.value = settings.themePreference;
+    if (themeToggle) {
+      const prefersDark = themeQuery?.matches ?? window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const isDark = settings.themePreference === "dark" || settings.themePreference === "system" && prefersDark;
+      themeToggle.checked = isDark;
+    }
     optionInputs.forEach((input, index) => {
       input.value = settings.optionKeys[index] ?? "";
     });
@@ -3574,7 +3621,12 @@
               target: describeElement(event.target)
             });
           }
-          void saveSettings({ ...settings, enabled: !settings.enabled });
+          const next = !settings.enabled;
+          if (next) {
+            void saveSettings({ ...settings, enabled: true });
+          } else {
+            void closeSettingsPanel();
+          }
           return;
         }
         const revealMatch = isShortcutMatch(event, settings.revealKey);
@@ -3794,7 +3846,7 @@
         if (!target) return;
         if (panel.contains(target)) return;
         if (launcher && launcher.contains(target)) return;
-        void saveSettings({ ...settings, enabled: false });
+        void closeSettingsPanel();
       },
       { capture: true }
     );
@@ -3871,6 +3923,34 @@
     const span = document.createElement("span");
     span.textContent = text;
     return span;
+  }
+  function createSwitch(labelText, checked, onChange) {
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.className = "qb-support-toggle-input";
+    input.checked = checked;
+    input.addEventListener("change", () => {
+      onChange(input.checked);
+    });
+    const label = document.createElement("label");
+    label.className = "qb-support-toggle qb-support-switch";
+    label.appendChild(input);
+    label.appendChild(makeSpan(labelText));
+    const track = document.createElement("span");
+    track.className = "qb-support-switch-track";
+    label.appendChild(track);
+    return { label, input };
+  }
+  function createOverlaySelect(options, className) {
+    const select = document.createElement("select");
+    select.className = `qb-support-select qb-support-select-overlay qb-support-select-pill${className ? ` ${className}` : ""}`;
+    options.forEach(({ value, label }) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
+    });
+    return select;
   }
   function formatTime(timestamp) {
     const date = new Date(timestamp);

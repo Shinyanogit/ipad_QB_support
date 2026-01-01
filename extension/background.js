@@ -320,8 +320,8 @@
     const backendUrl = backendBaseUrl ? resolveBackendChatUrl(backendBaseUrl) : "";
     const useBackend = !apiKey && Boolean(backendUrl && authToken);
     if (!apiKey && !useBackend) throw new Error("API key is not set.");
-    const requestedModel = typeof message.model === "string" && message.model ? message.model : "gpt-4o-mini";
-    const model = useBackend ? "gpt-4.1" : requestedModel;
+    const requestedModel = typeof message.model === "string" && message.model ? message.model : "gpt-5-mini";
+    const model = requestedModel;
     const messages = Array.isArray(message.messages) ? message.messages : [];
     const supportsTemperature = model === "gpt-5.2";
     const payload = {
@@ -359,8 +359,8 @@
     const backendUrl = backendBaseUrl ? resolveBackendStreamUrl(backendBaseUrl) : "";
     const useBackend = !apiKey && Boolean(backendUrl && authToken);
     if (!apiKey && !useBackend) throw new Error("API key is not set.");
-    const requestedModel = typeof message.model === "string" && message.model ? message.model : "gpt-4o-mini";
-    const model = useBackend ? "gpt-4.1" : requestedModel;
+    const requestedModel = typeof message.model === "string" && message.model ? message.model : "gpt-5-mini";
+    const model = requestedModel;
     const input = message.input ?? [];
     const instructions = typeof message.instructions === "string" ? message.instructions.trim() : "";
     const previousResponseId = typeof message.previousResponseId === "string" && message.previousResponseId ? message.previousResponseId : null;
