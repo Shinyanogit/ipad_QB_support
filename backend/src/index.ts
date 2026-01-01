@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { cert, getApps, initializeApp, type ServiceAccount } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
@@ -9,6 +10,8 @@ const PORT = Number(process.env.PORT ?? 8080);
 const OPENAI_API_KEY = (process.env.OPENAI_API_KEY ?? "").trim();
 const FIREBASE_PROJECT_ID = (process.env.FIREBASE_PROJECT_ID ?? "").trim();
 const GOOGLE_OAUTH_CLIENT_ID = (process.env.GOOGLE_OAUTH_CLIENT_ID ?? "").trim();
+const GOOGLE_OAUTH_CLIENT_SECRET = (process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? "").trim();
+const AUTH_SESSION_SECRET = (process.env.AUTH_SESSION_SECRET ?? "").trim();
 const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS ?? "")
   .split(",")
   .map((value) => value.trim().toLowerCase())
@@ -19,6 +22,9 @@ const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 const RESTRICTED_MODEL = "gpt-4.1";
 const RATE_LIMIT_COLLECTION = "qb_support_rate_limits_v1";
 const SETTINGS_COLLECTION = "qb_support_settings";
+const AUTH_SESSION_COLLECTION = "qb_support_auth_sessions";
+const AUTH_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const AUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 type AuthContext = {
   uid: string;
@@ -37,9 +43,16 @@ if (missingEnv.length) {
 if (!GOOGLE_OAUTH_CLIENT_ID) {
   console.warn("GOOGLE_OAUTH_CLIENT_ID is not set. Google token audience checks are disabled.");
 }
+if (!GOOGLE_OAUTH_CLIENT_SECRET) {
+  console.warn("GOOGLE_OAUTH_CLIENT_SECRET is not set. Backend OAuth login is disabled.");
+}
+if (!AUTH_SESSION_SECRET) {
+  console.warn("AUTH_SESSION_SECRET is not set. Backend OAuth login is disabled.");
+}
 
 const app = express();
 app.disable("x-powered-by");
+app.set("trust proxy", true);
 
 app.use((req, _res, next) => {
   if (
@@ -64,6 +77,180 @@ app.get("/health", (_req, res) => {
 
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "25mb" }));
+
+app.get("/auth/start", async (req, res) => {
+  if (!assertAuthConfig(res)) return;
+  if (!ensureFirebaseInitialized(res)) return;
+  const baseUrl = resolvePublicBaseUrl(req);
+  if (!baseUrl) {
+    res.status(500).json({ error: "Failed to resolve public base URL." });
+    return;
+  }
+  const state = randomUUID();
+  const now = Date.now();
+  const stateExpiresAt = now + AUTH_STATE_TTL_MS;
+  try {
+    const db = getFirestore();
+    await db.collection(AUTH_SESSION_COLLECTION).doc(state).set({
+      status: "pending",
+      createdAt: now,
+      stateExpiresAt,
+    });
+  } catch (error) {
+    console.warn("Auth start storage failed", error);
+    res.status(503).json({ error: "Auth session store failed." });
+    return;
+  }
+  const redirectUri = `${baseUrl}/auth/callback`;
+  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  authUrl.searchParams.set("client_id", GOOGLE_OAUTH_CLIENT_ID);
+  authUrl.searchParams.set("redirect_uri", redirectUri);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("scope", "openid email profile");
+  authUrl.searchParams.set("prompt", "select_account");
+  authUrl.searchParams.set("state", state);
+  res.status(200).json({ authUrl: authUrl.toString(), state, expiresAt: stateExpiresAt });
+});
+
+app.get("/auth/session", async (req, res) => {
+  if (!ensureFirebaseInitialized(res)) return;
+  const state = typeof req.query.state === "string" ? req.query.state.trim() : "";
+  if (!state) {
+    res.status(400).json({ error: "Missing state." });
+    return;
+  }
+  const db = getFirestore();
+  const ref = db.collection(AUTH_SESSION_COLLECTION).doc(state);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    res.status(404).json({ error: "Session not found." });
+    return;
+  }
+  const data = snap.data() as
+    | {
+        status?: string;
+        stateExpiresAt?: number;
+        token?: string;
+        tokenExpiresAt?: number;
+        uid?: string;
+        email?: string;
+      }
+    | undefined;
+  const now = Date.now();
+  if (data?.status !== "complete") {
+    if (data?.stateExpiresAt && now > data.stateExpiresAt) {
+      await ref.delete();
+      res.status(410).json({ error: "Session expired." });
+      return;
+    }
+    res.status(204).end();
+    return;
+  }
+  if (!data?.token || !data.uid || !data.email) {
+    res.status(500).json({ error: "Invalid session payload." });
+    return;
+  }
+  if (data.tokenExpiresAt && now > data.tokenExpiresAt) {
+    await ref.delete();
+    res.status(410).json({ error: "Session expired." });
+    return;
+  }
+  await ref.delete();
+  res.status(200).json({
+    token: data.token,
+    profile: { uid: data.uid, email: data.email, source: "google" },
+    expiresAt: data.tokenExpiresAt ?? now + AUTH_SESSION_TTL_MS,
+  });
+});
+
+app.get("/auth/callback", async (req, res) => {
+  if (!assertAuthConfig(res)) return;
+  if (!ensureFirebaseInitialized(res)) return;
+  const error = typeof req.query.error === "string" ? req.query.error : "";
+  if (error) {
+    res.status(400).type("text/plain").send(`OAuth error: ${error}`);
+    return;
+  }
+  const code = typeof req.query.code === "string" ? req.query.code.trim() : "";
+  const state = typeof req.query.state === "string" ? req.query.state.trim() : "";
+  if (!code || !state) {
+    res.status(400).type("text/plain").send("Missing code or state.");
+    return;
+  }
+  const baseUrl = resolvePublicBaseUrl(req);
+  if (!baseUrl) {
+    res.status(500).type("text/plain").send("Failed to resolve public base URL.");
+    return;
+  }
+  const db = getFirestore();
+  const ref = db.collection(AUTH_SESSION_COLLECTION).doc(state);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    res.status(404).type("text/plain").send("Auth session not found.");
+    return;
+  }
+  const data = snap.data() as { stateExpiresAt?: number } | undefined;
+  if (data?.stateExpiresAt && Date.now() > data.stateExpiresAt) {
+    await ref.delete();
+    res.status(410).type("text/plain").send("Auth session expired.");
+    return;
+  }
+  const redirectUri = `${baseUrl}/auth/callback`;
+  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: GOOGLE_OAUTH_CLIENT_ID,
+      client_secret: GOOGLE_OAUTH_CLIENT_SECRET,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    }),
+  });
+  if (!tokenResponse.ok) {
+    const detail = await tokenResponse.text();
+    console.warn("OAuth token exchange failed", detail);
+    res.status(400).type("text/plain").send("OAuth token exchange failed.");
+    return;
+  }
+  const tokenData = (await tokenResponse.json()) as { id_token?: string };
+  if (!tokenData.id_token) {
+    res.status(400).type("text/plain").send("Missing id_token.");
+    return;
+  }
+  const google = await verifyGoogleIdToken(tokenData.id_token);
+  if (!google) {
+    res.status(400).type("text/plain").send("Invalid Google login.");
+    return;
+  }
+  if (!isAllowedEmail(google.email)) {
+    res.status(403).type("text/plain").send("User not allowed.");
+    return;
+  }
+  const session = createSessionToken({
+    uid: google.uid,
+    email: google.email,
+    source: "google",
+  });
+  const tokenExpiresAt = session.expiresAt;
+  await ref.set(
+    {
+      status: "complete",
+      uid: google.uid,
+      email: google.email,
+      token: session.token,
+      tokenExpiresAt,
+      updatedAt: Date.now(),
+    },
+    { merge: true }
+  );
+  res
+    .status(200)
+    .type("text/html")
+    .send(
+      "<!doctype html><html><head><meta charset=\"utf-8\"><title>Login Complete</title></head><body>ログインが完了しました。このタブを閉じて拡張機能に戻ってください。</body></html>"
+    );
+});
 
 app.get("/auth/me", async (req, res) => {
   const auth = await authenticateRequest(req, res);
@@ -335,6 +522,15 @@ async function authenticateRequest(
     return null;
   }
 
+  const session = verifySessionToken(token);
+  if (session) {
+    if (!isAllowedEmail(session.email)) {
+      res.status(403).json({ error: "User not allowed." });
+      return null;
+    }
+    return session;
+  }
+
   const firebase = await verifyFirebaseIdToken(token);
   if (firebase) {
     if (!isAllowedEmail(firebase.email)) {
@@ -404,12 +600,50 @@ async function verifyGoogleAccessToken(
   }
 }
 
+async function verifyGoogleIdToken(
+  token: string
+): Promise<{ uid: string; email: string } | null> {
+  try {
+    const url = new URL("https://oauth2.googleapis.com/tokeninfo");
+    url.searchParams.set("id_token", token);
+    const response = await fetch(url.toString());
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      sub?: string;
+      email?: string;
+      email_verified?: string;
+      aud?: string;
+    };
+    const email = (data.email ?? "").toLowerCase();
+    if (!data.sub || !email) return null;
+    if (data.email_verified && data.email_verified !== "true") return null;
+    if (GOOGLE_OAUTH_CLIENT_ID && data.aud !== GOOGLE_OAUTH_CLIENT_ID) {
+      console.warn("Google id token aud mismatch", data.aud);
+      return null;
+    }
+    return { uid: data.sub, email };
+  } catch (error) {
+    console.warn("Google id token verification failed", error);
+    return null;
+  }
+}
+
 function assertRequiredConfig(res: express.Response): boolean {
   const missing: string[] = [];
   if (!OPENAI_API_KEY) missing.push("OPENAI_API_KEY");
   if (!FIREBASE_PROJECT_ID) missing.push("FIREBASE_PROJECT_ID");
   if (!missing.length) return true;
   res.status(503).json({ error: "Missing required configuration.", missing });
+  return false;
+}
+
+function assertAuthConfig(res: express.Response): boolean {
+  const missing: string[] = [];
+  if (!GOOGLE_OAUTH_CLIENT_ID) missing.push("GOOGLE_OAUTH_CLIENT_ID");
+  if (!GOOGLE_OAUTH_CLIENT_SECRET) missing.push("GOOGLE_OAUTH_CLIENT_SECRET");
+  if (!AUTH_SESSION_SECRET) missing.push("AUTH_SESSION_SECRET");
+  if (!missing.length) return true;
+  res.status(503).json({ error: "Auth configuration is missing.", missing });
   return false;
 }
 
@@ -482,6 +716,101 @@ async function consumeRateLimit(
       resetAt: windowStart + RATE_LIMIT_WINDOW_MS,
     };
   });
+}
+
+function resolvePublicBaseUrl(req: express.Request): string | null {
+  const protoHeader = req.headers["x-forwarded-proto"];
+  const hostHeader = req.headers["x-forwarded-host"] ?? req.headers.host ?? "";
+  const proto =
+    (Array.isArray(protoHeader) ? protoHeader[0] : protoHeader)?.split(",")[0]?.trim() ||
+    req.protocol ||
+    "https";
+  const host = Array.isArray(hostHeader)
+    ? hostHeader[0]
+    : String(hostHeader).split(",")[0]?.trim();
+  if (!host) return null;
+  return `${proto}://${host}`;
+}
+
+function base64UrlEncode(input: Buffer | string): string {
+  const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input);
+  return buffer
+    .toString("base64")
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+}
+
+function base64UrlDecode(input: string): Buffer {
+  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
+  const padLength = normalized.length % 4;
+  const padded = padLength ? normalized + "=".repeat(4 - padLength) : normalized;
+  return Buffer.from(padded, "base64");
+}
+
+function createSessionToken(payload: {
+  uid: string;
+  email: string;
+  source: "google";
+}): { token: string; expiresAt: number } {
+  if (!AUTH_SESSION_SECRET) {
+    throw new Error("AUTH_SESSION_SECRET is not configured.");
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const exp = now + Math.floor(AUTH_SESSION_TTL_MS / 1000);
+  const header = { alg: "HS256", typ: "JWT" };
+  const body = {
+    sub: payload.uid,
+    email: payload.email,
+    source: payload.source,
+    iat: now,
+    exp,
+    iss: "qb-support-backend",
+    aud: "qb-support-extension",
+  };
+  const unsigned = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(
+    JSON.stringify(body)
+  )}`;
+  const signature = base64UrlEncode(
+    createHmac("sha256", AUTH_SESSION_SECRET).update(unsigned).digest()
+  );
+  return { token: `${unsigned}.${signature}`, expiresAt: exp * 1000 };
+}
+
+function verifySessionToken(token: string): AuthContext | null {
+  if (!AUTH_SESSION_SECRET) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [header, payload, signature] = parts;
+  const unsigned = `${header}.${payload}`;
+  const expected = base64UrlEncode(
+    createHmac("sha256", AUTH_SESSION_SECRET).update(unsigned).digest()
+  );
+  if (signature.length !== expected.length) return null;
+  if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+  try {
+    const decoded = JSON.parse(base64UrlDecode(payload).toString("utf8")) as {
+      sub?: string;
+      email?: string;
+      source?: string;
+      exp?: number;
+      iss?: string;
+      aud?: string;
+    };
+    if (!decoded.sub || !decoded.email) return null;
+    if (decoded.iss && decoded.iss !== "qb-support-backend") return null;
+    if (decoded.aud && decoded.aud !== "qb-support-extension") return null;
+    const now = Math.floor(Date.now() / 1000);
+    if (decoded.exp && now >= decoded.exp) return null;
+    return {
+      uid: decoded.sub,
+      email: decoded.email.toLowerCase(),
+      source: "google",
+    };
+  } catch (error) {
+    console.warn("Session token verification failed", error);
+    return null;
+  }
 }
 
 function getBearerToken(req: express.Request): string | null {

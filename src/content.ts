@@ -26,6 +26,21 @@ type AuthProfile = {
   email: string;
   source: "firebase" | "google";
 };
+type AuthSessionStart = {
+  authUrl: string;
+  state: string;
+  expiresAt?: number;
+};
+type AuthSessionResult = {
+  token: string;
+  profile: AuthProfile;
+  expiresAt?: number;
+};
+type StoredAuthSession = {
+  token: string;
+  profile: AuthProfile;
+  expiresAt: number;
+};
 import {
   getManifest,
   getStorageArea,
@@ -57,6 +72,10 @@ const FIREBASE_SETTINGS_VERSION = 1;
 const BACKEND_FORCED_MODEL = "gpt-4.1";
 const DEFAULT_BACKEND_URL = "https://ipad-qb-support-400313981210.asia-northeast1.run.app";
 const USAGE_META_EMAIL = "ymgtsny7@gmail.com";
+const AUTH_STORAGE_KEY = "qb_support_auth_session_v1";
+const AUTH_SESSION_TIMEOUT_MS = 120000;
+const AUTH_SESSION_POLL_INTERVAL_MS = 1000;
+const AUTH_SESSION_FALLBACK_MS = 6 * 60 * 60 * 1000;
 const EXPLANATION_LEVEL_LABELS: Record<string, string> = {
   highschool: "高校生でもわかる",
   "med-junior": "医学部低学年",
@@ -336,50 +355,116 @@ function setAuthSyncStatus(message: string, isError: boolean) {
   authSyncField.classList.toggle("is-error", isError);
 }
 
-async function requestGoogleAuthToken(interactive: boolean): Promise<string> {
-  const timeoutMs = interactive ? 30000 : 15000;
-  const startedAt = Date.now();
-  console.log("[QB_SUPPORT][auth-ui] token request start", { timeoutMs, interactive });
-  let timeoutId: number | null = null;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = window.setTimeout(() => {
-      console.warn("[QB_SUPPORT][auth-ui] token request timeout", { timeoutMs });
-      reject(new Error("ログイン画面の起動がタイムアウトしました。もう一度お試しください。"));
-    }, timeoutMs);
-  });
-  const responsePromise = sendRuntimeMessage<{
-    ok: boolean;
-    token?: string;
-    error?: string;
-  }>({
-    type: "QB_AUTH_GET_TOKEN",
-    interactive,
-  })
-    .then((response) => {
-      console.log("[QB_SUPPORT][auth-ui] token request response", {
-        ok: response?.ok ?? false,
-        tokenPresent: Boolean(response?.token),
-        error: response?.error ?? null,
-        ms: Date.now() - startedAt,
-      });
-      return response;
-    })
-    .catch((error) => {
-      console.warn("[QB_SUPPORT][auth-ui] token request error", {
-        message: error instanceof Error ? error.message : String(error),
-        ms: Date.now() - startedAt,
-      });
-      throw error;
-    });
-  const response = await Promise.race([responsePromise, timeoutPromise]);
-  if (timeoutId) window.clearTimeout(timeoutId);
-  if (!response?.ok) {
-    const message = response?.error ?? "OAuth token request failed.";
-    throw new Error(message);
+async function loadStoredAuthSession(): Promise<StoredAuthSession | null> {
+  const area = getStorageArea(false);
+  if (!area) return null;
+  try {
+    const stored = await storageGet(area, AUTH_STORAGE_KEY);
+    const raw = stored?.[AUTH_STORAGE_KEY];
+    if (!raw || typeof raw !== "object") return null;
+    const token = typeof (raw as { token?: unknown }).token === "string" ? raw.token : "";
+    const profile = (raw as { profile?: AuthProfile }).profile;
+    const expiresAt =
+      typeof (raw as { expiresAt?: unknown }).expiresAt === "number"
+        ? raw.expiresAt
+        : 0;
+    if (!token || !profile?.uid || !profile.email || !expiresAt) return null;
+    return {
+      token,
+      profile: {
+        uid: profile.uid,
+        email: profile.email,
+        source: profile.source === "firebase" ? "firebase" : "google",
+      },
+      expiresAt,
+    };
+  } catch (error) {
+    console.warn("[QB_SUPPORT][auth-session] load failed", error);
+    return null;
   }
-  if (!response.token) throw new Error("OAuth token was not returned.");
-  authAccessToken = response.token;
-  return response.token;
+}
+
+async function saveStoredAuthSession(session: StoredAuthSession): Promise<void> {
+  const area = getStorageArea(false);
+  if (!area) return;
+  try {
+    await storageSet(area, { [AUTH_STORAGE_KEY]: session });
+  } catch (error) {
+    console.warn("[QB_SUPPORT][auth-session] save failed", error);
+  }
+}
+
+async function clearStoredAuthSession(): Promise<void> {
+  const area = getStorageArea(false);
+  if (!area) return;
+  try {
+    await storageSet(area, { [AUTH_STORAGE_KEY]: null });
+  } catch (error) {
+    console.warn("[QB_SUPPORT][auth-session] clear failed", error);
+  }
+}
+
+function waitAuth(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function fetchBackendAuthStart(): Promise<AuthSessionStart> {
+  const url = resolveBackendAuthStartUrl();
+  if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
+  const response = await fetch(url);
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`認証開始に失敗しました: ${response.status} ${detail}`);
+  }
+  const data = (await response.json()) as AuthSessionStart;
+  if (!data?.authUrl || !data?.state) {
+    throw new Error("認証開始のレスポンスが不正です。");
+  }
+  return data;
+}
+
+async function pollBackendAuthSession(state: string): Promise<AuthSessionResult> {
+  const startedAt = Date.now();
+  const url = resolveBackendAuthSessionUrl(state);
+  if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
+  while (Date.now() - startedAt < AUTH_SESSION_TIMEOUT_MS) {
+    const response = await fetch(url);
+    if (response.status === 204) {
+      await waitAuth(AUTH_SESSION_POLL_INTERVAL_MS);
+      continue;
+    }
+    if (response.status === 404) {
+      throw new Error("認証セッションが見つかりませんでした。もう一度お試しください。");
+    }
+    if (response.status === 410) {
+      throw new Error("認証セッションの有効期限が切れました。もう一度お試しください。");
+    }
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`認証セッション取得に失敗しました: ${response.status} ${detail}`);
+    }
+    const data = (await response.json()) as AuthSessionResult;
+    if (!data?.token || !data?.profile?.uid) {
+      throw new Error("認証セッションの内容が不正です。");
+    }
+    return data;
+  }
+  throw new Error("ログインが完了しませんでした。もう一度お試しください。");
+}
+
+async function requestBackendAuthSession(): Promise<StoredAuthSession> {
+  const start = await fetchBackendAuthStart();
+  const popup = window.open(start.authUrl, "_blank", "noopener,noreferrer");
+  if (!popup) {
+    throw new Error("ログイン画面を開けませんでした。ポップアップブロックをご確認ください。");
+  }
+  setAuthStatus("ブラウザでログインを完了してください", false);
+  const session = await pollBackendAuthSession(start.state);
+  const expiresAt =
+    typeof session.expiresAt === "number"
+      ? session.expiresAt
+      : Date.now() + AUTH_SESSION_FALLBACK_MS;
+  return { token: session.token, profile: session.profile, expiresAt };
 }
 
 async function fetchBackendAuthProfile(token: string): Promise<AuthProfile> {
@@ -398,27 +483,68 @@ async function fetchBackendAuthProfile(token: string): Promise<AuthProfile> {
   return data;
 }
 
-async function ensureAuthAccessToken(interactive: boolean): Promise<string> {
-  if (authAccessToken) return authAccessToken;
-  const token = await requestGoogleAuthToken(interactive);
-  const profile = await fetchBackendAuthProfile(token);
-  authAccessToken = token;
-  authProfile = profile;
+function applyAuthSession(session: StoredAuthSession) {
+  authAccessToken = session.token;
+  authProfile = session.profile;
   updateAuthUI();
   applyChatSettings();
-  return token;
+}
+
+async function restoreAuthSession(): Promise<StoredAuthSession | null> {
+  const stored = await loadStoredAuthSession();
+  if (!stored) return null;
+  if (stored.expiresAt <= Date.now()) {
+    await clearStoredAuthSession();
+    return null;
+  }
+  try {
+    const profile = await fetchBackendAuthProfile(stored.token);
+    return {
+      token: stored.token,
+      profile,
+      expiresAt: stored.expiresAt,
+    };
+  } catch (error) {
+    await clearStoredAuthSession();
+    return null;
+  }
+}
+
+async function ensureAuthAccessToken(interactive: boolean): Promise<string> {
+  if (authAccessToken) return authAccessToken;
+  const restored = await restoreAuthSession();
+  if (restored) {
+    applyAuthSession(restored);
+    return restored.token;
+  }
+  if (!interactive) {
+    throw new Error("ログインが必要です。");
+  }
+  const session = await requestBackendAuthSession();
+  await saveStoredAuthSession(session);
+  applyAuthSession(session);
+  return session.token;
 }
 
 async function refreshAuthState(interactive: boolean) {
   try {
-    const token = await requestGoogleAuthToken(interactive);
-    const profile = await fetchBackendAuthProfile(token);
-    authAccessToken = token;
-    authProfile = profile;
-    updateAuthUI();
-    applyChatSettings();
-    if (remoteSettingsLoadedFor !== profile.uid) {
-      remoteSettingsLoadedFor = profile.uid;
+    const session = interactive
+      ? await requestBackendAuthSession()
+      : await restoreAuthSession();
+    if (!session) {
+      if (!interactive) {
+        authAccessToken = null;
+        authProfile = null;
+        updateAuthUI();
+        setAuthSyncStatus("未ログイン", false);
+        return;
+      }
+      throw new Error("ログインが必要です。");
+    }
+    await saveStoredAuthSession(session);
+    applyAuthSession(session);
+    if (remoteSettingsLoadedFor !== session.profile.uid) {
+      remoteSettingsLoadedFor = session.profile.uid;
       void syncSettingsFromRemote();
     } else {
       setAuthSyncStatus("同期済み", false);
@@ -463,15 +589,10 @@ async function handleAuthSignOut() {
   const button = authSignOutButton;
   if (button) button.disabled = true;
   try {
-    if (authAccessToken) {
-      await sendRuntimeMessage({
-        type: "QB_AUTH_REMOVE_TOKEN",
-        token: authAccessToken,
-      });
-      authAccessToken = null;
-    }
+    authAccessToken = null;
     authProfile = null;
     remoteSettingsLoadedFor = null;
+    await clearStoredAuthSession();
     setAuthStatus("ログアウトしました", false);
     updateAuthUI();
     applyChatSettings();
@@ -2093,6 +2214,43 @@ function resolveBackendSettingsUrl(): string | null {
       path = `${path}/settings`;
     }
     url.pathname = path;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function resolveBackendAuthStartUrl(): string | null {
+  const base = resolveBackendBaseUrl();
+  if (!base) return null;
+  try {
+    const url = new URL(base);
+    let path = url.pathname.replace(/\/+$/, "");
+    if (!path) {
+      path = "/auth/start";
+    } else if (!path.endsWith("/auth/start")) {
+      path = `${path}/auth/start`;
+    }
+    url.pathname = path;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function resolveBackendAuthSessionUrl(state: string): string | null {
+  const base = resolveBackendBaseUrl();
+  if (!base) return null;
+  try {
+    const url = new URL(base);
+    let path = url.pathname.replace(/\/+$/, "");
+    if (!path) {
+      path = "/auth/session";
+    } else if (!path.endsWith("/auth/session")) {
+      path = `${path}/auth/session`;
+    }
+    url.pathname = path;
+    url.searchParams.set("state", state);
     return url.toString();
   } catch {
     return null;

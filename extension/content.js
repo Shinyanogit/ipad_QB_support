@@ -663,6 +663,10 @@
   var BACKEND_FORCED_MODEL = "gpt-4.1";
   var DEFAULT_BACKEND_URL = "https://ipad-qb-support-400313981210.asia-northeast1.run.app";
   var USAGE_META_EMAIL = "ymgtsny7@gmail.com";
+  var AUTH_STORAGE_KEY = "qb_support_auth_session_v1";
+  var AUTH_SESSION_TIMEOUT_MS = 12e4;
+  var AUTH_SESSION_POLL_INTERVAL_MS = 1e3;
+  var AUTH_SESSION_FALLBACK_MS = 6 * 60 * 60 * 1e3;
   var EXPLANATION_LEVEL_LABELS = {
     highschool: "\u9AD8\u6821\u751F\u3067\u3082\u308F\u304B\u308B",
     "med-junior": "\u533B\u5B66\u90E8\u4F4E\u5B66\u5E74",
@@ -890,44 +894,104 @@
     authSyncField.textContent = message;
     authSyncField.classList.toggle("is-error", isError);
   }
-  async function requestGoogleAuthToken(interactive) {
-    const timeoutMs = interactive ? 3e4 : 15e3;
-    const startedAt = Date.now();
-    console.log("[QB_SUPPORT][auth-ui] token request start", { timeoutMs, interactive });
-    let timeoutId = null;
-    const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = window.setTimeout(() => {
-        console.warn("[QB_SUPPORT][auth-ui] token request timeout", { timeoutMs });
-        reject(new Error("\u30ED\u30B0\u30A4\u30F3\u753B\u9762\u306E\u8D77\u52D5\u304C\u30BF\u30A4\u30E0\u30A2\u30A6\u30C8\u3057\u307E\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002"));
-      }, timeoutMs);
-    });
-    const responsePromise = sendRuntimeMessage({
-      type: "QB_AUTH_GET_TOKEN",
-      interactive
-    }).then((response2) => {
-      console.log("[QB_SUPPORT][auth-ui] token request response", {
-        ok: response2?.ok ?? false,
-        tokenPresent: Boolean(response2?.token),
-        error: response2?.error ?? null,
-        ms: Date.now() - startedAt
-      });
-      return response2;
-    }).catch((error) => {
-      console.warn("[QB_SUPPORT][auth-ui] token request error", {
-        message: error instanceof Error ? error.message : String(error),
-        ms: Date.now() - startedAt
-      });
-      throw error;
-    });
-    const response = await Promise.race([responsePromise, timeoutPromise]);
-    if (timeoutId) window.clearTimeout(timeoutId);
-    if (!response?.ok) {
-      const message = response?.error ?? "OAuth token request failed.";
-      throw new Error(message);
+  async function loadStoredAuthSession() {
+    const area = getStorageArea(false);
+    if (!area) return null;
+    try {
+      const stored = await storageGet(area, AUTH_STORAGE_KEY);
+      const raw = stored?.[AUTH_STORAGE_KEY];
+      if (!raw || typeof raw !== "object") return null;
+      const token = typeof raw.token === "string" ? raw.token : "";
+      const profile = raw.profile;
+      const expiresAt = typeof raw.expiresAt === "number" ? raw.expiresAt : 0;
+      if (!token || !profile?.uid || !profile.email || !expiresAt) return null;
+      return {
+        token,
+        profile: {
+          uid: profile.uid,
+          email: profile.email,
+          source: profile.source === "firebase" ? "firebase" : "google"
+        },
+        expiresAt
+      };
+    } catch (error) {
+      console.warn("[QB_SUPPORT][auth-session] load failed", error);
+      return null;
     }
-    if (!response.token) throw new Error("OAuth token was not returned.");
-    authAccessToken = response.token;
-    return response.token;
+  }
+  async function saveStoredAuthSession(session) {
+    const area = getStorageArea(false);
+    if (!area) return;
+    try {
+      await storageSet(area, { [AUTH_STORAGE_KEY]: session });
+    } catch (error) {
+      console.warn("[QB_SUPPORT][auth-session] save failed", error);
+    }
+  }
+  async function clearStoredAuthSession() {
+    const area = getStorageArea(false);
+    if (!area) return;
+    try {
+      await storageSet(area, { [AUTH_STORAGE_KEY]: null });
+    } catch (error) {
+      console.warn("[QB_SUPPORT][auth-session] clear failed", error);
+    }
+  }
+  function waitAuth(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
+  }
+  async function fetchBackendAuthStart() {
+    const url = resolveBackendAuthStartUrl();
+    if (!url) throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
+    const response = await fetch(url);
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(`\u8A8D\u8A3C\u958B\u59CB\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${response.status} ${detail}`);
+    }
+    const data = await response.json();
+    if (!data?.authUrl || !data?.state) {
+      throw new Error("\u8A8D\u8A3C\u958B\u59CB\u306E\u30EC\u30B9\u30DD\u30F3\u30B9\u304C\u4E0D\u6B63\u3067\u3059\u3002");
+    }
+    return data;
+  }
+  async function pollBackendAuthSession(state) {
+    const startedAt = Date.now();
+    const url = resolveBackendAuthSessionUrl(state);
+    if (!url) throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
+    while (Date.now() - startedAt < AUTH_SESSION_TIMEOUT_MS) {
+      const response = await fetch(url);
+      if (response.status === 204) {
+        await waitAuth(AUTH_SESSION_POLL_INTERVAL_MS);
+        continue;
+      }
+      if (response.status === 404) {
+        throw new Error("\u8A8D\u8A3C\u30BB\u30C3\u30B7\u30E7\u30F3\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002");
+      }
+      if (response.status === 410) {
+        throw new Error("\u8A8D\u8A3C\u30BB\u30C3\u30B7\u30E7\u30F3\u306E\u6709\u52B9\u671F\u9650\u304C\u5207\u308C\u307E\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002");
+      }
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`\u8A8D\u8A3C\u30BB\u30C3\u30B7\u30E7\u30F3\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${response.status} ${detail}`);
+      }
+      const data = await response.json();
+      if (!data?.token || !data?.profile?.uid) {
+        throw new Error("\u8A8D\u8A3C\u30BB\u30C3\u30B7\u30E7\u30F3\u306E\u5185\u5BB9\u304C\u4E0D\u6B63\u3067\u3059\u3002");
+      }
+      return data;
+    }
+    throw new Error("\u30ED\u30B0\u30A4\u30F3\u304C\u5B8C\u4E86\u3057\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002");
+  }
+  async function requestBackendAuthSession() {
+    const start2 = await fetchBackendAuthStart();
+    const popup = window.open(start2.authUrl, "_blank", "noopener,noreferrer");
+    if (!popup) {
+      throw new Error("\u30ED\u30B0\u30A4\u30F3\u753B\u9762\u3092\u958B\u3051\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u30DD\u30C3\u30D7\u30A2\u30C3\u30D7\u30D6\u30ED\u30C3\u30AF\u3092\u3054\u78BA\u8A8D\u304F\u3060\u3055\u3044\u3002");
+    }
+    setAuthStatus("\u30D6\u30E9\u30A6\u30B6\u3067\u30ED\u30B0\u30A4\u30F3\u3092\u5B8C\u4E86\u3057\u3066\u304F\u3060\u3055\u3044", false);
+    const session = await pollBackendAuthSession(start2.state);
+    const expiresAt = typeof session.expiresAt === "number" ? session.expiresAt : Date.now() + AUTH_SESSION_FALLBACK_MS;
+    return { token: session.token, profile: session.profile, expiresAt };
   }
   async function fetchBackendAuthProfile(token) {
     const baseUrl = resolveBackendBaseUrl();
@@ -944,26 +1008,63 @@
     const data = await response.json();
     return data;
   }
-  async function ensureAuthAccessToken(interactive) {
-    if (authAccessToken) return authAccessToken;
-    const token = await requestGoogleAuthToken(interactive);
-    const profile = await fetchBackendAuthProfile(token);
-    authAccessToken = token;
-    authProfile = profile;
+  function applyAuthSession(session) {
+    authAccessToken = session.token;
+    authProfile = session.profile;
     updateAuthUI();
     applyChatSettings();
-    return token;
+  }
+  async function restoreAuthSession() {
+    const stored = await loadStoredAuthSession();
+    if (!stored) return null;
+    if (stored.expiresAt <= Date.now()) {
+      await clearStoredAuthSession();
+      return null;
+    }
+    try {
+      const profile = await fetchBackendAuthProfile(stored.token);
+      return {
+        token: stored.token,
+        profile,
+        expiresAt: stored.expiresAt
+      };
+    } catch (error) {
+      await clearStoredAuthSession();
+      return null;
+    }
+  }
+  async function ensureAuthAccessToken(interactive) {
+    if (authAccessToken) return authAccessToken;
+    const restored = await restoreAuthSession();
+    if (restored) {
+      applyAuthSession(restored);
+      return restored.token;
+    }
+    if (!interactive) {
+      throw new Error("\u30ED\u30B0\u30A4\u30F3\u304C\u5FC5\u8981\u3067\u3059\u3002");
+    }
+    const session = await requestBackendAuthSession();
+    await saveStoredAuthSession(session);
+    applyAuthSession(session);
+    return session.token;
   }
   async function refreshAuthState(interactive) {
     try {
-      const token = await requestGoogleAuthToken(interactive);
-      const profile = await fetchBackendAuthProfile(token);
-      authAccessToken = token;
-      authProfile = profile;
-      updateAuthUI();
-      applyChatSettings();
-      if (remoteSettingsLoadedFor !== profile.uid) {
-        remoteSettingsLoadedFor = profile.uid;
+      const session = interactive ? await requestBackendAuthSession() : await restoreAuthSession();
+      if (!session) {
+        if (!interactive) {
+          authAccessToken = null;
+          authProfile = null;
+          updateAuthUI();
+          setAuthSyncStatus("\u672A\u30ED\u30B0\u30A4\u30F3", false);
+          return;
+        }
+        throw new Error("\u30ED\u30B0\u30A4\u30F3\u304C\u5FC5\u8981\u3067\u3059\u3002");
+      }
+      await saveStoredAuthSession(session);
+      applyAuthSession(session);
+      if (remoteSettingsLoadedFor !== session.profile.uid) {
+        remoteSettingsLoadedFor = session.profile.uid;
         void syncSettingsFromRemote();
       } else {
         setAuthSyncStatus("\u540C\u671F\u6E08\u307F", false);
@@ -1006,15 +1107,10 @@
     const button = authSignOutButton;
     if (button) button.disabled = true;
     try {
-      if (authAccessToken) {
-        await sendRuntimeMessage({
-          type: "QB_AUTH_REMOVE_TOKEN",
-          token: authAccessToken
-        });
-        authAccessToken = null;
-      }
+      authAccessToken = null;
       authProfile = null;
       remoteSettingsLoadedFor = null;
+      await clearStoredAuthSession();
       setAuthStatus("\u30ED\u30B0\u30A2\u30A6\u30C8\u3057\u307E\u3057\u305F", false);
       updateAuthUI();
       applyChatSettings();
@@ -2463,6 +2559,41 @@
         path = `${path}/settings`;
       }
       url.pathname = path;
+      return url.toString();
+    } catch {
+      return null;
+    }
+  }
+  function resolveBackendAuthStartUrl() {
+    const base = resolveBackendBaseUrl();
+    if (!base) return null;
+    try {
+      const url = new URL(base);
+      let path = url.pathname.replace(/\/+$/, "");
+      if (!path) {
+        path = "/auth/start";
+      } else if (!path.endsWith("/auth/start")) {
+        path = `${path}/auth/start`;
+      }
+      url.pathname = path;
+      return url.toString();
+    } catch {
+      return null;
+    }
+  }
+  function resolveBackendAuthSessionUrl(state) {
+    const base = resolveBackendBaseUrl();
+    if (!base) return null;
+    try {
+      const url = new URL(base);
+      let path = url.pathname.replace(/\/+$/, "");
+      if (!path) {
+        path = "/auth/session";
+      } else if (!path.endsWith("/auth/session")) {
+        path = `${path}/auth/session`;
+      }
+      url.pathname = path;
+      url.searchParams.set("state", state);
       return url.toString();
     } catch {
       return null;

@@ -4,6 +4,9 @@ This service proxies OpenAI Responses API for logged-in users. It verifies Fireb
 
 ## Endpoints
 - `GET /health`
+- `GET /auth/start`
+- `GET /auth/session`
+- `GET /auth/callback`
 - `GET /auth/me`
 - `GET /settings`
 - `POST /settings`
@@ -25,7 +28,9 @@ curl -i "$SERVICE_URL/health"
 - `FIREBASE_PROJECT_ID` (required)
 - `FIREBASE_SERVICE_ACCOUNT_JSON` (optional, JSON string)
 - `FIREBASE_SERVICE_ACCOUNT_PATH` (optional, file path)
-- `GOOGLE_OAUTH_CLIENT_ID` (optional, enables Google token audience check)
+- `GOOGLE_OAUTH_CLIENT_ID` (required for backend OAuth login, also enables token aud check)
+- `GOOGLE_OAUTH_CLIENT_SECRET` (required for backend OAuth login)
+- `AUTH_SESSION_SECRET` (required for backend OAuth login, used to sign session tokens)
 - `ALLOWED_EMAILS` (optional, comma-separated list)
 - `ALLOWED_DOMAIN` (optional, single domain, example: `example.com`)
 
@@ -47,5 +52,6 @@ gcloud run deploy qb-support-backend \
 ```
 
 ## Extension config
-Set the Chat Backend URL in the extension settings to your service base URL (e.g. `https://your-service.run.app`).
+The extension uses `GET /auth/start` for login and polls `GET /auth/session`.
+Make sure the Google OAuth client includes `https://<service-url>/auth/callback` in its authorized redirect URIs.
 If you use a custom domain, ensure the extension `host_permissions` includes it.
