@@ -134,6 +134,7 @@ let chatPanel: HTMLDivElement | null = null;
 let chatToggle: HTMLButtonElement | null = null;
 let chatMessagesEl: HTMLDivElement | null = null;
 let chatInput: HTMLTextAreaElement | null = null;
+let lastHintDraftSource: HTMLTextAreaElement | HTMLInputElement | null = null;
 let chatSendButton: HTMLButtonElement | null = null;
 let chatStatusField: HTMLElement | null = null;
 let chatInputWrap: HTMLDivElement | null = null;
@@ -1948,6 +1949,50 @@ function attachTemplateEditJump(button: HTMLButtonElement, index: number) {
   );
 }
 
+function buildHintQuickMessage(draft: string): string {
+  const base =
+    "絶妙なヒント（答えありきでなく、所見や症状から推論する視点で思考力を養う答えに迫りすぎないもの）をどうぞ。";
+  if (!draft) return base;
+  return `${base}今の考察は以下です."${draft}"`;
+}
+
+function isEligibleHintDraftSource(
+  target: EventTarget | null
+): target is HTMLInputElement | HTMLTextAreaElement {
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return false;
+  if (target instanceof HTMLInputElement) {
+    const type = (target.type || "text").toLowerCase();
+    if (
+      type === "password" ||
+      type === "hidden" ||
+      type === "checkbox" ||
+      type === "radio" ||
+      type === "button" ||
+      type === "submit" ||
+      type === "file"
+    ) {
+      return false;
+    }
+  }
+  if (target.classList.contains("qb-support-chat-api-key")) return false;
+  return true;
+}
+
+function resolveHintDraft(): string {
+  const chatDraft = chatInput?.value?.trim() ?? "";
+  if (chatDraft) return chatDraft;
+  const chatTextarea = document.querySelector(
+    ".qb-support-chat-textarea"
+  ) as HTMLTextAreaElement | null;
+  const fallbackDraft = chatTextarea?.value?.trim() ?? "";
+  if (fallbackDraft) return fallbackDraft;
+  if (lastHintDraftSource && document.contains(lastHintDraftSource)) {
+    const value = lastHintDraftSource.value?.trim() ?? "";
+    if (value) return value;
+  }
+  return "";
+}
+
 function updateHintQuickButton() {
   if (window !== window.top) return;
   const hintEntry = getHintTemplate();
@@ -1979,7 +2024,11 @@ function updateHintQuickButton() {
     hintQuickButton.removeAttribute("data-shortcut");
   }
   hintQuickButton.onclick = () => {
-    void sendTemplateMessage(hintEntry.template);
+    if (!chatInput) {
+      ensureChatUI();
+    }
+    const message = buildHintQuickMessage(resolveHintDraft());
+    void sendTemplateMessage(message);
   };
   attachTemplateEditJump(hintQuickButton, hintEntry.index);
   const parent = revealButton.parentElement;
@@ -3338,6 +3387,13 @@ function startObservers() {
 }
 
 function attachEventHandlers() {
+  const trackHintDraftSource = (event: Event) => {
+    const target = event.target;
+    if (!isEligibleHintDraftSource(target)) return;
+    lastHintDraftSource = target;
+  };
+  document.addEventListener("focusin", trackHintDraftSource, true);
+  document.addEventListener("input", trackHintDraftSource, true);
   window.addEventListener(
     "keydown",
     (event) => {

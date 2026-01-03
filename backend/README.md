@@ -8,8 +8,10 @@ This service proxies OpenAI Responses API for logged-in users. It verifies Fireb
 - `GET /auth/session`
 - `GET /auth/callback`
 - `GET /auth/me`
+- `GET /me/entitlement`
 - `GET /settings`
 - `POST /settings`
+- `POST /iap/apple/transaction`
 - `POST /chat/stream` (streaming)
 - `POST /chat` (non-stream)
 
@@ -19,9 +21,11 @@ curl -i "$SERVICE_URL/health"
 ```
 
 ## Usage policy
-- Authenticated users are restricted to `gpt-4.1` only.
-- Rate limit: 60 requests per user per hour.
-- Rate limiting uses Firestore (`qb_support_rate_limits_v1`).
+- Default model is `gpt-5-mini`. For backward compatibility, `gpt-4.1` is still allowed unless you enforce a stricter allowlist.
+- Special user allowlist can access `gpt-5.2`, `gpt-5.2-chat-latest`, `gpt-4.1`.
+- Rate limit: 100 requests per user per hour.
+- Daily limit: 50/day (free), 500/day (plus/special). Resets at JST midnight.
+- Usage tracking uses Firestore (`qb_support_usage_v2`).
 
 ## Environment
 - `OPENAI_API_KEY` (required)
@@ -33,6 +37,10 @@ curl -i "$SERVICE_URL/health"
 - `AUTH_SESSION_SECRET` (required for backend OAuth login, used to sign session tokens)
 - `ALLOWED_EMAILS` (optional, comma-separated list)
 - `ALLOWED_DOMAIN` (optional, single domain, example: `example.com`)
+- `APPLE_IAP_ENVIRONMENT` (optional, `production` or `sandbox`, defaults to `production`)
+- `APPLE_BUNDLE_ID` (optional, bundleId validation)
+- `APPLE_SUBSCRIPTION_PRODUCT_ID` (optional, productId validation)
+- `IAP_PAYWALL_URL` (optional, returned in rate limit errors for daily cap)
 
 ## Local dev
 ```bash

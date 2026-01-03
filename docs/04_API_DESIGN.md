@@ -57,16 +57,20 @@
   - Google OAuth リダイレクト先
 - `GET /auth/me`
   - セッション検証（`Authorization: Bearer <token>`）
+- `GET /me/entitlement`
+  - 課金状態（free/plus）と残回数（hour/day）を取得
 - `GET /settings`
   - リモート設定取得（要認証）
 - `POST /settings`
   - リモート設定保存（要認証）
+- `POST /iap/apple/transaction`
+  - StoreKit 2 の `signedTransactionInfo` を送信して検証（要認証）
 - `POST /chat`
   - OpenAI `chat/completions` へのプロキシ（要認証）
-  - backend利用時は 60 req/hour のレート制限
+  - backend利用時は 100 req/hour & 日次制限（free 50 / plus 500）
 - `POST /chat/stream`
   - OpenAI `responses` のストリーミング（要認証）
-  - backend利用時は 60 req/hour のレート制限
+  - backend利用時は 100 req/hour & 日次制限（free 50 / plus 500）
 
 ## Core Functions
 - `extractQuestionInfo(doc: Document, url: string): QuestionInfo | null`

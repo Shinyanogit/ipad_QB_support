@@ -17,11 +17,36 @@ const ALLOWED_EMAILS = (process.env.ALLOWED_EMAILS ?? "")
   .map((value) => value.trim().toLowerCase())
   .filter(Boolean);
 const ALLOWED_DOMAIN = (process.env.ALLOWED_DOMAIN ?? "").trim().toLowerCase();
-const RATE_LIMIT_MAX = 60;
-const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const RATE_LIMIT_HOURLY_MAX = 100;
+const RATE_LIMIT_HOURLY_WINDOW_MS = 60 * 60 * 1000;
+const RATE_LIMIT_DAILY_FREE_MAX = 50;
+const RATE_LIMIT_DAILY_PLUS_MAX = 500;
 const BACKEND_DEFAULT_MODEL = "gpt-5-mini";
-const BACKEND_ALLOWED_MODELS = new Set(["gpt-5-mini", "gpt-4.1"]);
-const RATE_LIMIT_COLLECTION = "qb_support_rate_limits_v1";
+const BACKEND_ALLOWED_MODELS_DEFAULT = new Set(["gpt-5-mini", "gpt-4.1"]);
+const BACKEND_ALLOWED_MODELS_SPECIAL = new Set([
+  "gpt-5-mini",
+  "gpt-5.2",
+  "gpt-5.2-chat-latest",
+  "gpt-4.1",
+]);
+const SPECIAL_PLUS_EMAIL = "ymgtsny7@gmail.com";
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const USAGE_COLLECTION = "qb_support_usage_v2";
+const ENTITLEMENTS_COLLECTION = "qb_support_entitlements_v1";
+const APPLE_IAP_ENVIRONMENT = (process.env.APPLE_IAP_ENVIRONMENT ?? "production")
+  .trim()
+  .toLowerCase();
+const APPLE_BUNDLE_ID = (process.env.APPLE_BUNDLE_ID ?? "").trim();
+const APPLE_SUBSCRIPTION_PRODUCT_ID = (process.env.APPLE_SUBSCRIPTION_PRODUCT_ID ?? "").trim();
+const IAP_PAYWALL_URL = (process.env.IAP_PAYWALL_URL ?? "").trim();
+const APPLE_JWS_PROD_URL = "https://api.storekit.itunes.apple.com/inApps/v1/jwsPublicKeys";
+const APPLE_JWS_SANDBOX_URL =
+  "https://api.storekit-sandbox.itunes.apple.com/inApps/v1/jwsPublicKeys";
+const APPLE_JWS_URL =
+  APPLE_IAP_ENVIRONMENT === "sandbox" ? APPLE_JWS_SANDBOX_URL : APPLE_JWS_PROD_URL;
+type JoseModule = typeof import("jose");
+type JwkSet = ReturnType<JoseModule["createRemoteJWKSet"]>;
+let appleJwks: JwkSet | null = null;
 const SETTINGS_COLLECTION = "qb_support_settings";
 const AUTH_SESSION_COLLECTION = "qb_support_auth_sessions";
 const AUTH_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -33,9 +58,63 @@ type AuthContext = {
   source: "firebase" | "google";
 };
 
-const resolveBackendModel = (requested?: string): string => {
+type EntitlementTier = "free" | "plus" | "special";
+
+type EntitlementStatus = {
+  tier: EntitlementTier;
+  active: boolean;
+  expiresAt?: number;
+  productId?: string;
+  environment?: string;
+  source: "special" | "iap" | "none";
+};
+
+type UsageWindow = {
+  limit: number;
+  remaining: number;
+  resetAt: number;
+  count: number;
+};
+
+type UsageResult = {
+  allowed: boolean;
+  reason?: "hourly" | "daily";
+  hourly: UsageWindow;
+  daily: UsageWindow;
+};
+
+type AppleTransactionPayload = {
+  transactionId?: string;
+  originalTransactionId?: string;
+  productId?: string;
+  bundleId?: string;
+  environment?: string;
+  expiresDate?: number | string;
+  purchaseDate?: number | string;
+  revocationDate?: number | string;
+  revocationReason?: number | string;
+  appAccountToken?: string;
+};
+
+type AppleTransactionInfo = {
+  transactionId: string;
+  originalTransactionId: string;
+  productId: string;
+  bundleId: string;
+  environment: string;
+  expiresAt: number | null;
+  purchaseAt: number | null;
+  revocationAt: number | null;
+  revocationReason: number | null;
+  appAccountToken: string | null;
+};
+
+const resolveBackendModel = (requested: string | undefined, auth: AuthContext): string => {
   const trimmed = typeof requested === "string" ? requested.trim() : "";
-  return BACKEND_ALLOWED_MODELS.has(trimmed) ? trimmed : BACKEND_DEFAULT_MODEL;
+  const allowed = isSpecialUser(auth.email)
+    ? BACKEND_ALLOWED_MODELS_SPECIAL
+    : BACKEND_ALLOWED_MODELS_DEFAULT;
+  return allowed.has(trimmed) ? trimmed : BACKEND_DEFAULT_MODEL;
 };
 
 const missingEnv: string[] = [];
@@ -55,6 +134,15 @@ if (!GOOGLE_OAUTH_CLIENT_SECRET) {
 if (!AUTH_SESSION_SECRET) {
   console.warn("AUTH_SESSION_SECRET is not set. Backend OAuth login is disabled.");
 }
+if (APPLE_IAP_ENVIRONMENT !== "sandbox" && APPLE_IAP_ENVIRONMENT !== "production") {
+  console.warn("APPLE_IAP_ENVIRONMENT should be 'sandbox' or 'production'.");
+}
+if (!APPLE_BUNDLE_ID) {
+  console.warn("APPLE_BUNDLE_ID is not set. IAP bundleId checks are disabled.");
+}
+if (!APPLE_SUBSCRIPTION_PRODUCT_ID) {
+  console.warn("APPLE_SUBSCRIPTION_PRODUCT_ID is not set. IAP productId checks are disabled.");
+}
 
 const app = express();
 app.disable("x-powered-by");
@@ -66,7 +154,9 @@ app.use((req, _res, next) => {
     req.url.startsWith("/health") ||
     req.url.startsWith("/chat") ||
     req.url.startsWith("/auth") ||
-    req.url.startsWith("/settings")
+    req.url.startsWith("/settings") ||
+    req.url.startsWith("/iap") ||
+    req.url.startsWith("/me")
   ) {
     console.log("[req]", req.method, req.url);
   }
@@ -310,20 +400,112 @@ app.post("/settings", async (req, res) => {
   }
 });
 
+app.post("/iap/apple/transaction", async (req, res) => {
+  const auth = await authenticateRequest(req, res);
+  if (!auth) return;
+  const body = req.body as { signedTransactionInfo?: string } | undefined;
+  const jws =
+    typeof body?.signedTransactionInfo === "string" ? body.signedTransactionInfo.trim() : "";
+  if (!jws) {
+    res.status(400).json({ error: "Missing signedTransactionInfo." });
+    return;
+  }
+  let payload: AppleTransactionPayload;
+  try {
+    payload = await verifyAppleTransactionInfo(jws);
+  } catch (error) {
+    console.warn("IAP JWS verification failed", error);
+    res.status(400).json({ error: "Invalid signedTransactionInfo." });
+    return;
+  }
+  const transaction = normalizeAppleTransaction(payload);
+  if (!transaction) {
+    res.status(400).json({ error: "Invalid transaction payload." });
+    return;
+  }
+  const validationError = validateAppleTransaction(transaction);
+  if (validationError) {
+    res.status(400).json({ error: validationError });
+    return;
+  }
+
+  const now = Date.now();
+  const isRevoked = transaction.revocationAt !== null;
+  const expiresAt = transaction.expiresAt ?? 0;
+  const active = Boolean(!isRevoked && expiresAt && expiresAt > now);
+  const status = active ? "active" : isRevoked ? "revoked" : "expired";
+
+  try {
+    const db = getFirestore();
+    await db.collection(ENTITLEMENTS_COLLECTION).doc(auth.uid).set(
+      {
+        status,
+        productId: transaction.productId,
+        bundleId: transaction.bundleId,
+        environment: transaction.environment,
+        transactionId: transaction.transactionId,
+        originalTransactionId: transaction.originalTransactionId,
+        expiresAt: transaction.expiresAt,
+        purchaseAt: transaction.purchaseAt,
+        revocationAt: transaction.revocationAt,
+        revocationReason: transaction.revocationReason,
+        appAccountToken: transaction.appAccountToken,
+        email: auth.email,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    console.warn("IAP entitlement store failed", error);
+    res.status(503).json({ error: "Entitlement store failed." });
+    return;
+  }
+
+  res.status(200).json({
+    ok: true,
+    entitlement: {
+      status,
+      expiresAt: transaction.expiresAt,
+      productId: transaction.productId,
+      environment: transaction.environment,
+    },
+  });
+});
+
+app.get("/me/entitlement", async (req, res) => {
+  const auth = await authenticateRequest(req, res);
+  if (!auth) return;
+  try {
+    const entitlement = await resolveEntitlement(auth);
+    const dailyLimit =
+      entitlement.tier === "free" ? RATE_LIMIT_DAILY_FREE_MAX : RATE_LIMIT_DAILY_PLUS_MAX;
+    const usage = await getUsageSnapshot(auth.uid, auth.email, dailyLimit);
+    res.status(200).json({
+      uid: auth.uid,
+      email: auth.email,
+      entitlement,
+      usage,
+    });
+  } catch (error) {
+    console.warn("Entitlement fetch failed", error);
+    res.status(503).json({ error: "Entitlement fetch failed." });
+  }
+});
+
 app.post("/chat", async (req, res) => {
   if (!assertRequiredConfig(res)) return;
   const auth = await authenticateRequest(req, res);
   if (!auth) return;
 
   const body = req.body as { model?: string; messages?: unknown } | undefined;
-  const policyError = await enforceUsagePolicy(auth.uid);
+  const policyError = await enforceUsagePolicy(auth);
   if (policyError) {
     res.status(policyError.status).json(policyError.body);
     return;
   }
   const messages = Array.isArray(body?.messages) ? body?.messages : [];
 
-  const model = resolveBackendModel(body?.model);
+  const model = resolveBackendModel(body?.model, auth);
   const payload: Record<string, unknown> = { model, messages };
 
   const upstream = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -364,13 +546,13 @@ app.post("/chat/stream", async (req, res) => {
       ? body.previous_response_id
       : null;
 
-  const policyError = await enforceUsagePolicy(auth.uid);
+  const policyError = await enforceUsagePolicy(auth);
   if (policyError) {
     res.status(policyError.status).json(policyError.body);
     return;
   }
 
-  const model = resolveBackendModel(body?.model);
+  const model = resolveBackendModel(body?.model, auth);
   const payload: Record<string, unknown> = {
     model,
     input,
@@ -656,72 +838,210 @@ function assertAuthConfig(res: express.Response): boolean {
 }
 
 async function enforceUsagePolicy(
-  uid: string
+  auth: AuthContext
 ): Promise<{ status: number; body: Record<string, unknown> } | null> {
   try {
-    const result = await consumeRateLimit(uid);
-    if (!result.allowed) {
+    const entitlement = await resolveEntitlement(auth);
+    const dailyLimit =
+      entitlement.tier === "free" ? RATE_LIMIT_DAILY_FREE_MAX : RATE_LIMIT_DAILY_PLUS_MAX;
+    const usage = await consumeUsage(auth.uid, auth.email, dailyLimit);
+    if (!usage.allowed) {
       return {
         status: 429,
-        body: {
-          error: "Rate limit exceeded.",
-          limit: RATE_LIMIT_MAX,
-          remaining: 0,
-          resetAt: result.resetAt,
-        },
+        body: buildUsageErrorBody(entitlement, usage),
       };
     }
   } catch (error) {
-    console.warn("Rate limit check failed", error);
+    console.warn("Usage policy check failed", error);
     return {
       status: 503,
-      body: { error: "Rate limit check failed." },
+      body: { error: "Usage policy check failed." },
     };
   }
   return null;
 }
 
-async function consumeRateLimit(
-  uid: string
-): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
+function buildUsageErrorBody(entitlement: EntitlementStatus, usage: UsageResult) {
+  const isDaily = usage.reason === "daily";
+  const paywall = IAP_PAYWALL_URL || null;
+  const dailyMessage =
+    entitlement.tier === "free"
+      ? "本日の上限に達しました。サブスクで上限を引き上げるにはアプリから購入してください。"
+      : "本日の上限に達しました。明日(JST)にリセットされます。追加枠が必要な場合はアプリから購入してください。";
+  const hourlyMessage =
+    "1時間あたりの上限に達しました。しばらくしてからお試しください。日次上限を引き上げたい場合はアプリから購入してください。";
+  return {
+    error: "Rate limit exceeded.",
+    reason: usage.reason ?? "unknown",
+    message: isDaily ? dailyMessage : hourlyMessage,
+    purchase_url: paywall,
+    entitlement: {
+      tier: entitlement.tier,
+      active: entitlement.active,
+      expiresAt: entitlement.expiresAt ?? null,
+      productId: entitlement.productId ?? null,
+    },
+    hourly: usage.hourly,
+    daily: usage.daily,
+  };
+}
+
+async function consumeUsage(
+  uid: string,
+  email: string,
+  dailyLimit: number
+): Promise<UsageResult> {
   const db = getFirestore();
-  const ref = db.collection(RATE_LIMIT_COLLECTION).doc(uid);
+  const ref = db.collection(USAGE_COLLECTION).doc(uid);
   const now = Date.now();
+  const { dayKey, dayResetAt } = getJstDayWindow(now);
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
-    const data = snap.exists ? (snap.data() as { windowStart?: number; count?: number }) : {};
-    const windowStart = typeof data.windowStart === "number" ? data.windowStart : 0;
-    const count = typeof data.count === "number" ? data.count : 0;
-    const windowExpired = !windowStart || now - windowStart >= RATE_LIMIT_WINDOW_MS;
-    if (windowExpired) {
-      tx.set(
-        ref,
-        { windowStart: now, count: 1, updatedAt: now },
-        { merge: true }
-      );
-      return {
-        allowed: true,
-        remaining: RATE_LIMIT_MAX - 1,
-        resetAt: now + RATE_LIMIT_WINDOW_MS,
-      };
-    }
-    if (count >= RATE_LIMIT_MAX) {
+    const data = snap.exists
+      ? (snap.data() as {
+          hourWindowStart?: number;
+          hourCount?: number;
+          dayKey?: string;
+          dayCount?: number;
+        })
+      : {};
+
+    const hourWindowStart =
+      typeof data.hourWindowStart === "number" ? data.hourWindowStart : 0;
+    const hourCount = typeof data.hourCount === "number" ? data.hourCount : 0;
+    const dayKeyStored = typeof data.dayKey === "string" ? data.dayKey : "";
+    const dayCountStored = typeof data.dayCount === "number" ? data.dayCount : 0;
+
+    const hourExpired = !hourWindowStart || now - hourWindowStart >= RATE_LIMIT_HOURLY_WINDOW_MS;
+    const nextHourWindowStart = hourExpired ? now : hourWindowStart;
+    const nextHourCount = hourExpired ? 0 : hourCount;
+
+    const dayExpired = !dayKeyStored || dayKeyStored !== dayKey;
+    const nextDayCount = dayExpired ? 0 : dayCountStored;
+
+    const hourlyRemaining = Math.max(0, RATE_LIMIT_HOURLY_MAX - nextHourCount);
+    const dailyRemaining = Math.max(0, dailyLimit - nextDayCount);
+
+    const hourlyBlocked = nextHourCount >= RATE_LIMIT_HOURLY_MAX;
+    const dailyBlocked = nextDayCount >= dailyLimit;
+
+    if (hourlyBlocked || dailyBlocked) {
       return {
         allowed: false,
-        remaining: 0,
-        resetAt: windowStart + RATE_LIMIT_WINDOW_MS,
+        reason: hourlyBlocked ? "hourly" : "daily",
+        hourly: {
+          limit: RATE_LIMIT_HOURLY_MAX,
+          remaining: hourlyRemaining,
+          resetAt: nextHourWindowStart + RATE_LIMIT_HOURLY_WINDOW_MS,
+          count: nextHourCount,
+        },
+        daily: {
+          limit: dailyLimit,
+          remaining: dailyRemaining,
+          resetAt: dayResetAt,
+          count: nextDayCount,
+        },
       };
     }
-    const nextCount = count + 1;
+
+    const updatedHourCount = nextHourCount + 1;
+    const updatedDayCount = nextDayCount + 1;
     tx.set(
       ref,
-      { windowStart, count: nextCount, updatedAt: now },
+      {
+        hourWindowStart: nextHourWindowStart,
+        hourCount: updatedHourCount,
+        dayKey,
+        dayCount: updatedDayCount,
+        updatedAt: now,
+        email,
+      },
       { merge: true }
     );
+
     return {
       allowed: true,
-      remaining: Math.max(0, RATE_LIMIT_MAX - nextCount),
-      resetAt: windowStart + RATE_LIMIT_WINDOW_MS,
+      hourly: {
+        limit: RATE_LIMIT_HOURLY_MAX,
+        remaining: Math.max(0, RATE_LIMIT_HOURLY_MAX - updatedHourCount),
+        resetAt: nextHourWindowStart + RATE_LIMIT_HOURLY_WINDOW_MS,
+        count: updatedHourCount,
+      },
+      daily: {
+        limit: dailyLimit,
+        remaining: Math.max(0, dailyLimit - updatedDayCount),
+        resetAt: dayResetAt,
+        count: updatedDayCount,
+      },
+    };
+  });
+}
+
+async function getUsageSnapshot(
+  uid: string,
+  email: string,
+  dailyLimit: number
+): Promise<UsageResult> {
+  const db = getFirestore();
+  const ref = db.collection(USAGE_COLLECTION).doc(uid);
+  const now = Date.now();
+  const { dayKey, dayResetAt } = getJstDayWindow(now);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists
+      ? (snap.data() as {
+          hourWindowStart?: number;
+          hourCount?: number;
+          dayKey?: string;
+          dayCount?: number;
+        })
+      : {};
+
+    const hourWindowStart =
+      typeof data.hourWindowStart === "number" ? data.hourWindowStart : 0;
+    const hourCount = typeof data.hourCount === "number" ? data.hourCount : 0;
+    const dayKeyStored = typeof data.dayKey === "string" ? data.dayKey : "";
+    const dayCountStored = typeof data.dayCount === "number" ? data.dayCount : 0;
+
+    const hourExpired = !hourWindowStart || now - hourWindowStart >= RATE_LIMIT_HOURLY_WINDOW_MS;
+    const nextHourWindowStart = hourExpired ? now : hourWindowStart;
+    const nextHourCount = hourExpired ? 0 : hourCount;
+
+    const dayExpired = !dayKeyStored || dayKeyStored !== dayKey;
+    const nextDayCount = dayExpired ? 0 : dayCountStored;
+
+    if (hourExpired || dayExpired || !snap.exists) {
+      tx.set(
+        ref,
+        {
+          hourWindowStart: nextHourWindowStart,
+          hourCount: nextHourCount,
+          dayKey,
+          dayCount: nextDayCount,
+          updatedAt: now,
+          email,
+        },
+        { merge: true }
+      );
+    }
+
+    const hourlyBlocked = nextHourCount >= RATE_LIMIT_HOURLY_MAX;
+    const dailyBlocked = nextDayCount >= dailyLimit;
+    return {
+      allowed: !(hourlyBlocked || dailyBlocked),
+      reason: hourlyBlocked ? "hourly" : dailyBlocked ? "daily" : undefined,
+      hourly: {
+        limit: RATE_LIMIT_HOURLY_MAX,
+        remaining: Math.max(0, RATE_LIMIT_HOURLY_MAX - nextHourCount),
+        resetAt: nextHourWindowStart + RATE_LIMIT_HOURLY_WINDOW_MS,
+        count: nextHourCount,
+      },
+      daily: {
+        limit: dailyLimit,
+        remaining: Math.max(0, dailyLimit - nextDayCount),
+        resetAt: dayResetAt,
+        count: nextDayCount,
+      },
     };
   });
 }
@@ -839,4 +1159,129 @@ function isAllowedEmail(email: string): boolean {
   if (ALLOWED_EMAILS.length && !ALLOWED_EMAILS.includes(normalized)) return false;
   if (ALLOWED_DOMAIN && !normalized.endsWith(`@${ALLOWED_DOMAIN}`)) return false;
   return true;
+}
+
+function isSpecialUser(email: string): boolean {
+  return email.trim().toLowerCase() === SPECIAL_PLUS_EMAIL;
+}
+
+async function resolveEntitlement(auth: AuthContext): Promise<EntitlementStatus> {
+  if (isSpecialUser(auth.email)) {
+    return { tier: "special", active: true, source: "special" };
+  }
+  const db = getFirestore();
+  const ref = db.collection(ENTITLEMENTS_COLLECTION).doc(auth.uid);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    return { tier: "free", active: false, source: "none" };
+  }
+  const data = snap.data() as
+    | {
+        status?: string;
+        expiresAt?: number;
+        productId?: string;
+        environment?: string;
+        revocationAt?: number | null;
+      }
+    | undefined;
+  const expiresAt = typeof data?.expiresAt === "number" ? data.expiresAt : 0;
+  const revoked = Boolean(data?.status === "revoked" || data?.revocationAt);
+  const active = Boolean(!revoked && expiresAt && expiresAt > Date.now());
+  return {
+    tier: active ? "plus" : "free",
+    active,
+    expiresAt: active ? expiresAt : undefined,
+    productId: data?.productId,
+    environment: data?.environment,
+    source: "iap",
+  };
+}
+
+function getJstDayWindow(nowMs: number): { dayKey: string; dayResetAt: number } {
+  const jst = new Date(nowMs + JST_OFFSET_MS);
+  const year = jst.getUTCFullYear();
+  const month = jst.getUTCMonth();
+  const day = jst.getUTCDate();
+  const dayKey = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const nextDayStartUtc = Date.UTC(year, month, day + 1) - JST_OFFSET_MS;
+  if (Number.isNaN(nextDayStartUtc)) {
+    return { dayKey, dayResetAt: nowMs + 24 * 60 * 60 * 1000 };
+  }
+  return { dayKey, dayResetAt: nextDayStartUtc };
+}
+
+function parseAppleDate(input?: number | string): number | null {
+  if (typeof input === "number" && Number.isFinite(input)) return input;
+  if (typeof input !== "string") return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (Number.isNaN(parsed)) return null;
+  return parsed;
+}
+
+function normalizeAppleTransaction(
+  payload: AppleTransactionPayload
+): AppleTransactionInfo | null {
+  const transactionId = (payload.transactionId ?? "").trim();
+  const originalTransactionId = (payload.originalTransactionId ?? "").trim() || transactionId;
+  const productId = (payload.productId ?? "").trim();
+  const bundleId = (payload.bundleId ?? "").trim();
+  const environment = (payload.environment ?? "").trim().toLowerCase();
+  if (!transactionId || !originalTransactionId || !productId || !bundleId) {
+    return null;
+  }
+  return {
+    transactionId,
+    originalTransactionId,
+    productId,
+    bundleId,
+    environment,
+    expiresAt: parseAppleDate(payload.expiresDate),
+    purchaseAt: parseAppleDate(payload.purchaseDate),
+    revocationAt: parseAppleDate(payload.revocationDate),
+    revocationReason: (() => {
+      if (typeof payload.revocationReason === "number") return payload.revocationReason;
+      if (!payload.revocationReason) return null;
+      const parsed = Number(payload.revocationReason);
+      return Number.isNaN(parsed) ? null : parsed;
+    })(),
+    appAccountToken: payload.appAccountToken ? payload.appAccountToken.trim() : null,
+  };
+}
+
+function validateAppleTransaction(transaction: AppleTransactionInfo): string | null {
+  if (APPLE_BUNDLE_ID && transaction.bundleId !== APPLE_BUNDLE_ID) {
+    return "Bundle ID mismatch.";
+  }
+  if (
+    APPLE_SUBSCRIPTION_PRODUCT_ID &&
+    transaction.productId !== APPLE_SUBSCRIPTION_PRODUCT_ID
+  ) {
+    return "Product ID mismatch.";
+  }
+  if (
+    APPLE_IAP_ENVIRONMENT &&
+    (transaction.environment || APPLE_IAP_ENVIRONMENT === "sandbox") &&
+    transaction.environment !== APPLE_IAP_ENVIRONMENT
+  ) {
+    return "Environment mismatch.";
+  }
+  return null;
+}
+
+async function verifyAppleTransactionInfo(
+  jws: string
+): Promise<AppleTransactionPayload> {
+  const { jwtVerify } = await import("jose");
+  const jwks = await getAppleJwks();
+  const { payload } = await jwtVerify(jws, jwks, { algorithms: ["ES256"] });
+  return payload as AppleTransactionPayload;
+}
+
+async function getAppleJwks(): Promise<JwkSet> {
+  if (appleJwks) return appleJwks;
+  const { createRemoteJWKSet } = await import("jose");
+  appleJwks = createRemoteJWKSet(new URL(APPLE_JWS_URL));
+  return appleJwks;
 }

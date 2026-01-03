@@ -15,19 +15,37 @@
     answerSection: "#answerSection",
     answerRevealButton: "#answerSection .btn"
   };
-  var NEXT_KEYWORDS = ["\u6B21\u3078", "\u6B21\u306E\u554F\u984C", "\u6B21", "Next"];
-  var PREV_KEYWORDS = ["\u524D\u3078", "\u524D\u306E\u554F\u984C", "\u524D", "Prev", "Previous"];
+  var NEXT_KEYWORDS = ["次へ", "次の問題", "次", "Next"];
+  var PREV_KEYWORDS = ["前へ", "前の問題", "前", "Prev", "Previous"];
   var SUBMIT_KEYWORDS = [
-    "\u56DE\u7B54\u3092\u9001\u4FE1",
-    "\u89E3\u7B54\u3092\u9001\u4FE1",
-    "\u56DE\u7B54\u3092\u63D0\u51FA",
-    "\u89E3\u7B54\u3092\u63D0\u51FA",
-    "\u9001\u4FE1\u3059\u308B",
-    "\u63D0\u51FA\u3059\u308B",
-    "\u5224\u5B9A\u3059\u308B",
-    "\u63A1\u70B9\u3059\u308B"
+    "回答を送信",
+    "解答を送信",
+    "回答を提出",
+    "解答を提出",
+    "送信する",
+    "提出する",
+    "判定する",
+    "採点する"
   ];
-  var REVEAL_KEYWORDS = ["\u89E3\u7B54\u3092\u78BA\u8A8D\u3059\u308B", "\u89E3\u7B54\u3092\u78BA\u8A8D", "\u89E3\u7B54\u3092\u898B\u308B", "\u89E3\u8AAC\u3092\u898B\u308B"];
+  var REVEAL_KEYWORDS = ["解答を確認する", "解答を確認", "解答を見る", "解説を見る"];
+  var HINT_BASE_PHRASE = "絶妙なヒント";
+  var HINT_ANSWER_TEXT_LIMIT = 2400;
+  var HINT_ANSWER_HTML_SCAN_LIMIT = 400000;
+  var HINT_ANSWER_SCRIPT_SCAN_LIMIT = 200000;
+  var HINT_ANSWER_KEYWORDS = [/解説/, /解答/, /正解/, /解法/];
+  var HINT_ANSWER_MIN_LENGTH = 80;
+  var HINT_ANSWER_CANDIDATE_SELECTORS = [
+    "#answerSection",
+    "[id*=\"answer\"]",
+    "[class*=\"answer\"]",
+    "[id*=\"explanation\"]",
+    "[class*=\"explanation\"]",
+    "[id*=\"kaisetsu\"]",
+    "[class*=\"kaisetsu\"]",
+    "[data-answer]",
+    "[data-explanation]",
+    "[data-ans]"
+  ];
   function extractQuestionInfo(doc, url) {
     const container = doc.querySelector(SELECTORS.container);
     if (!container) return null;
@@ -66,6 +84,427 @@
       tags: info?.tags ?? [],
       updatedAt: Date.now()
     };
+  }
+  function extractAnswerExplanationContext(doc) {
+    const answerSection = doc.querySelector(SELECTORS.answerSection);
+    const sectionText = extractAnswerTextFromElement(answerSection);
+    if (sectionText) {
+      return {
+        text: sectionText,
+        meta: buildAnswerMeta("answer-section", sectionText, answerSection)
+      };
+    }
+    const main = extractAnswerFromContentsMain(doc);
+    if (main.text) return main;
+    const candidate = extractAnswerFromCandidates(doc);
+    if (candidate.text) return candidate;
+    const block = extractAnswerFromTextBlocks(doc);
+    if (block.text) return block;
+    const fromScript = extractAnswerFromScriptText(doc);
+    if (fromScript.text) return fromScript;
+    const fromHtml = extractAnswerFromDocumentHtml(doc);
+    if (fromHtml.text) return fromHtml;
+    const fromDoc = extractAnswerFromDocumentText(doc);
+    if (fromDoc.text) return fromDoc;
+    return { text: "", meta: { source: "empty", length: 0, preview: "" } };
+  }
+  function buildAnswerMeta(source, text, element, extra) {
+    return {
+      source,
+      length: text.length,
+      preview: getHintAnswerPreview(text),
+      tag: element instanceof HTMLElement ? element.tagName : null,
+      id: element instanceof HTMLElement ? element.id || null : null,
+      className: element instanceof HTMLElement ? element.className || null : null,
+      ...(extra ?? {})
+    };
+  }
+  function extractAnswerTextFromElement(element) {
+    if (!element) return "";
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll("button, .btn, script, style").forEach((node) => node.remove());
+    let text = normalizeSpace(clone.textContent ?? "");
+    if (!text) return "";
+    for (const keyword of REVEAL_KEYWORDS) {
+      text = text.split(keyword).join("");
+    }
+    text = normalizeSpace(text);
+    if (!text) return "";
+    return text.slice(0, HINT_ANSWER_TEXT_LIMIT);
+  }
+  function sliceAnswerByKeyword(text) {
+    if (!text) return "";
+    const match = text.match(/解説|正解|解法|解答/);
+    if (!match || match.index == null) return text;
+    const index = match.index;
+    if (text.length - index < HINT_ANSWER_MIN_LENGTH) return text;
+    return text.slice(index);
+  }
+  function extractAnswerFromContentsMain(doc) {
+    const element = doc.querySelector("div.contents-main");
+    if (!(element instanceof HTMLElement)) {
+      logDebug("hint-answer-main", { found: false });
+      return { text: "", meta: { source: "contents-main", found: false } };
+    }
+    if (isSupportUiElement(element)) {
+      logDebug("hint-answer-main", { found: false, reason: "ui" });
+      return { text: "", meta: { source: "contents-main", found: false, reason: "ui" } };
+    }
+    const raw = extractAnswerTextFromElement(element);
+    if (!raw) {
+      logDebug("hint-answer-main", { found: true, usable: 0 });
+      return { text: "", meta: { source: "contents-main", found: true, usable: 0 } };
+    }
+    const sliced = sliceAnswerByKeyword(raw);
+    const questionText = currentSnapshot?.questionText ?? extractQuestionSnapshot(doc, location.href)?.questionText ?? "";
+    const score = scoreAnswerCandidateText(sliced, questionText);
+    if (!score) {
+      logDebug("hint-answer-main", { found: true, usable: 0, length: sliced.length });
+      return { text: "", meta: { source: "contents-main", found: true, usable: 0 } };
+    }
+    const trimmed = sliced.slice(0, HINT_ANSWER_TEXT_LIMIT);
+    const meta = buildAnswerMeta("contents-main", trimmed, element, {
+      score,
+      keywordHit: hasHintAnswerKeywords(trimmed)
+    });
+    logDebug("hint-answer-main", meta);
+    return { text: trimmed, meta };
+  }
+  function extractAnswerFromCandidates(doc) {
+    const candidates = /* @__PURE__ */ new Set();
+    for (const selector of HINT_ANSWER_CANDIDATE_SELECTORS) {
+      doc.querySelectorAll(selector).forEach((node) => candidates.add(node));
+    }
+    if (!candidates.size) {
+      logDebug("hint-answer-candidate", { found: 0 });
+      return { text: "", meta: { source: "candidate", found: 0 } };
+    }
+    const questionText = currentSnapshot?.questionText ?? extractQuestionSnapshot(doc, location.href)?.questionText ?? "";
+    let bestText = "";
+    let bestScore = 0;
+    let bestMeta = null;
+    candidates.forEach((element) => {
+      if (!(element instanceof HTMLElement)) return;
+      if (isSupportUiElement(element)) return;
+      const text = extractAnswerTextFromElement(element);
+      const score = scoreAnswerCandidateText(text, questionText);
+      if (!score) return;
+      if (score > bestScore) {
+        bestScore = score;
+        bestText = text;
+        bestMeta = {
+          tag: element.tagName,
+          id: element.id || null,
+          className: element.className || null,
+          length: text.length,
+          keywordHit: hasHintAnswerKeywords(text),
+          score,
+          preview: getHintAnswerPreview(text)
+        };
+      }
+    });
+    if (bestMeta) {
+      logDebug("hint-answer-candidate", { found: candidates.size, ...bestMeta });
+    } else {
+      logDebug("hint-answer-candidate", { found: candidates.size, usable: 0 });
+    }
+    const resultText = bestText ? bestText.slice(0, HINT_ANSWER_TEXT_LIMIT) : "";
+    return {
+      text: resultText,
+      meta: bestMeta ? { source: "candidate", found: candidates.size, ...bestMeta } : { source: "candidate", found: candidates.size, usable: 0 }
+    };
+  }
+  function extractAnswerFromTextBlocks(doc) {
+    const nodes = Array.from(doc.querySelectorAll("section, article, div, p, li, table"));
+    if (!nodes.length) {
+      logDebug("hint-answer-block", { found: 0 });
+      return { text: "", meta: { source: "block", found: 0 } };
+    }
+    const questionText = currentSnapshot?.questionText ?? extractQuestionSnapshot(doc, location.href)?.questionText ?? "";
+    let bestText = "";
+    let bestScore = 0;
+    let bestMeta = null;
+    const limit = 320;
+    for (let i = 0; i < Math.min(nodes.length, limit); i += 1) {
+      const element = nodes[i];
+      if (!(element instanceof HTMLElement)) continue;
+      if (isSupportUiElement(element)) continue;
+      const raw = normalizeSpace(element.textContent ?? "");
+      if (!raw) continue;
+      const text = raw.length > HINT_ANSWER_TEXT_LIMIT ? raw.slice(0, HINT_ANSWER_TEXT_LIMIT) : raw;
+      const score = scoreAnswerCandidateText(text, questionText);
+      if (!score) continue;
+      if (score > bestScore) {
+        bestScore = score;
+        bestText = text;
+        bestMeta = {
+          tag: element.tagName,
+          id: element.id || null,
+          className: element.className || null,
+          length: text.length,
+          keywordHit: hasHintAnswerKeywords(text),
+          score,
+          preview: getHintAnswerPreview(text)
+        };
+      }
+    }
+    if (bestMeta) {
+      logDebug("hint-answer-block", { found: nodes.length, ...bestMeta });
+    } else {
+      logDebug("hint-answer-block", { found: nodes.length, usable: 0 });
+    }
+    return {
+      text: bestText ? bestText.slice(0, HINT_ANSWER_TEXT_LIMIT) : "",
+      meta: bestMeta ? { source: "block", found: nodes.length, ...bestMeta } : { source: "block", found: nodes.length, usable: 0 }
+    };
+  }
+  function extractAnswerFromScriptText(doc) {
+    const scripts = Array.from(doc.querySelectorAll("script"));
+    if (!scripts.length) {
+      logDebug("hint-answer-script", { found: 0 });
+      return { text: "", meta: { source: "script", found: 0 } };
+    }
+    const patterns = [
+      /kaisetsu/i,
+      /explanation/i,
+      /answer/i,
+      /解説/,
+      /正解/,
+      /解法/
+    ];
+    const valuePattern = /(kaisetsu|explanation|answer|解説|正解|解法)[^=:{]{0,80}[:=]\s*("([^"\\]|\\.){30,}")/i;
+    for (const script of scripts) {
+      const text = script.textContent ?? "";
+      if (!text) continue;
+      const scanText = text.length > HINT_ANSWER_SCRIPT_SCAN_LIMIT ? text.slice(0, HINT_ANSWER_SCRIPT_SCAN_LIMIT) : text;
+      if (!patterns.some((pattern) => pattern.test(scanText))) continue;
+      const match = scanText.match(valuePattern);
+      if (match) {
+        const literal = match[2];
+        const decoded = decodeJsonStringLiteral(literal);
+        const normalized = stripTagsAndDecode(decoded);
+        const questionText = currentSnapshot?.questionText ?? "";
+        const score = scoreAnswerCandidateText(normalized, questionText);
+        if (score) {
+          const trimmed = normalized.slice(0, HINT_ANSWER_TEXT_LIMIT);
+          const meta = buildAnswerMeta("script", trimmed, script, { key: match[1], score });
+          logDebug("hint-answer-script", meta);
+          return { text: trimmed, meta };
+        }
+      }
+      if (script.type && script.type.includes("json")) {
+        const jsonCandidate = extractAnswerFromJsonPayload(text);
+        if (jsonCandidate.text) {
+          const meta = buildAnswerMeta("script-json", jsonCandidate.text, script, { key: jsonCandidate.key, score: jsonCandidate.score });
+          logDebug("hint-answer-script", meta);
+          return { text: jsonCandidate.text, meta };
+        }
+      }
+    }
+    logDebug("hint-answer-script", { found: scripts.length, usable: 0 });
+    return { text: "", meta: { source: "script", found: scripts.length, usable: 0 } };
+  }
+  function extractAnswerFromJsonPayload(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) return { text: "", score: 0, key: null };
+    try {
+      const data = JSON.parse(trimmed);
+      const questionText = currentSnapshot?.questionText ?? "";
+      const best = { text: "", score: 0, key: null };
+      const visit = (value, keyPath) => {
+        if (typeof value === "string") {
+          const normalized = stripTagsAndDecode(value);
+          const score = scoreAnswerCandidateText(normalized, questionText);
+          if (score > best.score) {
+            best.text = normalized.slice(0, HINT_ANSWER_TEXT_LIMIT);
+            best.score = score;
+            best.key = keyPath;
+          }
+          return;
+        }
+        if (Array.isArray(value)) {
+          value.forEach((item, index) => visit(item, `${keyPath}[${index}]`));
+          return;
+        }
+        if (value && typeof value === "object") {
+          Object.entries(value).forEach(([key, entry]) => visit(entry, keyPath ? `${keyPath}.${key}` : key));
+        }
+      };
+      visit(data, "");
+      return best;
+    } catch {
+      return { text: "", score: 0, key: null };
+    }
+  }
+  function extractAnswerFromDocumentHtml(doc) {
+    const root = doc.documentElement;
+    if (!root) {
+      logDebug("hint-answer-html", { found: false });
+      return { text: "", meta: { source: "document-html", found: false } };
+    }
+    const clone = root.cloneNode(true);
+    stripSupportUi(clone);
+    const html = clone.innerHTML ?? "";
+    if (!html) {
+      logDebug("hint-answer-html", { found: false });
+      return { text: "", meta: { source: "document-html", found: false } };
+    }
+    const scanHtml = html.length > HINT_ANSWER_HTML_SCAN_LIMIT ? html.slice(0, HINT_ANSWER_HTML_SCAN_LIMIT) : html;
+    const keywordMatch = scanHtml.match(/解説|正解|解法|解答|kaisetsu|explanation/i);
+    if (!keywordMatch) {
+      logDebug("hint-answer-html", { found: false });
+      return { text: "", meta: { source: "document-html", found: false } };
+    }
+    const index = keywordMatch.index ?? -1;
+    if (index < 0) {
+      logDebug("hint-answer-html", { found: false });
+      return { text: "", meta: { source: "document-html", found: false } };
+    }
+    const sliceStart = Math.max(0, index - 400);
+    const sliceEnd = Math.min(scanHtml.length, index + 4000);
+    const slice = scanHtml.slice(sliceStart, sliceEnd);
+    const cleaned = stripTagsAndDecode(slice);
+    const questionText = currentSnapshot?.questionText ?? "";
+    const score = scoreAnswerCandidateText(cleaned, questionText);
+    if (!score) {
+      logDebug("hint-answer-html", { found: true, usable: 0 });
+      return { text: "", meta: { source: "document-html", found: true, usable: 0 } };
+    }
+    const trimmed = cleaned.slice(0, HINT_ANSWER_TEXT_LIMIT);
+    const meta = buildAnswerMeta("document-html", trimmed, null, { keyword: keywordMatch[0], score });
+    logDebug("hint-answer-html", meta);
+    return { text: trimmed, meta };
+  }
+  function runPageContextAnswerScan(scanId) {
+    const root = document.documentElement || document.body;
+    if (!root) return;
+    logDebug("hint-answer-global-request", { scanId });
+    const script = document.createElement("script");
+    const scanIdLiteral = JSON.stringify(scanId);
+    script.textContent = `(function(){try{
+      const scanId=${scanIdLiteral};
+      const MAX_RESULTS=3;
+      const MAX_TEXT=${HINT_ANSWER_TEXT_LIMIT};
+      const MIN_LEN=${HINT_ANSWER_MIN_LENGTH};
+      const MAX_DEPTH=3;
+      const MAX_KEYS=60;
+      const MAX_NODES=1200;
+      const jpRe=/[\\u3041-\\u3096\\u30A1-\\u30FA\\u4E00-\\u9FFF]/g;
+      const keywordRe=/\\u89E3\\u8AAC|\\u6B63\\u89E3|\\u89E3\\u6CD5|\\u89E3\\u7B54/;
+      const results=[];
+      const seen=new WeakSet();
+      let nodes=0;
+      function jpRatio(text){
+        const matches=text.match(jpRe);
+        return (matches?matches.length:0)/Math.max(text.length,1);
+      }
+      function score(text){
+        if (!text || text.length<MIN_LEN) return 0;
+        const ratio=jpRatio(text);
+        if (ratio<0.05) return 0;
+        let s=text.length+Math.round(ratio*500);
+        if (keywordRe.test(text)) s+=400;
+        if (/\\bfunction\\b|\\breturn\\b|\\bvar\\b|\\bconst\\b|\\bwindow\\b|\\bdocument\\b/.test(text)) s-=300;
+        return s;
+      }
+      function consider(path, text){
+        const s=score(text);
+        if (!s) return;
+        const trimmed=text.length>MAX_TEXT?text.slice(0, MAX_TEXT):text;
+        results.push({ path, score:s, length:text.length, text:trimmed });
+        results.sort((a,b)=>b.score-a.score);
+        if (results.length>MAX_RESULTS) results.length=MAX_RESULTS;
+      }
+      function visit(value, path, depth){
+        if (nodes>MAX_NODES || depth>MAX_DEPTH || value==null) return;
+        if (typeof value==='string'){ consider(path, value); return; }
+        if (typeof value!=='object') return;
+        if (seen.has(value)) return;
+        seen.add(value);
+        nodes++;
+        if (Array.isArray(value)){
+          for (let i=0;i<value.length && i<MAX_KEYS;i++){ visit(value[i], path + '[' + i + ']', depth+1); }
+          return;
+        }
+        const keys=Object.keys(value);
+        for (let i=0;i<keys.length && i<MAX_KEYS;i++){
+          const key=keys[i];
+          let next;
+          try { next=value[key]; } catch { continue; }
+          visit(next, path ? path + '.' + key : key, depth+1);
+        }
+      }
+      const roots=['__INITIAL_STATE__','__NUXT__','__NEXT_DATA__','__DATA__','__QB_DATA__','__STATE__','__STORE__','__APP__','__APOLLO_STATE__','app','store','state','data'];
+      for (let i=0;i<roots.length;i++){
+        const key=roots[i];
+        if (key in window) visit(window[key], key, 0);
+      }
+      try{
+        for (let i=0;i<localStorage.length && i<MAX_KEYS;i++){
+          const key=localStorage.key(i);
+          if (!key) continue;
+          const value=localStorage.getItem(key);
+          if (value) consider('localStorage.'+key, value);
+        }
+      }catch(e){}
+      try{
+        for (let i=0;i<sessionStorage.length && i<MAX_KEYS;i++){
+          const key=sessionStorage.key(i);
+          if (!key) continue;
+          const value=sessionStorage.getItem(key);
+          if (value) consider('sessionStorage.'+key, value);
+        }
+      }catch(e){}
+      window.postMessage({__qb_support:true, type:'QB_ANSWER_GLOBAL_SCAN_RESULT', scanId, results}, '*');
+    }catch(err){
+      window.postMessage({__qb_support:true, type:'QB_ANSWER_GLOBAL_SCAN_RESULT', scanId:${scanIdLiteral}, error:String(err), results:[]}, '*');
+    }})();`;
+    root.appendChild(script);
+    script.remove();
+  }
+  function extractAnswerFromDocumentText(doc) {
+    const body = doc.body;
+    if (!body) return { text: "", meta: { source: "document-text", found: false } };
+    const clone = body.cloneNode(true);
+    stripSupportUi(clone);
+    clone.querySelectorAll("script, style, noscript").forEach((node) => node.remove());
+    let text = normalizeSpace(clone.textContent ?? "");
+    if (!text) return { text: "", meta: { source: "document-text", found: false } };
+    let keyword = "";
+    let index = -1;
+    const strongMatch = text.match(/解説|正解|解法/);
+    if (strongMatch) {
+      keyword = strongMatch[0];
+      index = text.indexOf(keyword);
+    } else {
+      const answerIndex = text.indexOf("解答");
+      if (answerIndex !== -1 && text.length - answerIndex >= HINT_ANSWER_MIN_LENGTH) {
+        keyword = "解答";
+        index = answerIndex;
+      }
+    }
+    if (index === -1) {
+      logDebug("hint-answer-document", { found: false });
+      return { text: "", meta: { source: "document-text", found: false } };
+    }
+    const slice = text.slice(index, index + HINT_ANSWER_TEXT_LIMIT);
+    if (slice.includes("解答を確認する") || slice.includes("この問題について報告する")) {
+      logDebug("hint-answer-document", { found: false, reason: "ui-only" });
+      return { text: "", meta: { source: "document-text", found: false, reason: "ui-only" } };
+    }
+    const questionText = currentSnapshot?.questionText ?? "";
+    const score = scoreAnswerCandidateText(slice, questionText);
+    if (!score) {
+      logDebug("hint-answer-document", { found: false, reason: "score" });
+      return { text: "", meta: { source: "document-text", found: false, reason: "score" } };
+    }
+    const meta = buildAnswerMeta("document-text", slice, null, {
+      keyword,
+      found: true,
+      score
+    });
+    logDebug("hint-answer-document", meta);
+    return { text: slice, meta };
   }
   function getNavigationTarget(doc, direction) {
     const iconSelector = direction === "next" ? SELECTORS.navNextIcon : SELECTORS.navPrevIcon;
@@ -113,6 +552,43 @@
     const candidates = collectCandidates(answerArea ?? doc.body);
     const matched = findFirstMatching(candidates, REVEAL_KEYWORDS);
     return matched ? findClickableAncestor(matched) ?? matched : null;
+  }
+  function isHintMessage(text) {
+    return text.includes(HINT_BASE_PHRASE);
+  }
+  function hasHintAnswerKeywords(text) {
+    return HINT_ANSWER_KEYWORDS.some((pattern) => pattern.test(text));
+  }
+  function stripTagsAndDecode(html) {
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    return normalizeSpace(container.textContent ?? "");
+  }
+  function decodeJsonStringLiteral(literal) {
+    if (!literal) return "";
+    try {
+      return JSON.parse(literal);
+    } catch {
+      return literal;
+    }
+  }
+  function getJapaneseRatio(text) {
+    const matches = text.match(/[ぁ-んァ-ン一-龥]/g) ?? [];
+    return matches.length / Math.max(text.length, 1);
+  }
+  function scoreAnswerCandidateText(text, questionText) {
+    if (!text || text.length < HINT_ANSWER_MIN_LENGTH) return 0;
+    const jpRatio = getJapaneseRatio(text);
+    if (jpRatio < 0.05) return 0;
+    let score = text.length + Math.round(jpRatio * 500);
+    if (hasHintAnswerKeywords(text)) score += 400;
+    if (questionText && text.includes(questionText)) {
+      score -= Math.min(questionText.length, 800);
+    }
+    if (/\bfunction\b|\breturn\b|\bvar\b|\bconst\b|\bwindow\b|\bdocument\b/.test(text)) {
+      score -= 300;
+    }
+    return score;
   }
   function questionIdFromUrl(url) {
     try {
@@ -248,117 +724,117 @@
   ];
   var CHAT_TEMPLATE_LIMIT = 5;
   var DEFAULT_EXPLANATION_PROMPTS = {
-    highschool: "\u9AD8\u6821\u751F\u3067\u3082\u308F\u304B\u308B\u3088\u3046\u306B\u3001\u5C02\u9580\u7528\u8A9E\u306F\u3067\u304D\u308B\u3060\u3051\u907F\u3051\u3001\u5FC5\u8981\u306A\u3089\u7C21\u5358\u306A\u8A00\u3044\u63DB\u3048\u3068\u77ED\u3044\u4F8B\u3048\u3092\u6DFB\u3048\u3066\u8AAC\u660E\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
-    "med-junior": "\u533B\u5B66\u90E8\u4F4E\u5B66\u5E74\u5411\u3051\u306B\u3001\u57FA\u672C\u7684\u306A\u5C02\u9580\u7528\u8A9E\u306F\u4F7F\u3063\u3066\u3088\u3044\u306E\u3067\u3001\u91CD\u8981\u30DD\u30A4\u30F3\u30C8\u3092\u7C21\u6F54\u306B\u6574\u7406\u3057\u3066\u8AAC\u660E\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
-    "med-senior": "\u533B\u5B66\u90E8\u9AD8\u5B66\u5E74\u301C\u7814\u4FEE\u533B\u30EC\u30D9\u30EB\u3067\u3001\u75C5\u614B\u751F\u7406\u3084\u9451\u5225\u30DD\u30A4\u30F3\u30C8\u306B\u8E0F\u307F\u8FBC\u307F\u3001\u7C21\u6F54\u3060\u304C\u5BC6\u5EA6\u306E\u9AD8\u3044\u8AAC\u660E\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
+    highschool: "高校生でもわかるように、専門用語はできるだけ避け、必要なら簡単な言い換えと短い例えを添えて説明してください。",
+    "med-junior": "医学部低学年向けに、基本的な専門用語は使ってよいので、重要ポイントを簡潔に整理して説明してください。",
+    "med-senior": "医学部高学年〜研修医レベルで、病態生理や鑑別ポイントに踏み込み、簡潔だが密度の高い説明にしてください。"
   };
   var DEFAULT_CHAT_TEMPLATES = [
     {
       enabled: true,
-      label: "\u30D2\u30F3\u30C8",
+      label: "ヒント",
       shortcut: "Ctrl+Z",
-      prompt: "\u7D76\u5999\u306A\u30D2\u30F3\u30C8\uFF08\u7B54\u3048\u3042\u308A\u304D\u3067\u306A\u304F\u3001\u6240\u898B\u3084\u75C7\u72B6\u304B\u3089\u63A8\u8AD6\u3059\u308B\u8996\u70B9\u3067\u601D\u8003\u529B\u3092\u990A\u3046\u7B54\u3048\u306B\u8FEB\u308A\u3059\u304E\u306A\u3044\u3082\u306E\uFF09\u3092\u3069\u3046\u305E\u3002\u203B400\u6587\u5B57\u4EE5\u5185\u3067\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
+      prompt: "絶妙なヒント（答えありきでなく、所見や症状から推論する視点で思考力を養う答えに迫りすぎないもの）をどうぞ。※400文字以内で回答してください。"
     },
     {
       enabled: true,
-      label: "4\u7B87\u6761",
+      label: "4箇条",
       shortcut: "Ctrl+4",
       prompt: [
-        "\u5404\u3005\u306E\u9078\u629E\u80A2\u306B\u3064\u3044\u3066\u3001\u4EE5\u4E0B\u306E4\u7B87\u6761\u3092\u5B88\u3063\u3066\u308F\u304B\u308A\u3084\u3059\u304F\u89E3\u8AAC\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+        "各々の選択肢について、以下の4箇条を守ってわかりやすく解説してください。",
         "",
-        "\u2776 \u4E00\u8A00\u3067\u3044\u3046\u3068\uFF1F\uFF08\u76F4\u611F\u7684\u306A\u30A4\u30E1\u30FC\u30B8\uFF09",
+        "❶ 一言でいうと？（直感的なイメージ）",
         "",
-        "\u305D\u306E\u75C5\u614B\u30FB\u75C7\u72B6\u30FB\u6240\u898B\u306B\u3064\u3044\u3066\u3001\u521D\u3081\u3066\u805E\u3044\u305F\u4EBA\u3067\u3082\u76F4\u611F\u7684\u306B\u7406\u89E3\u3067\u304D\u308B\u3088\u3046\u306A\u3001\u5177\u4F53\u7684\u306A\u30A4\u30E1\u30FC\u30B8\u3084\u6BD4\u55A9\u3092\u4E00\u6587\u3067\u8868\u73FE\u3059\u308B\uFF08\u57FA\u672C\u7684\u306B\u4F53\u8A00\u6B62\u3081\uFF09\u3002\u5C02\u9580\u7528\u8A9E\u3084\u53B3\u5BC6\u306A\u5B9A\u7FA9\u3067\u306F\u306A\u304F\u3001\u300C\u306A\u308B\u307B\u3069\u3001\u305D\u3046\u3044\u3046\u611F\u3058\u304B\u300D\u3068\u30A4\u30E1\u30FC\u30B8\u304C\u6E67\u304F\u8868\u73FE\u3092\u5FC3\u304C\u3051\u308B\u3002",
+        "その病態・症状・所見について、初めて聞いた人でも直感的に理解できるような、具体的なイメージや比喩を一文で表現する（基本的に体言止め）。専門用語や厳密な定義ではなく、「なるほど、そういう感じか」とイメージが湧く表現を心がける。",
         "",
-        "\u4F8B\uFF08\u88C2\u809B\u306E\u5834\u5408\uFF09\uFF1A",
-        "\u2705 \u300C\u786C\u3044\u4FBF\u3067\u809B\u9580\u304C\u201C\u7D19\u306E\u3088\u3046\u306B\u30D4\u30EA\u30C3\u3068\u88C2\u3051\u308B\u201D\u300D",
-        "\u274C \u300C\u88C2\u809B\u306E\u591A\u304F\u306F\u5F8C\u65B9\u6B63\u4E2D\u306B\u3067\u304D\u308B\u300D\uFF08\u5177\u4F53\u6027\u3084\u30A4\u30E1\u30FC\u30B8\u304C\u4E0D\u8DB3\uFF09",
+        "例（裂肛の場合）：",
+        "✅ 「硬い便で肛門が“紙のようにピリッと裂ける”」",
+        "❌ 「裂肛の多くは後方正中にできる」（具体性やイメージが不足）",
         "",
-        "\u2777 \u56E0\u679C\u95A2\u4FC2\u30B9\u30BF\u30A4\u30EB\uFF08Pathophysiology\u306E\u9023\u9396\uFF09",
+        "❷ 因果関係スタイル（Pathophysiologyの連鎖）",
         "",
-        "\u8A3A\u65AD\u306B\u81F3\u308B\u601D\u8003\u30D7\u30ED\u30BB\u30B9\u3067\u306F\u306A\u304F\u3001\u75C5\u614B\u305D\u306E\u3082\u306E\u304C\u4F53\u5185\u3067\u5F15\u304D\u8D77\u3053\u3059\u73FE\u8C61\u306E\u9023\u9396\u3092\u6642\u7CFB\u5217\u30FB\u56E0\u679C\u95A2\u4FC2\u9806\u306B\u793A\u3059\u3002\u30AD\u30FC\u30EF\u30FC\u30C9\u3092\u300C\u2193\u2192\u300D\u3067\u7D50\u3073\u3001\u751F\u4F53\u5185\u3067\u5B9F\u969B\u306B\u8D77\u304D\u3066\u3044\u308B\u5185\u5BB9\u30FB\u75C7\u72B6\u30FB\u6240\u898B\u3092\u9806\u5E8F\u7ACB\u3066\u3066\u8868\u73FE\u3059\u308B\u3002",
+        "診断に至る思考プロセスではなく、病態そのものが体内で引き起こす現象の連鎖を時系列・因果関係順に示す。キーワードを「↓→」で結び、生体内で実際に起きている内容・症状・所見を順序立てて表現する。",
         "",
-        "\u4F8B\uFF08ASO\u767A\u75C7\u6A5F\u5E8F\uFF09\uFF1A",
-        "\u7CD6\u5C3F\u75C5\u30FB\u9AD8\u8840\u5727\u30FB\u9AD8\u8102\u8840\u75C7\u30FB\u55AB\u7159\u306A\u3069\u306E\u52D5\u8108\u786C\u5316\u30EA\u30B9\u30AF\u2191",
-        "\u2193",
-        "\u4E2D\u301C\u5927\u52D5\u8108\uFF08\u4E3B\u306B\u4E0B\u80A2\u52D5\u8108\uFF09\u3067\u52D5\u8108\u786C\u5316\u6027\u30D7\u30E9\u30FC\u30AF\u5F62\u6210\uFF08\u8102\u8CEA\u6838\uFF0B\u7DDA\u7DAD\u6027\u88AB\u819C\uFF09",
-        "\u2193",
-        "\u7BA1\u8154\u72ED\u7A84 \u2192 \u5B89\u9759\u6642\u306F\u8840\u6D41\u4FDD\u305F\u308C\u308B\u304C\u3001\u904B\u52D5\u6642\u306F\u9700\u8981\uFF1E\u4F9B\u7D66\u306B",
-        "\u2193",
-        "\u4E0B\u80A2\u306E\u9593\u6B20\u6027\u8DDB\u884C\uFF08claudication\uFF09\u3001\u3055\u3089\u306B\u306F\u5B89\u9759\u6642\u75DB\u3078\u3068\u9032\u884C",
-        "\u2193",
-        "\u8840\u6D41\u4E0D\u8DB3\u304C\u9AD8\u5EA6\u5316 \u2192 \u672B\u68A2\u6F70\u760D\uFF08\u8DB3\u8DBE\u5148\u7AEF\u306A\u3069\uFF09\u30FB\u76AE\u819A\u840E\u7E2E\u30FB\u58CA\u75BD",
-        "\u2193",
-        "\u591C\u9593\u3084\u8DB3\u6319\u4E0A\u6642\u306B\u8840\u6D41\u304C\u3055\u3089\u306B\u4F4E\u4E0B \u2192 \u5B89\u9759\u6642\u75DB\u304C\u60AA\u5316 \u2192 \u8DB3\u3092\u5782\u3089\u3057\u3066\u5BDD\u308B\u3068\u697D\u306B\u306A\u308B",
+        "例（ASO発症機序）：",
+        "糖尿病・高血圧・高脂血症・喫煙などの動脈硬化リスク↑",
+        "↓",
+        "中〜大動脈（主に下肢動脈）で動脈硬化性プラーク形成（脂質核＋線維性被膜）",
+        "↓",
+        "管腔狭窄 → 安静時は血流保たれるが、運動時は需要＞供給に",
+        "↓",
+        "下肢の間欠性跛行（claudication）、さらには安静時痛へと進行",
+        "↓",
+        "血流不足が高度化 → 末梢潰瘍（足趾先端など）・皮膚萎縮・壊疽",
+        "↓",
+        "夜間や足挙上時に血流がさらに低下 → 安静時痛が悪化 → 足を垂らして寝ると楽になる",
         "",
-        "\u2778 \u60C5\u5831\u3092\u843D\u3068\u3055\u306A\u3044",
+        "❸ 情報を落とさない",
         "",
-        "\u554F\u984C\u6587\u306B\u8A18\u8F09\u3055\u308C\u3066\u3044\u308B\u81E8\u5E8A\u60C5\u5831\uFF08\u75C7\u72B6\u3001\u6240\u898B\u3001\u8A98\u56E0\u3001\u80CC\u666F\u306A\u3069\uFF09\u306F\u5FC5\u305A\u56E0\u679C\u95A2\u4FC2\u30B9\u30BF\u30A4\u30EB\u5185\u306B\u9069\u5207\u306B\u7D44\u307F\u8FBC\u3080\u3002\u8FFD\u52A0\u306E\u88DC\u8DB3\u60C5\u5831\u3092\u5165\u308C\u308B\u3053\u3068\u306F\u53EF\u80FD\u3060\u304C\u3001\u5143\u306E\u554F\u984C\u6587\u306E\u60C5\u5831\u3092\u524A\u9664\u3057\u306A\u3044\u3088\u3046\u6CE8\u610F\u3059\u308B\u3002",
+        "問題文に記載されている臨床情報（症状、所見、誘因、背景など）は必ず因果関係スタイル内に適切に組み込む。追加の補足情報を入れることは可能だが、元の問題文の情報を削除しないよう注意する。",
         "",
-        "\u2779 \u6B63\u89E3\u9078\u629E\u80A2\u3092\u3048\u3053\u3072\u3044\u304D\u3057\u306A\u3044",
+        "❹ 正解選択肢をえこひいきしない",
         "",
-        "\u3059\u3079\u3066\u306E\u9078\u629E\u80A2\u306B\u5BFE\u3057\u3066\u3001\u540C\u3058\u30EC\u30D9\u30EB\u306E\u8A73\u7D30\u3055\u3068\u660E\u78BA\u3055\u3067\u89E3\u8AAC\u3092\u884C\u3046\u3002\u305F\u3060\u3057\u3001\u554F\u984C\u6587\u306E\u6240\u898B\u3084\u75C7\u72B6\u304C\u660E\u3089\u304B\u306B\u6B63\u89E3\u9078\u629E\u80A2\u306E\u75C5\u614B\u306B\u95A2\u9023\u3059\u308B\u5834\u5408\u3001\u305D\u308C\u3089\u306F\u6B63\u89E3\u9078\u629E\u80A2\u306E\u56E0\u679C\u95A2\u4FC2\u30B9\u30BF\u30A4\u30EB\u306B\u660E\u793A\u7684\u306B\u7D44\u307F\u8FBC\u3080\u3002",
+        "すべての選択肢に対して、同じレベルの詳細さと明確さで解説を行う。ただし、問題文の所見や症状が明らかに正解選択肢の病態に関連する場合、それらは正解選択肢の因果関係スタイルに明示的に組み込む。",
         "",
-        "\u2E3B",
+        "⸻",
         "",
-        "\u4EE5\u4E0B\u306F\u6539\u5584\u5F8C\u306E\u5177\u4F53\u4F8B\u3067\u3059\u3002",
+        "以下は改善後の具体例です。",
         "",
-        "\u2705 \u6B63\u89E3\uFF1AF. Posterior midline of the anal verge",
+        "✅ 正解：F. Posterior midline of the anal verge",
         "",
-        "\u2776 \u4E00\u8A00\u3067\u3044\u3046\u3068\uFF1F",
+        "❶ 一言でいうと？",
         "",
-        "\u786C\u3044\u4FBF\u304C\u300C\u7D19\u3092\u7834\u308B\u3088\u3046\u306B\u300D\u809B\u9580\u306E\u5F8C\u308D\u5074\u3092\u88C2\u3044\u3066\u3057\u307E\u3046",
+        "硬い便が「紙を破るように」肛門の後ろ側を裂いてしまう",
         "",
-        "\u2777 \u56E0\u679C\u95A2\u4FC2\u30B9\u30BF\u30A4\u30EB",
+        "❷ 因果関係スタイル",
         "",
-        "\u6162\u6027\u4FBF\u79D8\u30FB\u786C\u4FBF",
-        "\u2193",
-        "\u809B\u9580\u90E8\u3078\u306E\u904E\u5EA6\u306A\u5F35\u529B\u3068\u4F38\u5C55",
-        "\u2193",
-        "\u809B\u9580\u7C98\u819C\u304C\u88C2\u3051\u308B\uFF08\u7279\u306B\u5F8C\u65B9\u6B63\u4E2D\u306F\u8840\u6D41\u304C\u5C11\u306A\u304F\u5F31\u3044\uFF09",
-        "\u2193",
-        "\u88C2\u809B\u5F62\u6210",
-        "\uFF0B",
-        "\u809B\u9580\u62EC\u7D04\u7B4B\u306E\u3051\u3044\u308C\u3093 \u2192 \u88C2\u5275\u306E\u6CBB\u7652\u304C\u9045\u308C\u3001\u5F37\u3044\u75DB\u307F",
+        "慢性便秘・硬便",
+        "↓",
+        "肛門部への過度な張力と伸展",
+        "↓",
+        "肛門粘膜が裂ける（特に後方正中は血流が少なく弱い）",
+        "↓",
+        "裂肛形成",
+        "＋",
+        "肛門括約筋のけいれん → 裂創の治癒が遅れ、強い痛み",
         "",
-        "\u2778 \u60C5\u5831\u3092\u843D\u3068\u3055\u306A\u3044",
-        "\u2022 \u88C2\u809B\u306F\u6B6F\u72B6\u7DDA\u3088\u308A\u9060\u4F4D\uFF08\u76AE\u819A\u5BC4\u308A\uFF09\u306E\u7E26\u65B9\u5411\u306E\u88C2\u5275",
-        "\u2022 \u786C\u4FBF\u306E\u901A\u904E\u3001\u6162\u6027\u4FBF\u79D8\u3001\u904E\u5EA6\u306E\u4F38\u5C55\u304C\u8A98\u56E0\u3068\u306A\u308B",
-        "\u2022 \u5F8C\u65B9\u6B63\u4E2D\u304C\u8840\u6D41\u4E0D\u8DB3\u306E\u305F\u3081\u6700\u3082\u8D77\u3053\u308A\u3084\u3059\u3044",
-        "\u2022 \u9BAE\u8840\u4FBF\uFF08\u30C8\u30A4\u30EC\u30C3\u30C8\u30DA\u30FC\u30D1\u30FC\u306B\u4ED8\u7740\uFF09\u3068\u6392\u4FBF\u6642\u306E\u92ED\u3044\u75DB\u307F\u304C\u5178\u578B\u7684\u306A\u75C7\u72B6",
+        "❸ 情報を落とさない",
+        "• 裂肛は歯状線より遠位（皮膚寄り）の縦方向の裂創",
+        "• 硬便の通過、慢性便秘、過度の伸展が誘因となる",
+        "• 後方正中が血流不足のため最も起こりやすい",
+        "• 鮮血便（トイレットペーパーに付着）と排便時の鋭い痛みが典型的な症状",
         "",
-        "\uFF08\u4ED6\u306E\u9078\u629E\u80A2\u306B\u3064\u3044\u3066\u3082\u540C\u69D8\u306E\u57FA\u6E96\u3067\u8AAC\u660E\uFF09"
+        "（他の選択肢についても同様の基準で説明）"
       ].join("\n")
     },
     {
       enabled: true,
-      label: "\u7D71\u5408",
+      label: "統合",
       shortcut: "Ctrl+T",
       prompt: [
-        "\u7D71\u5408\u56E0\u679C\u95A2\u4FC2\u30B9\u30BF\u30A4\u30EB(\u6B63\u89E3\u9078\u629E\u80A2\u3092\u4E2D\u5FC3\u306B\u3057\u3066\u3001\u6240\u898B\u3084\u75C7\u72B6\u306A\u3069\u3092\u3059\u3079\u3066\u76DB\u308A\u8FBC\u3093\u3060\u5DE8\u5927\u306A\uFF11\u3064\u306E\u30D5\u30ED\u30FC\u30C1\u30E3\u30FC\u30C8\u3002\u5F53\u7136\u7B87\u6761\u66F8\u304D\u3067\u306F\u306A\u3044\u306E\u3067\u756A\u53F7\u3092\u3075\u308B\u306A\u3069\u4E0D\u8981\u3002\u2192\u2193\u3067\u56E0\u679C\u5217\u3001\u6642\u7CFB\u5217\u306B\u30AD\u30FC\u30EF\u30FC\u30C9\u3092\u7D50\u3093\u3060\u5FE0\u5B9F\u306A\u56F3\u3092\u4F5C\u6210\u3002\u4EE5\u4E0B\u306F\u4E00\u4F8B(\u672C\u5F53\u306F\u3053\u306E2\u500D\u7A0B\u5EA6\u306E\u5206\u91CF\u3092\u671F\u5F85\u3057\u307E\u3059\u3002\u53EF\u80FD\u306A\u3089\u4ED6\u306E\u9078\u629E\u80A2\u3067\u8A00\u53CA\u3055\u308C\u3066\u3044\u308B\u5185\u5BB9\u3092\u77DB\u76FE\u306A\u304F\u7D50\u5408\u3055\u305B\u3066\u3002)",
-        "\u4F8B\uFF08ASO\uFF09\uFF1A",
-        "\u7CD6\u5C3F\u75C5\u30FB\u9AD8\u8840\u5727\u30FB\u9AD8\u8102\u8840\u75C7\u30FB\u55AB\u7159\u306A\u3069\u306E\u52D5\u8108\u786C\u5316\u30EA\u30B9\u30AF\u2191",
-        "\u2193",
-        "\u4E2D\u301C\u5927\u52D5\u8108\uFF08\u4E3B\u306B\u4E0B\u80A2\u52D5\u8108\uFF09\u3067\u52D5\u8108\u786C\u5316\u6027\u30D7\u30E9\u30FC\u30AF\u5F62\u6210\uFF08\u8102\u8CEA\u6838\uFF0B\u7DDA\u7DAD\u6027\u88AB\u819C\uFF09",
-        "\u2193",
-        "\u7BA1\u8154\u72ED\u7A84 \u2192 \u5B89\u9759\u6642\u306F\u8840\u6D41\u4FDD\u305F\u308C\u308B\u304C\u3001\u904B\u52D5\u6642\u306F\u9700\u8981\uFF1E\u4F9B\u7D66\u306B",
-        "\u2193",
-        "\u4E0B\u80A2\u306E\u9593\u6B20\u6027\u8DDB\u884C\uFF08claudication\uFF09\u3001\u3055\u3089\u306B\u306F\u5B89\u9759\u6642\u75DB\u3078\u3068\u9032\u884C",
-        "\u2193",
-        "\u8840\u6D41\u4E0D\u8DB3\u304C\u9AD8\u5EA6\u5316 \u2192 \u672B\u68A2\u6F70\u760D\uFF08\u8DB3\u8DBE\u5148\u7AEF\u306A\u3069\uFF09\u30FB\u76AE\u819A\u840E\u7E2E\u30FB\u58CA\u75BD",
-        "\u2193",
-        "\u591C\u9593\u3084\u8DB3\u6319\u4E0A\u6642\u306B\u8840\u6D41\u304C\u3055\u3089\u306B\u4F4E\u4E0B \u2192 \u5B89\u9759\u6642\u75DB\u304C\u60AA\u5316 \u2192 \u8DB3\u3092\u5782\u3089\u3057\u3066\u5BDD\u308B\u3068\u697D\u306B\u306A\u308B"
+        "統合因果関係スタイル(正解選択肢を中心にして、所見や症状などをすべて盛り込んだ巨大な１つのフローチャート。当然箇条書きではないので番号をふるなど不要。→↓で因果列、時系列にキーワードを結んだ忠実な図を作成。以下は一例(本当はこの2倍程度の分量を期待します。可能なら他の選択肢で言及されている内容を矛盾なく結合させて。)",
+        "例（ASO）：",
+        "糖尿病・高血圧・高脂血症・喫煙などの動脈硬化リスク↑",
+        "↓",
+        "中〜大動脈（主に下肢動脈）で動脈硬化性プラーク形成（脂質核＋線維性被膜）",
+        "↓",
+        "管腔狭窄 → 安静時は血流保たれるが、運動時は需要＞供給に",
+        "↓",
+        "下肢の間欠性跛行（claudication）、さらには安静時痛へと進行",
+        "↓",
+        "血流不足が高度化 → 末梢潰瘍（足趾先端など）・皮膚萎縮・壊疽",
+        "↓",
+        "夜間や足挙上時に血流がさらに低下 → 安静時痛が悪化 → 足を垂らして寝ると楽になる"
       ].join("\n")
     },
     {
       enabled: false,
-      label: "\u30C6\u30F3\u30D7\u30EC4",
+      label: "テンプレ4",
       shortcut: "",
       prompt: ""
     },
     {
       enabled: false,
-      label: "\u30C6\u30F3\u30D7\u30EC5",
+      label: "テンプレ5",
       shortcut: "",
       prompt: ""
     }
@@ -393,7 +869,7 @@
     chatTemplates: DEFAULT_CHAT_TEMPLATES,
     chatTemplateCount: 3,
     commonPrompt: "",
-    hintConstraintPrompt: "\u203B400\u6587\u5B57\u4EE5\u5185\u3067\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+    hintConstraintPrompt: "※400文字以内で回答してください。",
     explanationLevel: "med-junior",
     explanationPrompts: DEFAULT_EXPLANATION_PROMPTS,
     themePreference: "system",
@@ -448,7 +924,7 @@
     for (let i = 0; i < count; i += 1) {
       const fallback = safeDefaults[i] ?? {
         enabled: false,
-        label: `\u30C6\u30F3\u30D7\u30EC${i + 1}`,
+        label: `テンプレ${i + 1}`,
         shortcut: "",
         prompt: ""
       };
@@ -461,7 +937,7 @@
     }
     for (let i = next.length; i < CHAT_TEMPLATE_LIMIT; i += 1) {
       next.push(
-        safeDefaults[i] ?? { enabled: false, label: `\u30C6\u30F3\u30D7\u30EC${i + 1}`, shortcut: "", prompt: "" }
+        safeDefaults[i] ?? { enabled: false, label: `テンプレ${i + 1}`, shortcut: "", prompt: "" }
       );
     }
     return next;
@@ -670,13 +1146,21 @@
   var AUTH_SESSION_POLL_INTERVAL_MS = 1e3;
   var AUTH_SESSION_FALLBACK_MS = 6 * 60 * 60 * 1e3;
   var EXPLANATION_LEVEL_LABELS = {
-    highschool: "\u9AD8\u6821\u751F\u3067\u3082\u308F\u304B\u308B",
-    "med-junior": "\u533B\u5B66\u90E8\u4F4E\u5B66\u5E74",
-    "med-senior": "\u533B\u5B66\u90E8\u9AD8\u5B66\u5E74\u301C\u7814\u4FEE\u533B"
+    highschool: "高校生でもわかる",
+    "med-junior": "医学部低学年",
+    "med-senior": "医学部高学年〜研修医"
   };
   var settings = { ...defaultSettings };
   var currentInfo = null;
   var currentSnapshot = null;
+  var cachedAnswerContext = null;
+  var pendingAnswerResolvers = [];
+  var answerFrameEl = null;
+  var answerObserverBound = false;
+  var answerObserver = null;
+  var lastAnswerContextText = "";
+  var answerContextWanted = false;
+  var pendingAnswerScanId = null;
   var root = null;
   var panel = null;
   var launcher = null;
@@ -687,6 +1171,8 @@
   var chatToggle = null;
   var chatMessagesEl = null;
   var chatInput = null;
+  var lastHintDraftSource = null;
+  var lastHintDraftSnapshot = null;
   var chatSendButton = null;
   var chatStatusField = null;
   var chatInputWrap = null;
@@ -699,6 +1185,8 @@
   var chatSettingsPanel = null;
   var chatSettingsButton = null;
   var chatSettingsOpen = false;
+  var lastSettingsToggleSource = null;
+  var lastSettingsToggleMeta = null;
   var chatApiKeyVisible = false;
   var chatAuthPromptActive = false;
   var chatTemplateBar = null;
@@ -757,6 +1245,7 @@
     logInjectionOnce();
     ensureMarker();
     logFramesOnce();
+    initNetworkLogger();
     attachMessageHandlers();
     removeHeaderGearButton();
     if (isQbHost()) {
@@ -818,7 +1307,7 @@
       }
     }
     settings = normalizeSettings(stored?.[STORAGE_KEY]);
-    console.log("[QB_SUPPORT][settings] loaded", {
+    logInfo("[QB_SUPPORT][settings] loaded", {
       storage: storageLabel,
       apiKeyLength: settings.chatApiKey?.length ?? 0,
       apiKeyEnabled: settings.chatApiKeyEnabled
@@ -830,7 +1319,7 @@
     if (area) {
       try {
         await storageSet(area, { [STORAGE_KEY]: settings });
-        console.log("[QB_SUPPORT][settings] saved", {
+        logInfo("[QB_SUPPORT][settings] saved", {
           storage: area === webext.storage?.sync ? "sync" : "local",
           apiKeyLength: settings.chatApiKey?.length ?? 0,
           apiKeyEnabled: settings.chatApiKeyEnabled
@@ -844,7 +1333,7 @@
         if (fallback && fallback !== area) {
           try {
             await storageSet(fallback, { [STORAGE_KEY]: settings });
-            console.log("[QB_SUPPORT][settings] saved fallback", {
+            logInfo("[QB_SUPPORT][settings] saved fallback", {
               storage: fallback === webext.storage?.sync ? "sync" : "local",
               apiKeyLength: settings.chatApiKey?.length ?? 0,
               apiKeyEnabled: settings.chatApiKeyEnabled
@@ -873,15 +1362,15 @@
     if (!authStatusField || !authSignInButton || !authSignOutButton || !authMetaField) return;
     authStatusField.classList.remove("is-error");
     if (!authProfile) {
-      authStatusField.textContent = "\u672A\u30ED\u30B0\u30A4\u30F3";
+      authStatusField.textContent = "未ログイン";
       authMetaField.textContent = "";
       authSignInButton.disabled = false;
       authSignInButton.style.display = "inline-flex";
       authSignOutButton.style.display = "none";
       return;
     }
-    const name = authProfile.email || "Google\u30E6\u30FC\u30B6\u30FC";
-    authStatusField.textContent = `\u30ED\u30B0\u30A4\u30F3\u4E2D: ${name}`;
+    const name = authProfile.email || "Googleユーザー";
+    authStatusField.textContent = `ログイン中: ${name}`;
     authMetaField.textContent = authProfile.email ?? "";
     authSignInButton.style.display = "none";
     authSignOutButton.style.display = "inline-flex";
@@ -944,22 +1433,22 @@
   }
   async function fetchBackendAuthStart() {
     const url = resolveBackendAuthStartUrl();
-    if (!url) throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
+    if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
     const response = await fetch(url);
     if (!response.ok) {
       const detail = await response.text();
-      throw new Error(`\u8A8D\u8A3C\u958B\u59CB\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${response.status} ${detail}`);
+      throw new Error(`認証開始に失敗しました: ${response.status} ${detail}`);
     }
     const data = await response.json();
     if (!data?.authUrl || !data?.state) {
-      throw new Error("\u8A8D\u8A3C\u958B\u59CB\u306E\u30EC\u30B9\u30DD\u30F3\u30B9\u304C\u4E0D\u6B63\u3067\u3059\u3002");
+      throw new Error("認証開始のレスポンスが不正です。");
     }
     return data;
   }
   async function pollBackendAuthSession(state) {
     const startedAt = Date.now();
     const url = resolveBackendAuthSessionUrl(state);
-    if (!url) throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
+    if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
     while (Date.now() - startedAt < AUTH_SESSION_TIMEOUT_MS) {
       const response = await fetch(url);
       if (response.status === 204) {
@@ -967,22 +1456,22 @@
         continue;
       }
       if (response.status === 404) {
-        throw new Error("\u8A8D\u8A3C\u30BB\u30C3\u30B7\u30E7\u30F3\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002");
+        throw new Error("認証セッションが見つかりませんでした。もう一度お試しください。");
       }
       if (response.status === 410) {
-        throw new Error("\u8A8D\u8A3C\u30BB\u30C3\u30B7\u30E7\u30F3\u306E\u6709\u52B9\u671F\u9650\u304C\u5207\u308C\u307E\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002");
+        throw new Error("認証セッションの有効期限が切れました。もう一度お試しください。");
       }
       if (!response.ok) {
         const detail = await response.text();
-        throw new Error(`\u8A8D\u8A3C\u30BB\u30C3\u30B7\u30E7\u30F3\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${response.status} ${detail}`);
+        throw new Error(`認証セッション取得に失敗しました: ${response.status} ${detail}`);
       }
       const data = await response.json();
       if (!data?.token || !data?.profile?.uid) {
-        throw new Error("\u8A8D\u8A3C\u30BB\u30C3\u30B7\u30E7\u30F3\u306E\u5185\u5BB9\u304C\u4E0D\u6B63\u3067\u3059\u3002");
+        throw new Error("認証セッションの内容が不正です。");
       }
       return data;
     }
-    throw new Error("\u30ED\u30B0\u30A4\u30F3\u304C\u5B8C\u4E86\u3057\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002");
+    throw new Error("ログインが完了しませんでした。もう一度お試しください。");
   }
   async function requestBackendAuthSession() {
     const start2 = await fetchBackendAuthStart();
@@ -990,12 +1479,12 @@
     if (!popup) {
       console.warn("[QB_SUPPORT][auth-ui] popup blocked", { authUrl: start2.authUrl });
       setAuthStatus(
-        "\u30DD\u30C3\u30D7\u30A2\u30C3\u30D7\u304C\u30D6\u30ED\u30C3\u30AF\u3055\u308C\u307E\u3057\u305F\u3002\u30ED\u30B0\u30A4\u30F3URL\u3092\u65B0\u898F\u30BF\u30D6\u3067\u958B\u3044\u3066\u304F\u3060\u3055\u3044\u3002",
+        "ポップアップがブロックされました。ログインURLを新規タブで開いてください。",
         true
       );
-      console.log("[QB_SUPPORT][auth-ui] login url", start2.authUrl);
+      logInfo("[QB_SUPPORT][auth-ui] login url", start2.authUrl);
     } else {
-      setAuthStatus("\u30D6\u30E9\u30A6\u30B6\u3067\u30ED\u30B0\u30A4\u30F3\u3092\u5B8C\u4E86\u3057\u3066\u304F\u3060\u3055\u3044", false);
+      setAuthStatus("ブラウザでログインを完了してください", false);
     }
     const session = await pollBackendAuthSession(start2.state);
     const expiresAt = typeof session.expiresAt === "number" ? session.expiresAt : Date.now() + AUTH_SESSION_FALLBACK_MS;
@@ -1003,7 +1492,7 @@
   }
   async function fetchBackendAuthProfile(token) {
     const baseUrl = resolveBackendBaseUrl();
-    if (!baseUrl) throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
+    if (!baseUrl) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
     const url = new URL(baseUrl);
     url.pathname = url.pathname.replace(/\/+$/, "") + "/auth/me";
     const response = await fetch(url.toString(), {
@@ -1011,7 +1500,7 @@
     });
     if (!response.ok) {
       const detail = await response.text();
-      throw new Error(`\u8A8D\u8A3C\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${response.status} ${detail}`);
+      throw new Error(`認証に失敗しました: ${response.status} ${detail}`);
     }
     const data = await response.json();
     return data;
@@ -1049,7 +1538,7 @@
       return restored.token;
     }
     if (!interactive) {
-      throw new Error("\u30ED\u30B0\u30A4\u30F3\u304C\u5FC5\u8981\u3067\u3059\u3002");
+      throw new Error("ログインが必要です。");
     }
     const session = await requestBackendAuthSession();
     await saveStoredAuthSession(session);
@@ -1064,10 +1553,10 @@
           authAccessToken = null;
           authProfile = null;
           updateAuthUI();
-          setAuthSyncStatus("\u672A\u30ED\u30B0\u30A4\u30F3", false);
+          setAuthSyncStatus("未ログイン", false);
           return;
         }
-        throw new Error("\u30ED\u30B0\u30A4\u30F3\u304C\u5FC5\u8981\u3067\u3059\u3002");
+        throw new Error("ログインが必要です。");
       }
       await saveStoredAuthSession(session);
       applyAuthSession(session);
@@ -1075,14 +1564,14 @@
         remoteSettingsLoadedFor = session.profile.uid;
         void syncSettingsFromRemote();
       } else {
-        setAuthSyncStatus("\u540C\u671F\u6E08\u307F", false);
+        setAuthSyncStatus("同期済み", false);
       }
     } catch (error) {
       if (!interactive) {
         authAccessToken = null;
         authProfile = null;
         updateAuthUI();
-        setAuthSyncStatus("\u672A\u30ED\u30B0\u30A4\u30F3", false);
+        setAuthSyncStatus("未ログイン", false);
         return;
       }
       throw error;
@@ -1091,21 +1580,21 @@
   async function handleAuthSignIn() {
     const button = authSignInButton;
     if (button) button.disabled = true;
-    setAuthStatus("\u30ED\u30B0\u30A4\u30F3\u4E2D...", false);
-    console.log("[QB_SUPPORT][auth] ORIGIN", location.origin);
-    console.log("[QB_SUPPORT][auth] HREF", location.href);
-    console.log("[QB_SUPPORT][auth] EXT_ID", webext.runtime?.id ?? null);
+    setAuthStatus("ログイン中...", false);
+    logInfo("[QB_SUPPORT][auth] ORIGIN", location.origin);
+    logInfo("[QB_SUPPORT][auth] HREF", location.href);
+    logInfo("[QB_SUPPORT][auth] EXT_ID", webext.runtime?.id ?? null);
     try {
       await refreshAuthState(true);
-      setAuthStatus("\u30ED\u30B0\u30A4\u30F3\u5B8C\u4E86", false);
-      console.log("[QB_SUPPORT][auth] sign-in success");
+      setAuthStatus("ログイン完了", false);
+      logInfo("[QB_SUPPORT][auth] sign-in success");
     } catch (error) {
-      console.log("[QB_SUPPORT][auth] AUTH_ERR_RAW", error);
+      logInfo("[QB_SUPPORT][auth] AUTH_ERR_RAW", error);
       const err = error;
-      console.log("[QB_SUPPORT][auth] AUTH_ERR_MSG", err?.message);
-      console.log("[QB_SUPPORT][auth] AUTH_ERR_STACK", err?.stack);
+      logInfo("[QB_SUPPORT][auth] AUTH_ERR_MSG", err?.message);
+      logInfo("[QB_SUPPORT][auth] AUTH_ERR_STACK", err?.stack);
       const detail = err?.message ? err.message : String(error);
-      setAuthStatus(`\u30ED\u30B0\u30A4\u30F3\u5931\u6557: ${detail}`, true);
+      setAuthStatus(`ログイン失敗: ${detail}`, true);
       throw error;
     } finally {
       if (button) button.disabled = false;
@@ -1119,12 +1608,12 @@
       authProfile = null;
       remoteSettingsLoadedFor = null;
       await clearStoredAuthSession();
-      setAuthStatus("\u30ED\u30B0\u30A2\u30A6\u30C8\u3057\u307E\u3057\u305F", false);
+      setAuthStatus("ログアウトしました", false);
       updateAuthUI();
       applyChatSettings();
     } catch (error) {
       console.warn("[QB_SUPPORT][auth]", error);
-      setAuthStatus(`\u30ED\u30B0\u30A2\u30A6\u30C8\u5931\u6557: ${String(error)}`, true);
+      setAuthStatus(`ログアウト失敗: ${String(error)}`, true);
     } finally {
       if (button) button.disabled = false;
     }
@@ -1133,7 +1622,7 @@
     if (!authProfile || window !== window.top) return;
     if (!navigator.onLine) {
       authSyncPending = true;
-      setAuthSyncStatus("\u30AA\u30D5\u30E9\u30A4\u30F3: \u540C\u671F\u4FDD\u7559", false);
+      setAuthSyncStatus("オフライン: 同期保留", false);
       return;
     }
     if (authSyncTimer) window.clearTimeout(authSyncTimer);
@@ -1142,10 +1631,10 @@
     }, 700);
   }
   async function syncSettingsFromRemote() {
-    setAuthSyncStatus("\u540C\u671F\u4E2D...", false);
+    setAuthSyncStatus("同期中...", false);
     try {
       const remoteSettings = await fetchRemoteSettings();
-      console.log("[QB_SUPPORT][auth-sync] pull", {
+      logInfo("[QB_SUPPORT][auth-sync] pull", {
         hasSettings: Boolean(remoteSettings),
         apiKeyLength: remoteSettings && typeof remoteSettings.chatApiKey === "string" ? remoteSettings.chatApiKey.length : 0
       });
@@ -1159,22 +1648,22 @@
       } else {
         await syncSettingsToRemote();
       }
-      setAuthSyncStatus("\u540C\u671F\u5B8C\u4E86", false);
+      setAuthSyncStatus("同期完了", false);
     } catch (error) {
       console.warn("[QB_SUPPORT][auth-sync]", error);
       if (isOfflineSyncError(error)) {
         authRemoteFetchPending = true;
-        setAuthSyncStatus("\u30AA\u30D5\u30E9\u30A4\u30F3: \u540C\u671F\u4FDD\u7559", false);
+        setAuthSyncStatus("オフライン: 同期保留", false);
         return;
       }
-      setAuthSyncStatus(`\u540C\u671F\u30A8\u30E9\u30FC: ${String(error)}`, true);
+      setAuthSyncStatus(`同期エラー: ${String(error)}`, true);
     }
   }
   async function fetchRemoteSettings() {
     if (!authProfile) return null;
     const token = await ensureAuthAccessToken(false);
     const url = resolveBackendSettingsUrl();
-    if (!url) throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
+    if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
     const response = await fetch(url, {
       headers: {
         Authorization: `Bearer ${token}`
@@ -1182,7 +1671,7 @@
     });
     if (!response.ok) {
       const detail = await response.text();
-      throw new Error(`\u8A2D\u5B9A\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${response.status} ${detail}`);
+      throw new Error(`設定取得に失敗しました: ${response.status} ${detail}`);
     }
     const data = await response.json();
     if (!data?.settings || typeof data.settings !== "object") return null;
@@ -1200,19 +1689,19 @@
     }
     if (!navigator.onLine) {
       authSyncPending = true;
-      setAuthSyncStatus("\u30AA\u30D5\u30E9\u30A4\u30F3: \u540C\u671F\u4FDD\u7559", false);
+      setAuthSyncStatus("オフライン: 同期保留", false);
       return;
     }
     authSyncInFlight = true;
-    setAuthSyncStatus("\u540C\u671F\u4E2D...", false);
+    setAuthSyncStatus("同期中...", false);
     try {
-      console.log("[QB_SUPPORT][auth-sync] push", {
+      logInfo("[QB_SUPPORT][auth-sync] push", {
         apiKeyLength: settings.chatApiKey?.length ?? 0,
         apiKeyEnabled: settings.chatApiKeyEnabled
       });
       const token = await ensureAuthAccessToken(false);
       const url = resolveBackendSettingsUrl();
-      if (!url) throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
+      if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -1227,17 +1716,17 @@
       });
       if (!response.ok) {
         const detail = await response.text();
-        throw new Error(`\u8A2D\u5B9A\u4FDD\u5B58\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${response.status} ${detail}`);
+        throw new Error(`設定保存に失敗しました: ${response.status} ${detail}`);
       }
-      setAuthSyncStatus("\u540C\u671F\u5B8C\u4E86", false);
+      setAuthSyncStatus("同期完了", false);
     } catch (error) {
       console.warn("[QB_SUPPORT][auth-sync]", error);
       if (isOfflineSyncError(error)) {
         authSyncPending = true;
-        setAuthSyncStatus("\u30AA\u30D5\u30E9\u30A4\u30F3: \u540C\u671F\u4FDD\u7559", false);
+        setAuthSyncStatus("オフライン: 同期保留", false);
         return;
       }
-      setAuthSyncStatus(`\u540C\u671F\u30A8\u30E9\u30FC: ${String(error)}`, true);
+      setAuthSyncStatus(`同期エラー: ${String(error)}`, true);
     } finally {
       authSyncInFlight = false;
       if (authSyncPending) {
@@ -1263,7 +1752,7 @@
     });
     window.addEventListener("offline", () => {
       if (!authProfile) return;
-      setAuthSyncStatus("\u30AA\u30D5\u30E9\u30A4\u30F3: \u540C\u671F\u4FDD\u7559", false);
+      setAuthSyncStatus("オフライン: 同期保留", false);
     });
   }
   function isOfflineSyncError(error) {
@@ -1287,14 +1776,14 @@
     title.textContent = "QB Support Settings";
     const subtitle = document.createElement("div");
     subtitle.className = "qb-support-subtitle";
-    subtitle.textContent = "\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8 & \u30B5\u30A4\u30C9\u30D0\u30FC";
+    subtitle.textContent = "ショートカット & サイドバー";
     const titleWrap = document.createElement("div");
     titleWrap.appendChild(title);
     titleWrap.appendChild(subtitle);
     header.appendChild(titleWrap);
     const settingsSection = document.createElement("div");
     settingsSection.className = "qb-support-section";
-    settingsSection.appendChild(makeSectionTitle("\u8868\u793A"));
+    settingsSection.appendChild(makeSectionTitle("表示"));
     displaySectionEl = settingsSection;
     setSectionCollapsed(settingsSection, true);
     shortcutsToggle = document.createElement("input");
@@ -1309,7 +1798,7 @@
     const shortcutsLabel = document.createElement("label");
     shortcutsLabel.className = "qb-support-toggle";
     shortcutsLabel.appendChild(shortcutsToggle);
-    shortcutsLabel.appendChild(makeSpan("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8\u6709\u52B9"));
+    shortcutsLabel.appendChild(makeSpan("ショートカット有効"));
     debugToggle = document.createElement("input");
     debugToggle.type = "checkbox";
     debugToggle.className = "qb-support-toggle-input";
@@ -1319,7 +1808,7 @@
         debugEnabled: debugToggle?.checked ?? false
       });
     });
-    const searchSwitch = createSwitch("\u691C\u7D22\u30D0\u30FC\u8868\u793A", settings.searchVisible, (checked) => {
+    const searchSwitch = createSwitch("検索バー表示", settings.searchVisible, (checked) => {
       void saveSettings({
         ...settings,
         searchVisible: checked
@@ -1327,7 +1816,7 @@
     });
     searchToggle = searchSwitch.input;
     const searchLabel = searchSwitch.label;
-    const noteSwitch = createSwitch("\u30CE\u30FC\u30C8\u8868\u793A", settings.noteVisible, (checked) => {
+    const noteSwitch = createSwitch("ノート表示", settings.noteVisible, (checked) => {
       void saveSettings({
         ...settings,
         noteVisible: checked
@@ -1347,10 +1836,10 @@
     const pageAccentLabel = document.createElement("label");
     pageAccentLabel.className = "qb-support-toggle";
     pageAccentLabel.appendChild(pageAccentToggle);
-    pageAccentLabel.appendChild(makeSpan("\u30DA\u30FC\u30B8\u306B\u7DD1\u30A2\u30AF\u30BB\u30F3\u30C8"));
+    pageAccentLabel.appendChild(makeSpan("ページに緑アクセント"));
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const isDark = settings.themePreference === "dark" || settings.themePreference === "system" && prefersDark;
-    const themeSwitch = createSwitch("\u30C0\u30FC\u30AF\u30E2\u30FC\u30C9", isDark, (checked) => {
+    const themeSwitch = createSwitch("ダークモード", isDark, (checked) => {
       const nextTheme = checked ? "dark" : "light";
       void saveSettings({
         ...settings,
@@ -1361,7 +1850,7 @@
     const themeLabel = themeSwitch.label;
     const shortcutSection = document.createElement("div");
     shortcutSection.className = "qb-support-section";
-    shortcutSection.appendChild(makeSectionTitle("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8"));
+    shortcutSection.appendChild(makeSectionTitle("ショートカット"));
     shortcutSectionEl = shortcutSection;
     setSectionCollapsed(shortcutSection, true);
     const modifierLabelFromKey = (rawKey) => {
@@ -1376,7 +1865,7 @@
       const input = document.createElement("input");
       input.type = "text";
       input.className = "qb-support-input";
-      input.placeholder = "\u4F8B: A / Ctrl+A";
+      input.placeholder = "例: A / Ctrl+A";
       input.addEventListener("keydown", (event) => {
         if (event.key === "Tab") return;
         if (event.key === "Backspace" || event.key === "Delete") {
@@ -1398,7 +1887,7 @@
       label.appendChild(input);
       return { label, input };
     };
-    const buildShortcutField = (labelText, placeholder = "\u4F8B: Ctrl+S") => {
+    const buildShortcutField = (labelText, placeholder = "例: Ctrl+S") => {
       const input = document.createElement("input");
       input.type = "text";
       input.className = "qb-support-input";
@@ -1424,9 +1913,9 @@
       label.appendChild(input);
       return { label, input };
     };
-    const navPrevField = buildKeyField("\u524D\u3078");
-    const navNextField = buildKeyField("\u6B21\u3078");
-    const revealField = buildShortcutField("\u89E3\u7B54", "\u4F8B: Ctrl+S");
+    const navPrevField = buildKeyField("前へ");
+    const navNextField = buildKeyField("次へ");
+    const revealField = buildShortcutField("解答", "例: Ctrl+S");
     navPrevInput = navPrevField.input;
     navNextInput = navNextField.input;
     revealInput = revealField.input;
@@ -1441,7 +1930,7 @@
     const toggleShortcutLabel = document.createElement("label");
     toggleShortcutLabel.className = "qb-support-toggle";
     toggleShortcutLabel.appendChild(shortcutsToggle);
-    toggleShortcutLabel.appendChild(makeSpan("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8\u6709\u52B9"));
+    toggleShortcutLabel.appendChild(makeSpan("ショートカット有効"));
     statusField = document.createElement("div");
     statusField.className = "qb-support-status";
     settingsSection.appendChild(searchLabel);
@@ -1456,7 +1945,7 @@
     shortcutSection.appendChild(optionsWrap);
     const templateSection = document.createElement("div");
     templateSection.className = "qb-support-section";
-    templateSection.appendChild(makeSectionTitle("\u30C1\u30E3\u30C3\u30C8\u30C6\u30F3\u30D7\u30EC"));
+    templateSection.appendChild(makeSectionTitle("チャットテンプレ"));
     templateSectionEl = templateSection;
     setSectionCollapsed(templateSection, true);
     const templateControls = document.createElement("div");
@@ -1466,7 +1955,7 @@
     templateAddButton = document.createElement("button");
     templateAddButton.type = "button";
     templateAddButton.className = "qb-support-template-control";
-    templateAddButton.textContent = "\u8FFD\u52A0";
+    templateAddButton.textContent = "追加";
     applyButtonVariant(templateAddButton, "primary");
     templateAddButton.addEventListener("click", () => {
       updateTemplateCount(settings.chatTemplateCount + 1);
@@ -1474,7 +1963,7 @@
     templateRemoveButton = document.createElement("button");
     templateRemoveButton.type = "button";
     templateRemoveButton.className = "qb-support-template-control";
-    templateRemoveButton.textContent = "\u524A\u9664";
+    templateRemoveButton.textContent = "削除";
     applyButtonVariant(templateRemoveButton, "ghost");
     templateRemoveButton.addEventListener("click", () => {
       updateTemplateCount(settings.chatTemplateCount - 1);
@@ -1500,24 +1989,24 @@
       headerRow.className = "qb-support-template-header";
       const titleEl = document.createElement("div");
       titleEl.className = "qb-support-template-title";
-      titleEl.textContent = `\u30C6\u30F3\u30D7\u30EC${i + 1}`;
+      titleEl.textContent = `テンプレ${i + 1}`;
       const enabledInput = document.createElement("input");
       enabledInput.type = "checkbox";
       enabledInput.className = "qb-support-toggle-input";
       const enabledLabel = document.createElement("label");
       enabledLabel.className = "qb-support-toggle";
       enabledLabel.appendChild(enabledInput);
-      enabledLabel.appendChild(makeSpan("\u6709\u52B9"));
+      enabledLabel.appendChild(makeSpan("有効"));
       headerRow.appendChild(titleEl);
       headerRow.appendChild(enabledLabel);
       const labelInput = document.createElement("input");
       labelInput.type = "text";
       labelInput.className = "qb-support-input qb-support-template-label";
-      labelInput.placeholder = "\u30DC\u30BF\u30F3\u540D";
+      labelInput.placeholder = "ボタン名";
       const shortcutInput = document.createElement("input");
       shortcutInput.type = "text";
       shortcutInput.className = "qb-support-input qb-support-template-shortcut";
-      shortcutInput.placeholder = "\u4F8B: Ctrl+Z";
+      shortcutInput.placeholder = "例: Ctrl+Z";
       shortcutInput.addEventListener("keydown", (event) => {
         if (event.key === "Tab") return;
         if (event.key === "Backspace" || event.key === "Delete") {
@@ -1536,12 +2025,12 @@
       const promptInput = document.createElement("textarea");
       promptInput.className = "qb-support-template-prompt";
       promptInput.rows = 3;
-      promptInput.placeholder = "\u30D7\u30ED\u30F3\u30D7\u30C8";
+      promptInput.placeholder = "プロンプト";
       const fields = document.createElement("div");
       fields.className = "qb-support-template-fields";
-      fields.appendChild(buildTemplateField("\u30DC\u30BF\u30F3\u540D", labelInput));
-      fields.appendChild(buildTemplateField("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8", shortcutInput));
-      fields.appendChild(buildTemplateField("\u30D7\u30ED\u30F3\u30D7\u30C8", promptInput));
+      fields.appendChild(buildTemplateField("ボタン名", labelInput));
+      fields.appendChild(buildTemplateField("ショートカット", shortcutInput));
+      fields.appendChild(buildTemplateField("プロンプト", promptInput));
       row.appendChild(headerRow);
       row.appendChild(fields);
       templateList.appendChild(row);
@@ -1556,16 +2045,16 @@
     templateSection.appendChild(templateList);
     const explanationSection = document.createElement("div");
     explanationSection.className = "qb-support-section";
-    explanationSection.appendChild(makeSectionTitle("\u30D7\u30ED\u30F3\u30D7\u30C8"));
+    explanationSection.appendChild(makeSectionTitle("プロンプト"));
     explanationSectionEl = explanationSection;
     setSectionCollapsed(explanationSection, true);
     const commonPromptLabel = document.createElement("label");
     commonPromptLabel.className = "qb-support-field qb-support-template-field";
-    commonPromptLabel.appendChild(makeSpan("\u5171\u901A\u30D7\u30ED\u30F3\u30D7\u30C8"));
+    commonPromptLabel.appendChild(makeSpan("共通プロンプト"));
     commonPromptInput = document.createElement("textarea");
     commonPromptInput.className = "qb-support-template-prompt qb-support-common-prompt";
     commonPromptInput.rows = 3;
-    commonPromptInput.placeholder = "\u5168\u3066\u306E\u4F1A\u8A71\u306B\u4ED8\u4E0E\u3059\u308B\u5171\u901A\u30D7\u30ED\u30F3\u30D7\u30C8";
+    commonPromptInput.placeholder = "全ての会話に付与する共通プロンプト";
     commonPromptLabel.appendChild(commonPromptInput);
     explanationLevelSelect = createOverlaySelect(
       Object.entries(EXPLANATION_LEVEL_LABELS).map(([value, label]) => ({
@@ -1576,13 +2065,13 @@
     );
     const explanationSelectLabel = document.createElement("label");
     explanationSelectLabel.className = "qb-support-field";
-    explanationSelectLabel.appendChild(makeSpan("\u30EC\u30D9\u30EB"));
+    explanationSelectLabel.appendChild(makeSpan("レベル"));
     explanationSelectLabel.appendChild(explanationLevelSelect);
     const buildExplanationPromptField = (labelText, key) => {
       const textarea = document.createElement("textarea");
       textarea.className = "qb-support-template-prompt qb-support-explanation-prompt";
       textarea.rows = 3;
-      textarea.placeholder = "\u30D7\u30ED\u30F3\u30D7\u30C8";
+      textarea.placeholder = "プロンプト";
       explanationPromptInputs[key] = textarea;
       const label = document.createElement("label");
       label.className = "qb-support-field qb-support-template-field";
@@ -1593,33 +2082,33 @@
     const promptWrap = document.createElement("div");
     promptWrap.className = "qb-support-template-fields qb-support-explanation-prompts";
     promptWrap.appendChild(
-      buildExplanationPromptField("\u9AD8\u6821\u751F\u3067\u3082\u308F\u304B\u308B", "highschool")
+      buildExplanationPromptField("高校生でもわかる", "highschool")
     );
-    promptWrap.appendChild(buildExplanationPromptField("\u533B\u5B66\u90E8\u4F4E\u5B66\u5E74", "med-junior"));
+    promptWrap.appendChild(buildExplanationPromptField("医学部低学年", "med-junior"));
     promptWrap.appendChild(
-      buildExplanationPromptField("\u533B\u5B66\u90E8\u9AD8\u5B66\u5E74\u301C\u7814\u4FEE\u533B", "med-senior")
+      buildExplanationPromptField("医学部高学年〜研修医", "med-senior")
     );
     explanationSection.appendChild(commonPromptLabel);
     explanationSection.appendChild(explanationSelectLabel);
     explanationSection.appendChild(promptWrap);
     const authSection = document.createElement("div");
     authSection.className = "qb-support-section";
-    authSection.appendChild(makeSectionTitle("\u8A8D\u8A3C"));
+    authSection.appendChild(makeSectionTitle("認証"));
     authSectionEl = authSection;
     setSectionCollapsed(authSection, false);
     authStatusField = document.createElement("div");
     authStatusField.className = "qb-support-auth-status";
-    authStatusField.textContent = "\u672A\u30ED\u30B0\u30A4\u30F3";
+    authStatusField.textContent = "未ログイン";
     authMetaField = document.createElement("div");
     authMetaField.className = "qb-support-auth-meta";
     authSyncField = document.createElement("div");
     authSyncField.className = "qb-support-auth-sync";
-    authSyncField.textContent = "\u672A\u30ED\u30B0\u30A4\u30F3";
+    authSyncField.textContent = "未ログイン";
     authSignInButton = document.createElement("button");
     authSignInButton.type = "button";
     authSignInButton.className = "qb-support-save qb-support-auth-button";
     applyButtonVariant(authSignInButton, "primary");
-    authSignInButton.textContent = "Google\u3067\u30ED\u30B0\u30A4\u30F3";
+    authSignInButton.textContent = "Googleでログイン";
     authSignInButton.addEventListener("click", () => {
       void handleAuthSignIn();
     });
@@ -1627,7 +2116,7 @@
     authSignOutButton.type = "button";
     authSignOutButton.className = "qb-support-save qb-support-auth-button qb-support-auth-signout";
     applyButtonVariant(authSignOutButton, "danger");
-    authSignOutButton.textContent = "\u30ED\u30B0\u30A2\u30A6\u30C8";
+    authSignOutButton.textContent = "ログアウト";
     authSignOutButton.style.display = "none";
     authSignOutButton.addEventListener("click", () => {
       void handleAuthSignOut();
@@ -1649,8 +2138,8 @@
     launcher = document.createElement("button");
     launcher.type = "button";
     launcher.className = "qb-support-launcher";
-    launcher.title = "QB\u8A2D\u5B9A";
-    launcher.setAttribute("aria-label", "QB\u8A2D\u5B9A");
+    launcher.title = "QB設定";
+    launcher.setAttribute("aria-label", "QB設定");
     launcher.appendChild(createGearIcon());
     launcher.addEventListener("click", () => {
       const next = !settings.enabled;
@@ -1720,7 +2209,7 @@
             "qb-support-chat-model-inline"
           );
           chatHeaderModelSelect.value = settings.chatModel;
-          chatHeaderModelSelect.setAttribute("aria-label", "\u30E2\u30C7\u30EB\u9078\u629E");
+          chatHeaderModelSelect.setAttribute("aria-label", "モデル選択");
           titleWrap2.appendChild(chatHeaderModelSelect);
         }
       }
@@ -1770,7 +2259,7 @@
           chatApiKeyVisibilityButton = document.createElement("button");
           chatApiKeyVisibilityButton.type = "button";
           chatApiKeyVisibilityButton.className = "qb-support-chat-api-visibility";
-          chatApiKeyVisibilityButton.textContent = "\u8868\u793A";
+          chatApiKeyVisibilityButton.textContent = "表示";
         }
         if (chatApiKeyVisibilityButton) {
           applyButtonVariant(chatApiKeyVisibilityButton, "ghost");
@@ -1786,7 +2275,7 @@
               chatApiInput.type = chatApiKeyVisible ? "text" : "password";
             }
             if (chatApiKeyVisibilityButton) {
-              chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "\u975E\u8868\u793A" : "\u8868\u793A";
+              chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "非表示" : "表示";
             }
           });
         }
@@ -1804,7 +2293,7 @@
           chatApiKeyToggle.type = "checkbox";
           chatApiKeyToggle.className = "qb-support-toggle-input qb-support-chat-api-key-toggle";
           apiKeyToggleLabel2.appendChild(chatApiKeyToggle);
-          apiKeyToggleLabel2.appendChild(makeSpan("\u624B\u52D5API\u30AD\u30FC\u3092\u4F7F\u7528"));
+          apiKeyToggleLabel2.appendChild(makeSpan("手動APIキーを使用"));
           apiSection2.appendChild(apiKeyToggleLabel2);
         }
         if (chatApiKeyToggle && chatApiKeyToggle.dataset.handlers !== "true") {
@@ -1842,8 +2331,8 @@
           const button = document.createElement("button");
           button.type = "button";
           button.className = "qb-support-chat-settings-btn";
-          button.textContent = "\u8A2D\u5B9A";
-          button.setAttribute("aria-label", "\u30C1\u30E3\u30C3\u30C8\u8A2D\u5B9A");
+          button.textContent = "設定";
+          button.setAttribute("aria-label", "チャット設定");
           actions2.insertBefore(button, actions2.firstChild);
           chatSettingsButton = button;
         }
@@ -1905,7 +2394,7 @@
       "qb-support-chat-model-inline"
     );
     chatHeaderModelSelect.value = settings.chatModel;
-    chatHeaderModelSelect.setAttribute("aria-label", "\u30E2\u30C7\u30EB\u9078\u629E");
+    chatHeaderModelSelect.setAttribute("aria-label", "モデル選択");
     titleWrap.appendChild(title);
     titleWrap.appendChild(chatHeaderModelSelect);
     const actions = document.createElement("div");
@@ -1913,18 +2402,18 @@
     const settingsButton = document.createElement("button");
     settingsButton.type = "button";
     settingsButton.className = "qb-support-chat-settings-btn";
-    settingsButton.textContent = "\u8A2D\u5B9A";
-    settingsButton.setAttribute("aria-label", "\u30C1\u30E3\u30C3\u30C8\u8A2D\u5B9A");
+    settingsButton.textContent = "設定";
+    settingsButton.setAttribute("aria-label", "チャット設定");
     chatSettingsButton = settingsButton;
     settingsButton.dataset.shortcut = "Ctrl+S";
     applyButtonVariant(settingsButton, "ghost");
     const resetButton = document.createElement("button");
     resetButton.type = "button";
     resetButton.className = "qb-support-chat-new";
-    resetButton.textContent = "\u65B0\u898F";
+    resetButton.textContent = "新規";
     resetButton.dataset.shortcut = "Ctrl+N";
     resetButton.addEventListener("click", () => {
-      resetChatHistory("\u4F1A\u8A71\u3092\u30EA\u30BB\u30C3\u30C8\u3057\u307E\u3057\u305F");
+      resetChatHistory("会話をリセットしました");
     });
     applyButtonVariant(resetButton, "ghost");
     actions.appendChild(settingsButton);
@@ -1955,7 +2444,7 @@
     chatApiKeyVisibilityButton = document.createElement("button");
     chatApiKeyVisibilityButton.type = "button";
     chatApiKeyVisibilityButton.className = "qb-support-chat-api-visibility";
-    chatApiKeyVisibilityButton.textContent = "\u8868\u793A";
+    chatApiKeyVisibilityButton.textContent = "表示";
     applyButtonVariant(chatApiKeyVisibilityButton, "ghost");
     chatApiKeyVisibilityButton.addEventListener("click", () => {
       chatApiKeyVisible = !chatApiKeyVisible;
@@ -1963,7 +2452,7 @@
         chatApiInput.type = chatApiKeyVisible ? "text" : "password";
       }
       if (chatApiKeyVisibilityButton) {
-        chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "\u975E\u8868\u793A" : "\u8868\u793A";
+        chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "非表示" : "表示";
       }
     });
     apiKeyRow.appendChild(chatApiKeyVisibilityButton);
@@ -1975,7 +2464,7 @@
     chatApiKeyToggle.type = "checkbox";
     chatApiKeyToggle.className = "qb-support-toggle-input qb-support-chat-api-key-toggle";
     apiKeyToggleLabel.appendChild(chatApiKeyToggle);
-    apiKeyToggleLabel.appendChild(makeSpan("\u624B\u52D5API\u30AD\u30FC\u3092\u4F7F\u7528"));
+    apiKeyToggleLabel.appendChild(makeSpan("手動APIキーを使用"));
     chatApiKeyToggle.addEventListener("change", () => {
       void saveSettings({
         ...settings,
@@ -2003,12 +2492,12 @@
     chatInputWrap = inputWrap;
     chatInput = document.createElement("textarea");
     chatInput.className = "qb-support-chat-textarea";
-    chatInput.placeholder = "\u8CEA\u554F\u3092\u5165\u529B...";
+    chatInput.placeholder = "質問を入力...";
     chatInput.rows = 3;
     chatSendButton = document.createElement("button");
     chatSendButton.type = "button";
     chatSendButton.className = "qb-support-chat-send";
-    chatSendButton.textContent = "\u9001\u4FE1";
+    chatSendButton.textContent = "送信";
     applyButtonVariant(chatSendButton, "primary");
     inputWrap.appendChild(chatInput);
     inputWrap.appendChild(chatSendButton);
@@ -2050,7 +2539,7 @@
     chatOverlayHandle.id = CHAT_OVERLAY_HANDLE_ID;
     chatOverlayHandle.type = "button";
     chatOverlayHandle.className = "qb-support-chat-overlay-handle";
-    chatOverlayHandle.setAttribute("aria-label", "\u30C1\u30E3\u30C3\u30C8\u3092\u958B\u9589");
+    chatOverlayHandle.setAttribute("aria-label", "チャットを開閉");
     chatOverlayHandle.addEventListener("click", () => {
       void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
     });
@@ -2067,7 +2556,7 @@
     chatToggle.type = "button";
     chatToggle.className = "qb-support-chat-toggle";
     chatToggle.textContent = "<";
-    chatToggle.setAttribute("aria-label", "\u30C1\u30E3\u30C3\u30C8\u3092\u958B\u304F");
+    chatToggle.setAttribute("aria-label", "チャットを開く");
     chatToggle.dataset.shortcut = CHAT_TOGGLE_SHORTCUT;
     chatToggle.addEventListener("click", () => {
       void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
@@ -2088,12 +2577,14 @@
     applyChatDockLayout();
     ensureChatLayoutHandler();
     if (!settings.chatOpen && chatSettingsOpen) {
+      setSettingsToggleSource("chat-close", { reason: "chatOpen=false" });
+      logDebug("chat-close", { chatOpen: settings.chatOpen, settingsOpen: chatSettingsOpen });
       toggleChatSettings(false);
     }
     if (chatApiInput && document.activeElement !== chatApiInput) {
       const apiKeySaved = Boolean(settings.chatApiKey);
       chatApiInput.value = apiKeySaved ? settings.chatApiKey : "";
-      chatApiInput.placeholder = apiKeySaved ? "\u4FDD\u5B58\u6E08\u307F (\u7DE8\u96C6\u53EF)" : "sk-...";
+      chatApiInput.placeholder = apiKeySaved ? "保存済み (編集可)" : "sk-...";
     }
     updateChatApiKeyStatus();
     if (chatApiKeyToggle) {
@@ -2105,7 +2596,7 @@
       if (chatApiInput) {
         chatApiInput.type = chatApiKeyVisible ? "text" : "password";
       }
-      chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "\u975E\u8868\u793A" : "\u8868\u793A";
+      chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "非表示" : "表示";
       chatApiKeyVisibilityButton.disabled = !hasKey;
     }
     const backendMode = isBackendMode();
@@ -2123,14 +2614,14 @@
     const savedValue = settings.chatApiKey?.trim() ?? "";
     const valid = savedValue ? isValidApiKey(savedValue) : false;
     const currentValue = chatApiInput?.value.trim() ?? "";
-    let status = "\u672A\u5165\u529B";
+    let status = "未入力";
     if (saved) {
-      status = valid ? "\u5165\u529B\u6E08\u307F" : "\u7121\u52B9";
+      status = valid ? "入力済み" : "無効";
     } else if (currentValue) {
-      status = "\u5165\u529B\u4E2D";
+      status = "入力中";
     }
-    const suffix = saved && !settings.chatApiKeyEnabled ? " (\u4F7F\u7528\u30AA\u30D5)" : "";
-    chatApiKeyStatus.textContent = `API\u30AD\u30FC: ${status}${suffix}`;
+    const suffix = saved && !settings.chatApiKeyEnabled ? " (使用オフ)" : "";
+    chatApiKeyStatus.textContent = `APIキー: ${status}${suffix}`;
   }
   function ensureThemeListener() {
     if (themeQuery) return;
@@ -2200,7 +2691,7 @@
   }
   function updateTemplateControls() {
     if (templateCountLabel) {
-      templateCountLabel.textContent = `\u30C6\u30F3\u30D7\u30EC\u6570: ${getTemplateCount()}`;
+      templateCountLabel.textContent = `テンプレ数: ${getTemplateCount()}`;
     }
     if (templateAddButton) {
       templateAddButton.disabled = getTemplateCount() >= CHAT_TEMPLATE_MAX;
@@ -2222,13 +2713,16 @@
       chatTemplates: nextTemplates
     });
   }
+  function isHintTemplate(template) {
+    if (!template) return false;
+    const hintPhrase = "絶妙なヒント";
+    const label = template.label ?? "";
+    const prompt = template.prompt ?? "";
+    return label.includes("ヒント") || label.includes(hintPhrase) || prompt.includes(hintPhrase);
+  }
   function getHintTemplate() {
-    const hintPhrase = "\u7D76\u5999\u306A\u30D2\u30F3\u30C8";
     for (const entry of getEnabledChatTemplatesWithIndex()) {
-      const template = entry.template;
-      const label = template.label ?? "";
-      const prompt = template.prompt ?? "";
-      if (label.includes("\u30D2\u30F3\u30C8") || label.includes(hintPhrase) || prompt.includes(hintPhrase)) {
+      if (isHintTemplate(entry.template)) {
         return entry;
       }
     }
@@ -2248,6 +2742,10 @@
       ensureChatUI();
     }
     const openPanel = () => {
+      if (!lastSettingsToggleSource) {
+        setSettingsToggleSource("template-editor", { index });
+        logDebug("template-editor-open", { index });
+      }
       toggleChatSettings(true);
       setSectionCollapsed(templateSectionEl, false);
       const row = chatTemplateRows[index];
@@ -2262,6 +2760,7 @@
     }
   }
   function attachTemplateEditJump(button, index) {
+    if (!settings.debugEnabled) return;
     if (button.dataset.editJump === "true") return;
     button.dataset.editJump = "true";
     let hoverTimer = null;
@@ -2278,6 +2777,8 @@
     button.addEventListener("mouseenter", () => {
       clearHover();
       hoverTimer = window.setTimeout(() => {
+        setSettingsToggleSource("template-hover", { index });
+        logDebug("template-hover", { index });
         openTemplateEditor(index);
       }, 900);
     });
@@ -2288,6 +2789,8 @@
       clearPress();
       pressTimer = window.setTimeout(() => {
         longPressTriggered = true;
+        setSettingsToggleSource("template-longpress", { index });
+        logDebug("template-longpress", { index });
         openTemplateEditor(index);
       }, 650);
     });
@@ -2307,6 +2810,107 @@
       },
       true
     );
+  }
+  function buildHintQuickMessage(draft) {
+    const base = "絶妙なヒント（答えありきでなく、所見や症状から推論する視点で思考力を養う答えに迫りすぎないもの）をどうぞ。";
+    if (!draft) return base;
+    return `${base}今の考察は以下です.\"${draft}\"`;
+  }
+  function logInfo(...args) {
+    if (!settings.debugEnabled) return;
+    globalThis.console.log(...args);
+  }
+  function logVerbose(...args) {
+    if (!settings.debugEnabled) return;
+    globalThis.console.debug(...args);
+  }
+  function logDebug(event, meta) {
+    logInfo("[QB_SUPPORT][debug]", { event, ...(meta ?? {}) });
+  }
+  function setSettingsToggleSource(source, meta) {
+    lastSettingsToggleSource = source;
+    lastSettingsToggleMeta = meta ?? null;
+  }
+  function isEligibleHintDraftSource(target) {
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return false;
+    if (target instanceof HTMLInputElement) {
+      const type = (target.type || "text").toLowerCase();
+      if (type === "password" || type === "hidden" || type === "checkbox" || type === "radio" || type === "button" || type === "submit" || type === "file") {
+        return false;
+      }
+    }
+    if (target.classList.contains("qb-support-chat-api-key")) return false;
+    return true;
+  }
+  function getHintDraftPreview(value) {
+    if (!value) return "";
+    return value.length > 60 ? `${value.slice(0, 60)}...` : value;
+  }
+  function getHintAnswerPreview(value) {
+    if (!value) return "";
+    const normalized = normalizeSpace(value);
+    return normalized.length > 120 ? `${normalized.slice(0, 120)}...` : normalized;
+  }
+  function isSupportUiElement(element) {
+    if (!(element instanceof HTMLElement)) return false;
+    return Boolean(element.closest("[id^='qb-support-'], [class*='qb-support']"));
+  }
+  function stripSupportUi(root) {
+    if (!root) return;
+    root.querySelectorAll("[id^='qb-support-'], [class*='qb-support']").forEach((node) => node.remove());
+  }
+  function summarizeHintDraftSource(target, value) {
+    return {
+      tag: target.tagName,
+      type: target instanceof HTMLInputElement ? (target.type || "text").toLowerCase() : null,
+      id: target.id || null,
+      name: target.name || null,
+      className: target.className || null,
+      valueLength: value.length,
+      valuePreview: getHintDraftPreview(value),
+      frame: window === window.top ? "top" : "iframe",
+      url: location.href
+    };
+  }
+  function resolveHintDraft() {
+    const chatDraft = chatInput?.value?.trim() ?? "";
+    if (chatDraft) {
+      logDebug("hint-draft-resolve", {
+        used: "chat-input",
+        valueLength: chatDraft.length,
+        valuePreview: getHintDraftPreview(chatDraft)
+      });
+      return chatDraft;
+    }
+    const chatTextarea = document.querySelector(
+      ".qb-support-chat-textarea"
+    );
+    const fallbackDraft = chatTextarea?.value?.trim() ?? "";
+    if (fallbackDraft) {
+      logDebug("hint-draft-resolve", {
+        used: "chat-textarea",
+        valueLength: fallbackDraft.length,
+        valuePreview: getHintDraftPreview(fallbackDraft)
+      });
+      return fallbackDraft;
+    }
+    if (lastHintDraftSource && document.contains(lastHintDraftSource)) {
+      const value = lastHintDraftSource.value?.trim() ?? "";
+      if (value) {
+        logDebug("hint-draft-resolve", {
+          used: "last-source",
+          ...summarizeHintDraftSource(lastHintDraftSource, value)
+        });
+        return value;
+      }
+      logDebug("hint-draft-resolve", {
+        used: "last-source-empty",
+        ...summarizeHintDraftSource(lastHintDraftSource, value)
+      });
+      return "";
+    }
+    logDebug("hint-draft-resolve", { used: "none" });
+    return "";
   }
   function updateHintQuickButton() {
     if (window !== window.top) return;
@@ -2332,14 +2936,21 @@
       hintQuickButton.className = "qb-support-chat-template-btn qb-support-hint-quick";
       applyButtonVariant(hintQuickButton, "accent");
     }
-    hintQuickButton.textContent = "\u30D2\u30F3\u30C8";
+    hintQuickButton.textContent = "ヒント";
     if (hintEntry.template.shortcut) {
       hintQuickButton.dataset.shortcut = hintEntry.template.shortcut;
     } else {
       hintQuickButton.removeAttribute("data-shortcut");
     }
     hintQuickButton.onclick = () => {
-      void sendTemplateMessage(hintEntry.template);
+      if (!chatInput) {
+        ensureChatUI();
+      }
+      const draft = resolveHintDraft();
+      setSettingsToggleSource("hint-click", { draftLength: draft.length });
+      logDebug("hint-click", { draftLength: draft.length, hasDraft: Boolean(draft) });
+      const message = buildHintQuickMessage(draft);
+      void sendTemplateMessage(message);
     };
     attachTemplateEditJump(hintQuickButton, hintEntry.index);
     const parent = revealButton.parentElement;
@@ -2363,11 +2974,14 @@
       button.type = "button";
       button.className = "qb-support-chat-template-btn";
       applyButtonVariant(button, "accent");
-      button.textContent = template.label || `\u30C6\u30F3\u30D7\u30EC${index + 1}`;
+      button.textContent = template.label || `テンプレ${index + 1}`;
       if (template.shortcut) {
         button.dataset.shortcut = template.shortcut;
       }
       button.addEventListener("click", () => {
+        const label = button.textContent ?? "";
+        setSettingsToggleSource("template-click", { index, label });
+        logDebug("template-click", { index, label });
         void sendTemplateMessage(template);
       });
       attachTemplateEditJump(button, index);
@@ -2394,7 +3008,7 @@
         const nextModel = select.value ?? "";
         if (!nextModel) return;
         void saveSettings({ ...settings, chatModel: nextModel });
-        setChatStatus(`\u30E2\u30C7\u30EB\u3092 ${nextModel} \u306B\u8A2D\u5B9A\u3057\u307E\u3057\u305F`, false);
+        setChatStatus(`モデルを ${nextModel} に設定しました`, false);
       });
     };
     bind(chatModelInput);
@@ -2405,12 +3019,29 @@
     if (chatSettingsButton.dataset.handlers === "true") return;
     chatSettingsButton.dataset.handlers = "true";
     chatSettingsButton.addEventListener("click", () => {
+      const label = chatSettingsButton.textContent ?? "";
+      setSettingsToggleSource("settings-button", { label });
+      logDebug("settings-button-click", { label });
       toggleChatSettings();
     });
   }
   function toggleChatSettings(force) {
     if (!chatSettingsPanel || !chatSettingsButton) return;
     const nextOpen = typeof force === "boolean" ? force : !chatSettingsOpen;
+    const meta = {
+      source: lastSettingsToggleSource ?? "unknown",
+      meta: lastSettingsToggleMeta,
+      force,
+      nextOpen,
+      prevOpen: chatSettingsOpen,
+      chatOpen: settings.chatOpen
+    };
+    if (!lastSettingsToggleSource) {
+      meta.stack = new Error("toggleChatSettings").stack;
+    }
+    logDebug("toggle-chat-settings", meta);
+    lastSettingsToggleSource = null;
+    lastSettingsToggleMeta = null;
     if (chatSettingsOpen && !nextOpen) {
       void commitSettingsFromPanel();
     }
@@ -2484,7 +3115,7 @@
     }
     if (chatTemplateRows.length) {
       const nextTemplates = chatTemplateRows.map((row, index) => {
-        const label = row.label.value.trim() || `\u30C6\u30F3\u30D7\u30EC${index + 1}`;
+        const label = row.label.value.trim() || `テンプレ${index + 1}`;
         const shortcut = normalizeShortcut(row.shortcut.value);
         const prompt = row.prompt.value.trim();
         return {
@@ -2498,7 +3129,7 @@
         (template) => template.enabled && !template.prompt
       );
       if (hasInvalidTemplate) {
-        setStatus("\u6709\u52B9\u306A\u30C6\u30F3\u30D7\u30EC\u306F\u30D7\u30ED\u30F3\u30D7\u30C8\u5FC5\u9808\u3067\u3059", true);
+        setStatus("有効なテンプレはプロンプト必須です", true);
       } else if (JSON.stringify(nextTemplates) !== JSON.stringify(settings.chatTemplates ?? [])) {
         applyUpdate("chatTemplates", nextTemplates);
       }
@@ -2624,20 +3255,20 @@
     }
     if (!authProfile) {
       if (apiKey && !apiKeyValid) {
-        throw new Error("API\u30AD\u30FC\u304C\u7121\u52B9\u3067\u3059\u3002Google\u3067\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044");
+        throw new Error("APIキーが無効です。Googleでログインしてください");
       }
       if (apiKey) {
-        throw new Error("API\u30AD\u30FC\u3092\u6709\u52B9\u306B\u3059\u308B\u304B\u3001Google\u3067\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044");
+        throw new Error("APIキーを有効にするか、Googleでログインしてください");
       }
-      throw new Error("API\u30AD\u30FC\u3092\u8A2D\u5B9A\u3059\u308B\u304B\u3001Google\u3067\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044");
+      throw new Error("APIキーを設定するか、Googleでログインしてください");
     }
     const backendBaseUrl = resolveBackendBaseUrl();
     if (!backendBaseUrl) {
-      throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
+      throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
     }
     const token = await ensureAuthAccessToken(false);
     if (!token) {
-      throw new Error("\u8A8D\u8A3C\u30C8\u30FC\u30AF\u30F3\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+      throw new Error("認証トークンを取得できませんでした");
     }
     return { mode: "backend", backendUrl: backendBaseUrl, authToken: token };
   }
@@ -2656,7 +3287,17 @@
     }
   }
   async function sendTemplateMessage(template) {
-    const rawMessage = typeof template === "string" ? template : template.prompt;
+    let rawMessage = "";
+    if (typeof template === "string") {
+      rawMessage = template;
+    } else if (isHintTemplate(template)) {
+      const draft = resolveHintDraft();
+      setSettingsToggleSource("hint-template", { draftLength: draft.length });
+      logDebug("hint-template", { draftLength: draft.length, hasDraft: Boolean(draft) });
+      rawMessage = buildHintQuickMessage(draft);
+    } else {
+      rawMessage = template?.prompt ?? "";
+    }
     if (!rawMessage.trim()) return;
     const message = applyTemplateConstraints(rawMessage, template);
     const auth = await resolveChatAuthWithStatus();
@@ -2763,11 +3404,11 @@
     const layout = document.documentElement.dataset.qbChatLayout;
     const open = settings.chatOpen;
     if (layout === "overlay-bottom") {
-      chatToggle.textContent = open ? "\u25BC" : "\u25B2";
+      chatToggle.textContent = open ? "▼" : "▲";
     } else {
       chatToggle.textContent = open ? ">" : "<";
     }
-    chatToggle.setAttribute("aria-label", open ? "\u30C1\u30E3\u30C3\u30C8\u3092\u9589\u3058\u308B" : "\u30C1\u30E3\u30C3\u30C8\u3092\u958B\u304F");
+    chatToggle.setAttribute("aria-label", open ? "チャットを閉じる" : "チャットを開く");
   }
   function focusChatInput() {
     if (!chatInput) return;
@@ -2825,7 +3466,7 @@
     chatRequestPending = true;
     const requestId = createChatRequestId();
     activeChatRequestId = requestId;
-    const placeholder = appendChatMessage("assistant", "\u56DE\u7B54\u4E2D...", { pending: true });
+    const placeholder = appendChatMessage("assistant", "回答中...", { pending: true });
     const effectiveModel = auth.mode === "backend" ? resolveBackendModel(settings.chatModel) : settings.chatModel;
     const useThinking = effectiveModel.startsWith("gpt-5");
     let thinkingTimer = null;
@@ -2845,7 +3486,7 @@
           }
         }, 1200);
       }
-      console.debug("[QB_SUPPORT][chat-send]", {
+      logVerbose("[QB_SUPPORT][chat-send]", {
         hasSnapshot: Boolean(snapshot),
         history: chatHistory.length
       });
@@ -2866,7 +3507,7 @@
           }
           streamState.text += delta;
           if (placeholder) {
-            setChatMessageContent(placeholder, "assistant", streamState.text || "\u56DE\u7B54\u4E2D...");
+            setChatMessageContent(placeholder, "assistant", streamState.text || "回答中...");
             placeholder.classList.remove("is-pending");
             chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
           }
@@ -2875,7 +3516,7 @@
       if (activeChatRequestId !== requestId) return;
       const finalText = response.text || streamState.text;
       if (placeholder) {
-        setChatMessageContent(placeholder, "assistant", finalText || "\u5FDC\u7B54\u304C\u3042\u308A\u307E\u305B\u3093");
+        setChatMessageContent(placeholder, "assistant", finalText || "応答がありません");
         placeholder.classList.remove("is-pending");
       } else if (finalText) {
         const message = appendChatMessage("assistant", finalText);
@@ -2902,11 +3543,11 @@
     } catch (error) {
       if (activeChatRequestId !== requestId) return;
       if (placeholder) {
-        placeholder.textContent = "\u5FDC\u7B54\u306B\u5931\u6557\u3057\u307E\u3057\u305F";
+        placeholder.textContent = "応答に失敗しました";
         placeholder.classList.remove("is-pending");
       }
       console.warn("[QB_SUPPORT][chat-error]", error);
-      setChatStatus(`\u30A8\u30E9\u30FC: ${String(error)}`, true);
+      setChatStatus(`エラー: ${String(error)}`, true);
     } finally {
       if (thinkingTimer) window.clearTimeout(thinkingTimer);
       if (activeChatRequestId === requestId) {
@@ -3014,7 +3655,7 @@
     button.type = "button";
     button.className = "qb-support-chat-copy";
     applyButtonVariant(button, "ghost");
-    button.textContent = "\u30B3\u30D4\u30FC";
+    button.textContent = "コピー";
     button.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -3022,14 +3663,14 @@
       if (!text) return;
       try {
         await navigator.clipboard.writeText(text);
-        button.textContent = "\u30B3\u30D4\u30FC\u6E08\u307F";
+        button.textContent = "コピー済み";
         window.setTimeout(() => {
-          button.textContent = "\u30B3\u30D4\u30FC";
+          button.textContent = "コピー";
         }, 1200);
       } catch {
-        button.textContent = "\u5931\u6557";
+        button.textContent = "失敗";
         window.setTimeout(() => {
-          button.textContent = "\u30B3\u30D4\u30FC";
+          button.textContent = "コピー";
         }, 1200);
       }
     });
@@ -3038,7 +3679,7 @@
   function applyUserMessageCollapse(message, content) {
     const words = content.trim().split(/\s+/).filter(Boolean);
     if (words.length <= 400) return;
-    const preview = `${words.slice(0, 400).join(" ")} \u2026 (\u30AF\u30EA\u30C3\u30AF\u3067\u5C55\u958B)`;
+    const preview = `${words.slice(0, 400).join(" ")} … (クリックで展開)`;
     const contentEl = message.querySelector(".qb-support-chat-content");
     if (!contentEl) return;
     message.classList.add("is-collapsible", "is-collapsed");
@@ -3074,9 +3715,9 @@
     if (!totalTokens) return null;
     const pricing = MODEL_PRICING_USD_PER_1M[model];
     const cost = pricing ? (inputTokens * pricing.input + outputTokens * pricing.output) / 1e6 * USD_TO_JPY : null;
-    const costLabel = cost !== null ? `\xA5${cost.toFixed(2)} (\u6982\u7B97)` : "\xA5-";
+    const costLabel = cost !== null ? `\xA5${cost.toFixed(2)} (概算)` : "\xA5-";
     const source = mode === "backend" ? "backend" : "frontend";
-    return `source: ${source} \u30FB model: ${model} \u30FB tokens: ${totalTokens} (in ${inputTokens} / out ${outputTokens}) \u30FB ${costLabel}`;
+    return `source: ${source} ・ model: ${model} ・ tokens: ${totalTokens} (in ${inputTokens} / out ${outputTokens}) ・ ${costLabel}`;
   }
   function createChatRequestId() {
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -3091,6 +3732,179 @@
     const snapshot = await requestQuestionSnapshotFromFrame(900);
     return snapshot ?? null;
   }
+  function ensureAnswerFrame(questionId) {
+    if (!questionId) return;
+    if (!document.body) return;
+    if (answerFrameEl && answerFrameEl.dataset.qid === questionId) return;
+    if (answerFrameEl) {
+      answerFrameEl.remove();
+      answerFrameEl = null;
+    }
+    const iframe = document.createElement("iframe");
+    iframe.src = `https://input.medilink-study.com/qbdispv2.php?id=${encodeURIComponent(questionId)}`;
+    iframe.dataset.qid = questionId;
+    iframe.dataset.loaded = "false";
+    Object.assign(iframe.style, {
+      position: "fixed",
+      width: "1px",
+      height: "1px",
+      opacity: "0",
+      pointerEvents: "none",
+      border: "0",
+      right: "0",
+      bottom: "0"
+    });
+    iframe.addEventListener("load", () => {
+      iframe.dataset.loaded = "true";
+      if (!answerContextWanted) return;
+      const watchMessage = {
+        __qb_support: true,
+        type: "QB_ANSWER_WATCH_START",
+        timeoutMs: 1500
+      };
+      postToAnswerFrame(watchMessage);
+      if (settings.debugEnabled && pendingAnswerScanId) {
+        postToAnswerFrame({
+          __qb_support: true,
+          type: "QB_ANSWER_GLOBAL_SCAN",
+          scanId: pendingAnswerScanId
+        });
+      }
+    });
+    document.body.appendChild(iframe);
+    answerFrameEl = iframe;
+  }
+  function waitForAnswerContext(timeoutMs) {
+    if (cachedAnswerContext?.text) {
+      return Promise.resolve(cachedAnswerContext);
+    }
+    return new Promise((resolve) => {
+      const resolver = (context) => {
+        resolve(context ?? { text: "", meta: null });
+      };
+      pendingAnswerResolvers.push(resolver);
+      window.setTimeout(() => {
+        const index = pendingAnswerResolvers.indexOf(resolver);
+        if (index !== -1) pendingAnswerResolvers.splice(index, 1);
+        resolve(cachedAnswerContext ?? { text: "", meta: null });
+      }, timeoutMs);
+    });
+  }
+  function startAnswerObserver(options = {}) {
+    if (answerObserverBound) return;
+    answerObserverBound = true;
+    if (!document.body) {
+      window.addEventListener("DOMContentLoaded", () => startAnswerObserver(), { once: true });
+      return;
+    }
+    const emit = () => {
+      const context = extractAnswerExplanationContext(document);
+      if (!context.text) return;
+      if (context.text === lastAnswerContextText) return;
+      lastAnswerContextText = context.text;
+      logDebug("hint-answer-push", context.meta ?? { source: "observer" });
+      sendAnswerContextPush(context);
+      if (options.once) {
+        stopAnswerObserver();
+      }
+    };
+    let observerTimer = null;
+    const observer = new MutationObserver(() => {
+      if (observerTimer) window.clearTimeout(observerTimer);
+      observerTimer = window.setTimeout(emit, 200);
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+    answerObserver = observer;
+    emit();
+  }
+  function stopAnswerObserver() {
+    if (answerObserver) {
+      try {
+        answerObserver.disconnect();
+      } catch {
+      }
+    }
+    answerObserver = null;
+    answerObserverBound = false;
+  }
+  async function resolveHintAnswerContext(snapshot) {
+    if (cachedAnswerContext?.text) {
+      logDebug("hint-answer-context", cachedAnswerContext.meta ?? {
+        source: "cache",
+        length: cachedAnswerContext.text.length,
+        preview: getHintAnswerPreview(cachedAnswerContext.text)
+      });
+      return cachedAnswerContext.text;
+    }
+    answerContextWanted = true;
+    pendingAnswerScanId = createChatRequestId();
+    const local = extractAnswerExplanationContext(document);
+    if (local.text) {
+      cachedAnswerContext = local;
+      logDebug("hint-answer-context", local.meta ?? {
+        source: "local",
+        length: local.text.length,
+        preview: getHintAnswerPreview(local.text)
+      });
+      answerContextWanted = false;
+      pendingAnswerScanId = null;
+      return local.text;
+    }
+    if (window !== window.top) return "";
+    const questionId = snapshot?.id ?? questionIdFromUrl(location.href);
+    if (questionId) {
+      ensureAnswerFrame(questionId);
+      const watchMessage = {
+        __qb_support: true,
+        type: "QB_ANSWER_WATCH_START",
+        timeoutMs: 1500
+      };
+      postToAnswerFrame(watchMessage);
+      postToInputFrame(watchMessage);
+      if (settings.debugEnabled && pendingAnswerScanId) {
+        const scanMessage = {
+          __qb_support: true,
+          type: "QB_ANSWER_GLOBAL_SCAN",
+          scanId: pendingAnswerScanId
+        };
+        postToAnswerFrame(scanMessage);
+        postToInputFrame(scanMessage);
+      }
+    }
+    const awaited = await waitForAnswerContext(1200);
+    if (awaited?.text) {
+      cachedAnswerContext = awaited;
+      logDebug("hint-answer-context", awaited.meta ?? {
+        source: "observer",
+        length: awaited.text.length,
+        preview: getHintAnswerPreview(awaited.text)
+      });
+      answerContextWanted = false;
+      pendingAnswerScanId = null;
+      return awaited.text;
+    }
+    const response = await requestAnswerContextFromFrame(900);
+    const resolved = response?.text ?? "";
+    if (resolved) {
+      cachedAnswerContext = response;
+    }
+    if (response?.meta) {
+      logDebug("hint-answer-context", response.meta);
+    } else {
+      logDebug("hint-answer-context", {
+        source: resolved ? "frame" : "empty",
+        length: resolved.length,
+        preview: getHintAnswerPreview(resolved)
+      });
+    }
+    answerContextWanted = false;
+    pendingAnswerScanId = null;
+    return resolved;
+  }
   async function buildChatRequest(snapshot, userMessage, includeContext) {
     const input = [];
     if (includeContext) {
@@ -3100,21 +3914,31 @@
       role: "user",
       content: [{ type: "input_text", text: userMessage }]
     });
-    return { input, instructions: buildChatInstructions() };
+    const hintAnswerText = isHintMessage(userMessage) ? await resolveHintAnswerContext(snapshot) : "";
+    return { input, instructions: buildChatInstructions(hintAnswerText) };
   }
-  function buildChatInstructions() {
+  function buildChatInstructions(hintAnswerText) {
     const levelKey = settings.explanationLevel ?? "med-junior";
     const levelLabel = EXPLANATION_LEVEL_LABELS[levelKey] ?? levelKey;
     const prompt = settings.explanationPrompts?.[levelKey] ?? "";
     const commonPrompt = settings.commonPrompt?.trim() ?? "";
-    return [
-      "\u3042\u306A\u305F\u306FQB\u554F\u984C\u96C6\u306E\u5B66\u7FD2\u652F\u63F4\u30A2\u30B7\u30B9\u30BF\u30F3\u30C8\u3067\u3059\u3002",
-      "\u4E0E\u3048\u3089\u308C\u305F\u554F\u984C\u6587\u30FB\u9078\u629E\u80A2\u30FB\u6DFB\u4ED8\u753B\u50CF\u306B\u57FA\u3065\u3044\u3066\u3001\u65E5\u672C\u8A9E\u3067\u7C21\u6F54\u306B\u7B54\u3048\u3066\u304F\u3060\u3055\u3044\u3002",
-      "\u60C5\u5831\u304C\u4E0D\u8DB3\u3057\u3066\u3044\u308B\u5834\u5408\u306F\u3001\u305D\u306E\u65E8\u3092\u4F1D\u3048\u3066\u304F\u3060\u3055\u3044\u3002",
+    const lines = [
+      "あなたはQB問題集の学習支援アシスタントです。",
+      "与えられた問題文・選択肢・添付画像に基づいて、日本語で簡潔に答えてください。",
+      "情報が不足している場合は、その旨を伝えてください。",
       commonPrompt,
-      `\u89E3\u8AAC\u30EC\u30D9\u30EB: ${levelLabel}`,
+      `解説レベル: ${levelLabel}`,
       prompt
-    ].join("\n");
+    ];
+    const hintText = hintAnswerText?.trim() ?? "";
+    if (hintText) {
+      lines.push(
+        "以下は解説本文の抽出です。この内容に完全準拠する必要はないが、矛盾しないヒントを提示してください。",
+        "この解説本文を見ていることや内容を直接引用していることは出力に現さないでください。",
+        hintText
+      );
+    }
+    return lines.join("\n");
   }
   async function buildContextInput(snapshot) {
     const resolvedImages = await loadSnapshotImages(snapshot);
@@ -3129,26 +3953,26 @@
     return { role: "user", content };
   }
   function buildQuestionContext(snapshot, imageCountOverride) {
-    if (!snapshot) return "\u554F\u984C\u60C5\u5831: \u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002";
-    const lines = ["\u554F\u984C\u60C5\u5831:"];
+    if (!snapshot) return "問題情報: 取得できませんでした。";
+    const lines = ["問題情報:"];
     lines.push(`URL: ${snapshot.url}`);
     if (snapshot.id) lines.push(`ID: ${snapshot.id}`);
-    if (snapshot.progressText) lines.push(`\u9032\u6357: ${snapshot.progressText}`);
-    if (snapshot.pageRef) lines.push(`\u63B2\u8F09\u9801: ${snapshot.pageRef}`);
-    if (snapshot.tags.length) lines.push(`\u30BF\u30B0: ${snapshot.tags.join(", ")}`);
-    if (snapshot.questionText) lines.push(`\u554F\u984C\u6587: ${snapshot.questionText}`);
+    if (snapshot.progressText) lines.push(`進捗: ${snapshot.progressText}`);
+    if (snapshot.pageRef) lines.push(`掲載頁: ${snapshot.pageRef}`);
+    if (snapshot.tags.length) lines.push(`タグ: ${snapshot.tags.join(", ")}`);
+    if (snapshot.questionText) lines.push(`問題文: ${snapshot.questionText}`);
     if (snapshot.optionTexts.length) {
       const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
       const options = snapshot.optionTexts.map((text, index) => {
         const label = labels[index] ?? `${index + 1}`;
         return `${label}. ${text}`;
       });
-      lines.push("\u9078\u629E\u80A2:");
+      lines.push("選択肢:");
       lines.push(...options);
     }
     const imageCount = imageCountOverride ?? snapshot.imageUrls.length;
     if (imageCount) {
-      lines.push(`\u753B\u50CF: ${imageCount}\u4EF6`);
+      lines.push(`画像: ${imageCount}件`);
     }
     return lines.join("\n");
   }
@@ -3204,10 +4028,18 @@
     const prevId = currentSnapshot?.id ?? null;
     currentSnapshot = snapshot;
     if (prevId && snapshot.id && prevId !== snapshot.id) {
-      resetChatHistory("\u554F\u984C\u304C\u5207\u308A\u66FF\u308F\u3063\u305F\u305F\u3081\u5C65\u6B74\u3092\u30EA\u30BB\u30C3\u30C8\u3057\u307E\u3057\u305F");
+      cachedAnswerContext = null;
+      lastAnswerContextText = "";
+      pendingAnswerScanId = null;
+      if (answerFrameEl) {
+        answerFrameEl.remove();
+        answerFrameEl = null;
+      }
+      stopAnswerObserver();
+      resetChatHistory("問題が切り替わったため履歴をリセットしました");
     }
   }
-  function resetChatHistory(message = "\u554F\u984C\u304C\u5207\u308A\u66FF\u308F\u3063\u305F\u305F\u3081\u5C65\u6B74\u3092\u30EA\u30BB\u30C3\u30C8\u3057\u307E\u3057\u305F") {
+  function resetChatHistory(message = "問題が切り替わったため履歴をリセットしました") {
     cancelActiveChatRequest();
     chatHistory = [];
     chatLastResponseId = null;
@@ -3233,11 +4065,11 @@
   }
   async function requestChatResponseStream(request, auth, onDelta) {
     if (!webext.runtime?.connect) {
-      throw new Error("background\u63A5\u7D9A\u304C\u5229\u7528\u3067\u304D\u307E\u305B\u3093");
+      throw new Error("background接続が利用できません");
     }
     const port = webext.runtime.connect({ name: "qb-chat" });
     activeChatPort = port;
-    console.debug("[QB_SUPPORT][chat-stream]", {
+    logVerbose("[QB_SUPPORT][chat-stream]", {
       event: "connect",
       requestId: request.requestId
     });
@@ -3268,7 +4100,7 @@
             error: error.message
           });
         } else {
-          console.debug("[QB_SUPPORT][chat-stream]", {
+          logVerbose("[QB_SUPPORT][chat-stream]", {
             event: "finish",
             requestId: request.requestId,
             responseId,
@@ -3286,7 +4118,7 @@
         if (!message || typeof message !== "object") return;
         const payload = message;
         if (payload.requestId !== request.requestId || !payload.type) return;
-        console.debug("[QB_SUPPORT][chat-stream]", {
+        logVerbose("[QB_SUPPORT][chat-stream]", {
           event: "message",
           type: payload.type,
           requestId: payload.requestId
@@ -3307,7 +4139,7 @@
           return;
         }
         if (payload.type === "QB_CHAT_STREAM_ERROR") {
-          finish(new Error(payload.error ?? "\u5FDC\u7B54\u306B\u5931\u6557\u3057\u307E\u3057\u305F"));
+          finish(new Error(payload.error ?? "応答に失敗しました"));
         }
       };
       const onDisconnect = () => {
@@ -3319,12 +4151,12 @@
         });
         finish(
           new Error(
-            lastError ? `background\u3068\u306E\u63A5\u7D9A\u304C\u5207\u308C\u307E\u3057\u305F: ${lastError}` : "background\u3068\u306E\u63A5\u7D9A\u304C\u5207\u308C\u307E\u3057\u305F"
+            lastError ? `backgroundとの接続が切れました: ${lastError}` : "backgroundとの接続が切れました"
           )
         );
       };
       const timeoutId = window.setTimeout(() => {
-        finish(new Error("\u5FDC\u7B54\u304C\u30BF\u30A4\u30E0\u30A2\u30A6\u30C8\u3057\u307E\u3057\u305F"));
+        finish(new Error("応答がタイムアウトしました"));
       }, 12e4);
       port.onMessage.addListener(onMessage);
       port.onDisconnect.addListener(onDisconnect);
@@ -3364,7 +4196,7 @@
     }
   }
   function isAuthPromptMessage(message) {
-    return message.includes("\u30ED\u30B0\u30A4\u30F3") || message.includes("API\u30AD\u30FC\u3092\u8A2D\u5B9A") || message.includes("API\u30AD\u30FC\u3092\u6709\u52B9");
+    return message.includes("ログイン") || message.includes("APIキーを設定") || message.includes("APIキーを有効");
   }
   function showChatAuthPrompt(message) {
     if (!chatStatusField) return;
@@ -3374,13 +4206,13 @@
     chatAuthPromptActive = true;
     const text = document.createElement("div");
     text.className = "qb-support-chat-status-text";
-    text.textContent = message || "\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u5229\u7528\u3092\u958B\u59CB\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
+    text.textContent = message || "ログインして利用を開始してください。";
     const actions = document.createElement("div");
     actions.className = "qb-support-chat-status-actions";
     const loginButton = document.createElement("button");
     loginButton.type = "button";
     loginButton.className = "qb-support-chat-auth-button";
-    loginButton.textContent = "Google\u3067\u30ED\u30B0\u30A4\u30F3";
+    loginButton.textContent = "Googleでログイン";
     applyButtonVariant(loginButton, "primary");
     loginButton.addEventListener("click", () => {
       void handleAuthSignIn();
@@ -3442,7 +4274,7 @@
     chatTemplateRows.forEach((row, index) => {
       const template = templates[index];
       row.enabled.checked = template?.enabled ?? false;
-      row.label.value = template?.label ?? `\u30C6\u30F3\u30D7\u30EC${index + 1}`;
+      row.label.value = template?.label ?? `テンプレ${index + 1}`;
       row.shortcut.value = template?.shortcut ?? "";
       row.prompt.value = template?.prompt ?? "";
       row.container.style.display = index < count ? "block" : "none";
@@ -3521,13 +4353,37 @@
     }, 500);
   }
   function attachEventHandlers() {
+    const trackHintDraftSource = (event) => {
+      const target = event.target;
+      if (!isEligibleHintDraftSource(target)) {
+        if (target instanceof HTMLElement && target.isContentEditable) {
+          logDebug("hint-draft-contenteditable-ignored", {
+            tag: target.tagName,
+            id: target.id || null,
+            className: target.className || null,
+            frame: window === window.top ? "top" : "iframe",
+            url: location.href
+          });
+        }
+        return;
+      }
+      const value = target.value?.trim() ?? "";
+      const shouldLog = !lastHintDraftSnapshot || lastHintDraftSnapshot.element !== target || lastHintDraftSnapshot.value !== value;
+      lastHintDraftSource = target;
+      if (shouldLog) {
+        lastHintDraftSnapshot = { element: target, value };
+        logDebug("hint-draft-source", summarizeHintDraftSource(target, value));
+      }
+    };
+    document.addEventListener("focusin", trackHintDraftSource, true);
+    document.addEventListener("input", trackHintDraftSource, true);
     window.addEventListener(
       "keydown",
       (event) => {
         const debug = settings.debugEnabled;
         const shouldLogKey = isTargetKey(event.key);
         if (shouldLogKey) {
-          console.log("[QB_SUPPORT][key-capture]", {
+          logInfo("[QB_SUPPORT][key-capture]", {
             key: event.key,
             url: location.href,
             frame: window === window.top ? "top" : "iframe",
@@ -3542,7 +4398,7 @@
           });
         }
         if (debug) {
-          console.debug("[QB_SUPPORT][key]", {
+          logVerbose("[QB_SUPPORT][key]", {
             key: event.key,
             composing: event.isComposing,
             activeTag: document.activeElement?.tagName ?? null,
@@ -3574,11 +4430,25 @@
         }
         if (isShortcutMatch(event, CHAT_NEW_SHORTCUT) && window === window.top) {
           consumeShortcutEvent(event);
-          resetChatHistory("\u4F1A\u8A71\u3092\u30EA\u30BB\u30C3\u30C8\u3057\u307E\u3057\u305F");
+          resetChatHistory("会話をリセットしました");
           void saveSettings({ ...settings, chatOpen: true });
           return;
         }
         if (isShortcutMatch(event, "Ctrl+S") && window === window.top) {
+          setSettingsToggleSource("shortcut-ctrl-s", {
+            key: event.key,
+            target: event.target instanceof HTMLElement ? event.target.tagName : null,
+            isTyping,
+            ctrlKey: event.ctrlKey,
+            metaKey: event.metaKey,
+            altKey: event.altKey,
+            shiftKey: event.shiftKey
+          });
+          logDebug("shortcut-ctrl-s", {
+            key: event.key,
+            target: event.target instanceof HTMLElement ? event.target.tagName : null,
+            isTyping
+          });
           consumeShortcutEvent(event);
           if (!chatSettingsPanel) {
             ensureChatUI();
@@ -3599,7 +4469,7 @@
         }
         if (!isQuestionPage()) {
           if (shouldLogKey) {
-            console.log("[QB_SUPPORT][frame-skip]", {
+            logInfo("[QB_SUPPORT][frame-skip]", {
               key: event.key,
               url: location.href,
               frame: window === window.top ? "top" : "iframe",
@@ -3616,7 +4486,7 @@
         if (isShortcutMatch(event, settings.shortcut)) {
           consumeShortcutEvent(event);
           if (debug) {
-            console.debug("[QB_SUPPORT][toggle]", {
+            logVerbose("[QB_SUPPORT][toggle]", {
               prevented: true,
               target: describeElement(event.target)
             });
@@ -3632,7 +4502,7 @@
         const revealMatch = isShortcutMatch(event, settings.revealKey);
         if (hasModifier(event) && !isNavKey && !isOptionKey && !revealMatch) {
           if (shouldLogKey) {
-            console.log("[QB_SUPPORT][key-skip]", {
+            logInfo("[QB_SUPPORT][key-skip]", {
               key: event.key,
               reason: "modifier",
               url: location.href,
@@ -3654,7 +4524,7 @@
             navNextMatch ? "next" : "prev"
           );
           if (shouldLogKey) {
-            console.log("[QB_SUPPORT][nav-target]", {
+            logInfo("[QB_SUPPORT][nav-target]", {
               key: navBaseKey,
               target: describeElement(target),
               meta: describeElementMeta(target),
@@ -3663,7 +4533,7 @@
             });
           }
           if (debug) {
-            console.debug("[QB_SUPPORT][nav]", {
+            logVerbose("[QB_SUPPORT][nav]", {
               key: navBaseKey,
               target: describeElement(target)
             });
@@ -3675,7 +4545,7 @@
           clickWithFallback(target, { tag: "nav", logAlways: shouldLogKey });
           if (shouldLogKey) {
             window.setTimeout(() => {
-              console.log("[QB_SUPPORT][nav-effect]", {
+              logInfo("[QB_SUPPORT][nav-effect]", {
                 key: navBaseKey,
                 beforeUrl,
                 afterUrl: location.href,
@@ -3703,7 +4573,7 @@
           if (options.length <= index) return;
           const clickable = getClickableOptionElement(options[index]);
           if (shouldLogKey) {
-            console.log("[QB_SUPPORT][option-target]", {
+            logInfo("[QB_SUPPORT][option-target]", {
               key: optionBaseKey,
               index,
               optionCount: options.length,
@@ -3714,7 +4584,7 @@
             });
           }
           if (debug) {
-            console.debug("[QB_SUPPORT][option]", {
+            logVerbose("[QB_SUPPORT][option]", {
               key: optionBaseKey,
               index,
               optionCount: options.length,
@@ -3729,7 +4599,7 @@
           if (shouldLogKey) {
             window.setTimeout(() => {
               const afterState = getOptionState(options[index]);
-              console.log("[QB_SUPPORT][option-effect]", {
+              logInfo("[QB_SUPPORT][option-effect]", {
                 key: optionBaseKey,
                 before: beforeState,
                 after: afterState,
@@ -3753,7 +4623,7 @@
           }
           const revealButton = getAnswerRevealButton(document);
           if (shouldLogKey) {
-            console.log("[QB_SUPPORT][reveal-target]", {
+            logInfo("[QB_SUPPORT][reveal-target]", {
               key: getShortcutBaseKey(settings.revealKey),
               target: describeElement(revealButton),
               meta: describeElementMeta(revealButton),
@@ -3763,7 +4633,7 @@
           }
           if (revealButton) {
             if (debug) {
-              console.debug("[QB_SUPPORT][reveal]", {
+              logVerbose("[QB_SUPPORT][reveal]", {
                 target: describeElement(revealButton)
               });
             }
@@ -3774,7 +4644,7 @@
             if (shouldLogKey) {
               window.setTimeout(() => {
                 const afterState = getRevealState();
-                console.log("[QB_SUPPORT][reveal-effect]", {
+                logInfo("[QB_SUPPORT][reveal-effect]", {
                   key: getShortcutBaseKey(settings.revealKey),
                   before: beforeState,
                   after: afterState,
@@ -3787,7 +4657,7 @@
           }
           const submitButton = getSubmitButton(document);
           if (shouldLogKey) {
-            console.log("[QB_SUPPORT][submit-target]", {
+            logInfo("[QB_SUPPORT][submit-target]", {
               key,
               target: describeElement(submitButton),
               meta: describeElementMeta(submitButton),
@@ -3796,7 +4666,7 @@
             });
           }
           if (debug) {
-            console.debug("[QB_SUPPORT][submit]", {
+            logVerbose("[QB_SUPPORT][submit]", {
               target: describeElement(submitButton)
             });
           }
@@ -3808,7 +4678,7 @@
             if (shouldLogKey) {
               window.setTimeout(() => {
                 const afterState = getRevealState();
-                console.log("[QB_SUPPORT][submit-effect]", {
+                logInfo("[QB_SUPPORT][submit-effect]", {
                   key,
                   before: beforeState,
                   after: afterState,
@@ -3828,7 +4698,7 @@
       (event) => {
         const target = event.target instanceof HTMLElement ? event.target : null;
         if (!target || !isInteractiveTarget(target)) return;
-        console.log("[QB_SUPPORT][click-capture]", {
+        logInfo("[QB_SUPPORT][click-capture]", {
           type: event.type,
           trusted: event.isTrusted,
           target: describeElement(target),
@@ -3975,7 +4845,15 @@
     if (!target || !(target instanceof HTMLElement)) return false;
     if (target.isContentEditable) return true;
     const tag = target.tagName;
-    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+    if (tag === "TEXTAREA" || tag === "SELECT") return true;
+    if (tag === "INPUT") {
+      const type = (target.type || "text").toLowerCase();
+      if (["checkbox", "radio", "button", "submit", "file", "hidden", "image", "range", "color", "reset", "week", "month", "date", "datetime-local", "time"].includes(type)) {
+        return false;
+      }
+      return true;
+    }
+    return false;
   }
   function isQuestionPage() {
     return document.querySelector(".question-container") !== null;
@@ -3995,7 +4873,7 @@
         const action = data.action;
         const key = typeof data.key === "string" ? data.key : "";
         const index = typeof data.index === "number" ? data.index : null;
-        console.log("[QB_SUPPORT][action-recv]", {
+        logInfo("[QB_SUPPORT][action-recv]", {
           url: location.href,
           frame: window === window.top ? "top" : "iframe",
           action,
@@ -4022,6 +4900,106 @@
         }
         return;
       }
+      if (data.type === "QB_ANSWER_REQUEST") {
+        if (!isInputHost() && window === window.top) return;
+        const answerContext = extractAnswerExplanationContext(document);
+        const response = {
+          __qb_support: true,
+          type: "QB_ANSWER_CONTEXT",
+          requestId: data.requestId ?? null,
+          text: answerContext.text ?? "",
+          meta: answerContext.meta ?? null
+        };
+        const target = event.source && "postMessage" in event.source ? event.source : window.parent;
+        try {
+          target.postMessage(response, QB_TOP_ORIGIN);
+        } catch (error) {
+          console.warn("[QB_SUPPORT][answer-reply]", error);
+        }
+        return;
+      }
+      if (data.type === "QB_ANSWER_WATCH_START") {
+        if (!isInputHost() && window === window.top) return;
+        const timeoutMs = typeof data.timeoutMs === "number" ? data.timeoutMs : 1500;
+        startAnswerObserver({ once: true });
+        window.setTimeout(() => {
+          stopAnswerObserver();
+        }, timeoutMs);
+        return;
+      }
+      if (data.type === "QB_ANSWER_GLOBAL_SCAN") {
+        if (!isInputHost() && window === window.top) return;
+        runPageContextAnswerScan(data.scanId ?? createChatRequestId());
+        return;
+      }
+      if (data.type === "QB_ANSWER_GLOBAL_SCAN_RESULT") {
+        if (!isInputHost() && window === window.top) return;
+        const results = Array.isArray(data.results) ? data.results : [];
+        if (data.error) {
+          logDebug("hint-answer-global", { source: "error", message: data.error });
+          return;
+        }
+        if (!results.length) {
+          logDebug("hint-answer-global", { source: "empty" });
+          return;
+        }
+        const best = results[0];
+        const text = typeof best.text === "string" ? best.text : "";
+        if (!text) {
+          logDebug("hint-answer-global", { source: "empty" });
+          return;
+        }
+        const context = {
+          text,
+          meta: {
+            source: "global-scan",
+            scanId: data.scanId ?? null,
+            path: best.path ?? null,
+            score: best.score ?? null,
+            length: text.length,
+            preview: getHintAnswerPreview(text)
+          }
+        };
+        logDebug("hint-answer-global", context.meta);
+        sendAnswerContextPush(context);
+        return;
+      }
+      if (data.type === "QB_ANSWER_REVEAL") {
+        if (!isInputHost() && window === window.top) return;
+        const revealButton = getAnswerRevealButton(document);
+        logDebug("hint-answer-reveal", {
+          found: Boolean(revealButton),
+          target: describeElement(revealButton)
+        });
+        if (revealButton) {
+          clickWithFallback(revealButton, { tag: "hint-reveal", logAlways: true });
+        }
+        startAnswerObserver({ once: true });
+        window.setTimeout(() => {
+          const context = extractAnswerExplanationContext(document);
+          if (context.text) {
+            sendAnswerContextPush(context);
+          }
+        }, 300);
+        return;
+      }
+      if (data.type === "QB_NET_LOG") {
+        logInfo("[QB_SUPPORT][net]", data.payload ?? {});
+        return;
+      }
+      if (data.type === "QB_ANSWER_CONTEXT_PUSH") {
+        const context = data.context ?? null;
+        if (context?.text) {
+          cachedAnswerContext = context;
+          logDebug("hint-answer-push", context.meta ?? { source: "push" });
+        }
+        if (pendingAnswerResolvers.length) {
+          const pending = pendingAnswerResolvers.slice();
+          pendingAnswerResolvers = [];
+          pending.forEach((resolve) => resolve(cachedAnswerContext ?? { text: "", meta: null }));
+        }
+        return;
+      }
       if (data.type === "QB_QUESTION_SNAPSHOT") {
         if (data.snapshot) {
           updateSnapshot(data.snapshot);
@@ -4029,33 +5007,35 @@
       }
     });
   }
-  function findTargetFrame() {
+  function findTargetFrames() {
     const frames = Array.from(document.querySelectorAll("iframe"));
-    for (const frame of frames) {
+    return frames.filter((frame) => {
       const src = frame.getAttribute("src") ?? "";
-      if (src.includes("input.medilink-study.com")) {
-        return frame.contentWindow;
-      }
+      return src.includes("input.medilink-study.com");
+    });
+  }
+  function getFrameOrigin(frame) {
+    const src = frame.getAttribute("src") ?? "";
+    if (!src) return "";
+    try {
+      return new URL(src, location.href).origin;
+    } catch {
+      return "";
     }
-    return null;
   }
   function postToInputFrame(message) {
     const errors = [];
-    const target = findTargetFrame();
-    if (target) {
+    const frames = findTargetFrames();
+    for (let i = 0; i < frames.length; i += 1) {
+      const frame = frames[i];
+      if (!frame.contentWindow) continue;
+      const origin = getFrameOrigin(frame) || "*";
+      const targetOrigin = frame.dataset.loaded === "true" ? origin : "*";
       try {
-        target.postMessage(message, QB_ACTION_ORIGIN);
-        return { sent: true, method: "querySelector", frameIndex: null, errors };
+        frame.contentWindow.postMessage(message, targetOrigin);
+        return { sent: true, method: "querySelector", frameIndex: i, errors };
       } catch (error) {
-        errors.push(`querySelector: ${String(error)}`);
-      }
-    }
-    for (let i = 0; i < window.frames.length; i += 1) {
-      try {
-        window.frames[i].postMessage(message, QB_ACTION_ORIGIN);
-        return { sent: true, method: "window.frames", frameIndex: i, errors };
-      } catch (error) {
-        errors.push(`window.frames[${i}]: ${String(error)}`);
+        errors.push(`querySelector[${i}]: ${String(error)}`);
       }
     }
     return { sent: false, method: "none", frameIndex: null, errors };
@@ -4089,11 +5069,41 @@
       }, timeoutMs);
     });
   }
+  function requestAnswerContextFromFrame(timeoutMs) {
+    return new Promise((resolve) => {
+      const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const handler = (event) => {
+        if (event.origin !== QB_ACTION_ORIGIN) return;
+        const data = event.data;
+        if (!data || data.__qb_support !== true) return;
+        if (data.type !== "QB_ANSWER_CONTEXT") return;
+        if (data.requestId !== requestId) return;
+        window.removeEventListener("message", handler);
+        resolve({ text: data.text ?? "", meta: data.meta ?? null });
+      };
+      window.addEventListener("message", handler);
+      const message = {
+        __qb_support: true,
+        type: "QB_ANSWER_REQUEST",
+        requestId
+      };
+      const sent = postToAnswerFrame(message) || postToInputFrame(message).sent;
+      if (!sent) {
+        window.removeEventListener("message", handler);
+        resolve({ text: "", meta: null });
+        return;
+      }
+      window.setTimeout(() => {
+        window.removeEventListener("message", handler);
+        resolve({ text: "", meta: null });
+      }, timeoutMs);
+    });
+  }
   function logFramesOnce() {
     if (document.documentElement.dataset.qbSupportFrames === "true") return;
     document.documentElement.dataset.qbSupportFrames = "true";
     if (window !== window.top) return;
-    console.log("[QB_SUPPORT][frames]", {
+    logInfo("[QB_SUPPORT][frames]", {
       url: location.href,
       frameCount: document.querySelectorAll("iframe").length,
       sources: listFrameSources(),
@@ -4155,7 +5165,7 @@
     const frameLabel = window === window.top ? "top" : "iframe";
     if (action === "nav") {
       const target = getNavigationTarget(document, key === "arrowright" ? "next" : "prev");
-      console.log("[QB_SUPPORT][nav-target]", {
+      logInfo("[QB_SUPPORT][nav-target]", {
         key,
         target: describeElement(target),
         meta: describeElementMeta(target),
@@ -4170,7 +5180,7 @@
         if (!ok) clickWithFallback(target, { tag: "nav", logAlways: true });
       })();
       window.setTimeout(() => {
-        console.log("[QB_SUPPORT][nav-effect]", {
+        logInfo("[QB_SUPPORT][nav-effect]", {
           key,
           beforeUrl,
           afterUrl: location.href,
@@ -4186,7 +5196,7 @@
       const options = getOptionElements(document);
       if (options.length <= index) return;
       const clickable = getClickableOptionElement(options[index]);
-      console.log("[QB_SUPPORT][option-target]", {
+      logInfo("[QB_SUPPORT][option-target]", {
         key,
         index,
         optionCount: options.length,
@@ -4204,7 +5214,7 @@
       })();
       window.setTimeout(() => {
         const afterState = getOptionState(options[index]);
-        console.log("[QB_SUPPORT][option-effect]", {
+        logInfo("[QB_SUPPORT][option-effect]", {
           key,
           before: beforeState,
           after: afterState,
@@ -4217,7 +5227,7 @@
     }
     if (action === "reveal") {
       const revealButton = getAnswerRevealButton(document);
-      console.log("[QB_SUPPORT][reveal-target]", {
+      logInfo("[QB_SUPPORT][reveal-target]", {
         key,
         target: describeElement(revealButton),
         meta: describeElementMeta(revealButton),
@@ -4233,7 +5243,7 @@
         })();
         window.setTimeout(() => {
           const afterState = getRevealState();
-          console.log("[QB_SUPPORT][reveal-effect]", {
+          logInfo("[QB_SUPPORT][reveal-effect]", {
             key,
             before: beforeState,
             after: afterState,
@@ -4245,7 +5255,7 @@
         return;
       }
       const submitButton = getSubmitButton(document);
-      console.log("[QB_SUPPORT][submit-target]", {
+      logInfo("[QB_SUPPORT][submit-target]", {
         key,
         target: describeElement(submitButton),
         meta: describeElementMeta(submitButton),
@@ -4261,7 +5271,7 @@
         })();
         window.setTimeout(() => {
           const afterState = getRevealState();
-          console.log("[QB_SUPPORT][submit-effect]", {
+          logInfo("[QB_SUPPORT][submit-effect]", {
             key,
             before: beforeState,
             after: afterState,
@@ -4295,7 +5305,7 @@
     };
     const result = postToInputFrame(message);
     if (!result.sent) {
-      console.log("[QB_SUPPORT][action-sent]", {
+      logInfo("[QB_SUPPORT][action-sent]", {
         url: location.href,
         frame: "top",
         action: payload.action,
@@ -4306,7 +5316,7 @@
         frameCount: window.frames.length,
         errors: result.errors
       });
-      console.log("[QB_SUPPORT][action-local]", {
+      logInfo("[QB_SUPPORT][action-local]", {
         url: location.href,
         frame: "top",
         action: payload.action,
@@ -4317,7 +5327,7 @@
       handleActionInFrame(payload.action, payload.key, payload.index ?? null, "local");
       return;
     }
-    console.log("[QB_SUPPORT][action-sent]", {
+    logInfo("[QB_SUPPORT][action-sent]", {
       url: location.href,
       frame: "top",
       action: payload.action,
@@ -4358,12 +5368,191 @@
     document.documentElement.dataset.qbSupportInjected = "true";
     const manifest = getManifest();
     const version = manifest?.version ?? "unknown";
-    console.log("[QB_SUPPORT][inject]", {
+    logInfo("[QB_SUPPORT][inject]", {
       url: location.href,
       frame: window === window.top ? "top" : "iframe",
       ts: Date.now(),
       version
     });
+  }
+  function shouldLogNetwork(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      return parsed.hostname.includes("medilink-study.com");
+    } catch {
+      return false;
+    }
+  }
+  function shouldInspectNetworkBody(url) {
+    return /operation|qbdispv2\.php/i.test(url);
+  }
+  function buildNetworkPreview(text) {
+    const normalized = normalizeSpace(text);
+    return normalized.length > 200 ? `${normalized.slice(0, 200)}...` : normalized;
+  }
+  function emitNetworkLog(payload) {
+    const enriched = { frame: window === window.top ? "top" : "iframe", ...payload };
+    if (window === window.top) {
+      logInfo("[QB_SUPPORT][net]", enriched);
+      return;
+    }
+    try {
+      window.top?.postMessage({ __qb_support: true, type: "QB_NET_LOG", payload: enriched }, QB_TOP_ORIGIN);
+    } catch (error) {
+      logInfo("[QB_SUPPORT][net]", {
+        ...enriched,
+        forwardError: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+  function sendAnswerContextPush(context) {
+    if (!context?.text) return;
+    const payload = {
+      __qb_support: true,
+      type: "QB_ANSWER_CONTEXT_PUSH",
+      context
+    };
+    try {
+      window.top?.postMessage(payload, QB_TOP_ORIGIN);
+    } catch (error) {
+      console.warn("[QB_SUPPORT][answer-push]", error);
+    }
+  }
+  function postToAnswerFrame(message) {
+    if (!answerFrameEl || !answerFrameEl.contentWindow) return false;
+    const origin = getFrameOrigin(answerFrameEl) || "*";
+    const targetOrigin = answerFrameEl.dataset.loaded === "true" ? origin : "*";
+    try {
+      answerFrameEl.contentWindow.postMessage(message, targetOrigin);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function initNetworkLogger() {
+    if (window.__qbSupportNetworkHooked) return;
+    window.__qbSupportNetworkHooked = true;
+    logInfo("[QB_SUPPORT][net-hook]", {
+      url: location.href,
+      frame: window === window.top ? "top" : "iframe"
+    });
+    const netSeen = window.__qbSupportNetSeen ?? /* @__PURE__ */ new Set();
+    window.__qbSupportNetSeen = netSeen;
+    const markSeen = (url) => {
+      if (!url) return false;
+      if (netSeen.has(url)) return false;
+      netSeen.add(url);
+      return true;
+    };
+    if ("PerformanceObserver" in window) {
+      try {
+        const observer = new PerformanceObserver((list) => {
+          list.getEntries().forEach((entry) => {
+            const name = entry?.name ?? "";
+            if (!shouldInspectNetworkBody(name)) return;
+            if (!markSeen(name)) return;
+            emitNetworkLog({
+              type: "resource",
+              url: name,
+              initiatorType: entry.initiatorType ?? null,
+              durationMs: Math.round(entry.duration ?? 0),
+              transferSize: "transferSize" in entry ? entry.transferSize : null,
+              encodedBodySize: "encodedBodySize" in entry ? entry.encodedBodySize : null,
+              decodedBodySize: "decodedBodySize" in entry ? entry.decodedBodySize : null
+            });
+          });
+        });
+        observer.observe({ entryTypes: ["resource"] });
+      } catch (error) {
+        console.warn("[QB_SUPPORT][net-hook]", "performance-observer-failed", error);
+      }
+    }
+    const originalFetch = window.fetch;
+    if (typeof originalFetch === "function") {
+      window.fetch = async (...args) => {
+        const request = args[0];
+        const url = typeof request === "string" ? request : request?.url ?? "";
+        const method = typeof request === "string" ? (args[1]?.method ?? "GET") : request?.method ?? "GET";
+        const startedAt = Date.now();
+        const response = await originalFetch(...args);
+        if (!shouldLogNetwork(url)) return response;
+        const durationMs = Date.now() - startedAt;
+        const cloned = response.clone();
+        const contentType = cloned.headers.get("content-type") ?? "";
+        const contentLength = Number(cloned.headers.get("content-length") ?? 0);
+        let preview = "";
+        let hasAnswerKeywords = false;
+        try {
+          const shouldRead = !contentLength || contentLength < 200000 || shouldInspectNetworkBody(url);
+          if (shouldRead) {
+            if (contentType.includes("application/json") || contentType.includes("text") || contentType.includes("html") || shouldInspectNetworkBody(url)) {
+              const text = await cloned.text();
+              preview = buildNetworkPreview(text);
+              hasAnswerKeywords = hasHintAnswerKeywords(text);
+            }
+          }
+        } catch (error) {
+          preview = `preview-failed:${error instanceof Error ? error.message : String(error)}`;
+        }
+        emitNetworkLog({
+          type: "fetch",
+          url,
+          method,
+          status: response.status,
+          durationMs,
+          contentType,
+          contentLength,
+          hasAnswerKeywords,
+          preview
+        });
+        return response;
+      };
+    }
+    const originalXhrOpen = XMLHttpRequest.prototype.open;
+    const originalXhrSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+      this.__qbSupportUrl = url;
+      this.__qbSupportMethod = method;
+      return originalXhrOpen.call(this, method, url, ...rest);
+    };
+    XMLHttpRequest.prototype.send = function(...args) {
+      const startAt = Date.now();
+      const url = this.__qbSupportUrl ?? "";
+      const method = this.__qbSupportMethod ?? "";
+      const done = () => {
+        if (!shouldLogNetwork(url)) return;
+        const durationMs = Date.now() - startAt;
+        const contentType = this.getResponseHeader("content-type") ?? "";
+        const contentLength = Number(this.getResponseHeader("content-length") ?? 0);
+        let preview = "";
+        let hasAnswerKeywords = false;
+        try {
+          const shouldRead = !contentLength || contentLength < 200000 || shouldInspectNetworkBody(url);
+          if (shouldRead) {
+            if (contentType.includes("application/json") || contentType.includes("text") || contentType.includes("html") || shouldInspectNetworkBody(url)) {
+              const text = typeof this.responseText === "string" ? this.responseText : "";
+              preview = buildNetworkPreview(text);
+              hasAnswerKeywords = hasHintAnswerKeywords(text);
+            }
+          }
+        } catch (error) {
+          preview = `preview-failed:${error instanceof Error ? error.message : String(error)}`;
+        }
+        emitNetworkLog({
+          type: "xhr",
+          url,
+          method,
+          status: this.status,
+          durationMs,
+          contentType,
+          contentLength,
+          hasAnswerKeywords,
+          preview
+        });
+      };
+      this.addEventListener("loadend", done);
+      return originalXhrSend.apply(this, args);
+    };
   }
   function ensureMarker() {
     if (document.getElementById(MARKER_ID)) return;
@@ -4436,7 +5625,7 @@
   async function clickRevealWhenReady() {
     const revealButton = await waitForRevealButton(2e3);
     if (settings.debugEnabled) {
-      console.debug("[QB_SUPPORT][reveal-wait]", {
+      logVerbose("[QB_SUPPORT][reveal-wait]", {
         found: !!revealButton,
         target: describeElement(revealButton)
       });
@@ -4452,7 +5641,7 @@
       const initial = getAnswerRevealButton(document);
       if (initial) {
         if (settings.debugEnabled) {
-          console.debug("[QB_SUPPORT][reveal-check]", {
+          logVerbose("[QB_SUPPORT][reveal-check]", {
             phase: "initial",
             target: describeElement(initial)
           });
@@ -4465,7 +5654,7 @@
         if (found) {
           observer.disconnect();
           if (settings.debugEnabled) {
-            console.debug("[QB_SUPPORT][reveal-check]", {
+            logVerbose("[QB_SUPPORT][reveal-check]", {
               phase: "mutation",
               target: describeElement(found)
             });
@@ -4477,7 +5666,7 @@
       window.setTimeout(() => {
         observer.disconnect();
         if (settings.debugEnabled) {
-          console.debug("[QB_SUPPORT][reveal-check]", {
+          logVerbose("[QB_SUPPORT][reveal-check]", {
             phase: "timeout"
           });
         }
@@ -4516,15 +5705,15 @@
         y
       });
       if (response?.ok) {
-        console.log("[QB_SUPPORT][cdp-click]", { tag, ok: true, x, y });
+        logInfo("[QB_SUPPORT][cdp-click]", { tag, ok: true, x, y });
         return true;
       }
       const error = response?.error ?? "Unknown error";
       console.warn("[QB_SUPPORT][cdp-click]", { tag, ok: false, error, x, y });
-      setStatus(`CDP click\u5931\u6557: ${error}`, true);
+      setStatus(`CDP click失敗: ${error}`, true);
     } catch (error) {
       console.warn("[QB_SUPPORT][cdp-click]", { tag, ok: false, error });
-      setStatus("CDP click\u5931\u6557", true);
+      setStatus("CDP click失敗", true);
     }
     return false;
   }
@@ -4562,7 +5751,7 @@
       target: describeElement(target)
     };
     if (typeof result === "boolean") payload.result = result;
-    console.log("[QB_SUPPORT][click]", payload);
+    logInfo("[QB_SUPPORT][click]", payload);
   }
   start();
 })();

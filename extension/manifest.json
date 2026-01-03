@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "MedicMedia QB Support",
+  "name": "QB Support",
   "version": "0.1.0",
   "description": "QBオンライン問題演習ページ向けの学習支援パネル(ipad対応)",
   "permissions": ["storage", "debugger", "identity", "tabs", "webNavigation"],

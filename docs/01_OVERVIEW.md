@@ -1,6 +1,6 @@
 # Overview
 
-MedicMedia QBの問題演習ページに学習支援UIを注入する拡張。ChromeとSafari Web Extension（iOS/iPadOS）で共通コードベースを維持し、iPad上でも動作することを前提に設計する。
+QB問題演習ページに学習支援UIを注入する拡張。ChromeとSafari Web Extension（iOS/iPadOS）で共通コードベースを維持し、iPad上でも動作することを前提に設計する。
 
 ## 主な機能
 - 設定パネル（ショートカット/表示/テーマ/プロンプト/テンプレート）
