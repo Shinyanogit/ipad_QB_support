@@ -1763,6 +1763,12 @@
   function ensureUI() {
     if (document.getElementById(ROOT_ID)) {
       root = document.getElementById(ROOT_ID);
+      panel = root.querySelector(".qb-support-panel");
+      const existingLauncher = root.querySelector(".qb-support-launcher");
+      if (existingLauncher) {
+        existingLauncher.remove();
+      }
+      launcher = null;
       return;
     }
     root = document.createElement("div");
@@ -2135,22 +2141,7 @@
     panel.appendChild(templateSection);
     panel.appendChild(explanationSection);
     panel.appendChild(authSection);
-    launcher = document.createElement("button");
-    launcher.type = "button";
-    launcher.className = "qb-support-launcher";
-    launcher.title = "QB設定";
-    launcher.setAttribute("aria-label", "QB設定");
-    launcher.appendChild(createGearIcon());
-    launcher.addEventListener("click", () => {
-      const next = !settings.enabled;
-      if (next) {
-        void saveSettings({ ...settings, enabled: true });
-      } else {
-        void closeSettingsPanel();
-      }
-    });
     root.appendChild(panel);
-    root.appendChild(launcher);
     document.body.appendChild(root);
   }
   function ensureChatUI() {
@@ -4222,15 +4213,17 @@
     chatStatusField.appendChild(actions);
   }
   function applySettings() {
-    if (!root || !panel || !launcher) return;
+    if (!root || !panel) return;
     root.dataset.position = settings.position;
     panel.classList.toggle("is-hidden", !settings.enabled);
-    launcher.classList.toggle("is-disabled", settings.enabled);
-    launcher.classList.toggle("is-hidden", settings.enabled);
-    if (settings.shortcut) {
-      launcher.dataset.shortcut = settings.shortcut;
-    } else {
-      launcher.removeAttribute("data-shortcut");
+    if (launcher) {
+      launcher.classList.toggle("is-disabled", settings.enabled);
+      launcher.classList.toggle("is-hidden", settings.enabled);
+      if (settings.shortcut) {
+        launcher.dataset.shortcut = settings.shortcut;
+      } else {
+        launcher.removeAttribute("data-shortcut");
+      }
     }
     toggleMarker(settings.debugEnabled);
     if (shortcutsToggle) shortcutsToggle.checked = settings.shortcutsEnabled;

@@ -161,6 +161,7 @@ let chatHistory: ChatMessage[] = [];
 let chatRequestPending = false;
 let chatComposing = false;
 let chatLayoutBound = false;
+let chatAutoScrollEnabled = true;
 let chatDockWidth = 0;
 let chatResizeActive = false;
 let lastChatOpen = false;
@@ -771,6 +772,12 @@ function isOfflineSyncError(error: unknown): boolean {
 function ensureUI() {
   if (document.getElementById(ROOT_ID)) {
     root = document.getElementById(ROOT_ID) as HTMLDivElement;
+    panel = root.querySelector(".qb-support-panel") as HTMLDivElement | null;
+    const existingLauncher = root.querySelector(".qb-support-launcher");
+    if (existingLauncher) {
+      existingLauncher.remove();
+    }
+    launcher = null;
     return;
   }
 
@@ -1212,23 +1219,7 @@ function ensureUI() {
   panel.appendChild(explanationSection);
   panel.appendChild(authSection);
 
-  launcher = document.createElement("button");
-  launcher.type = "button";
-  launcher.className = "qb-support-launcher";
-  launcher.title = "QB設定";
-  launcher.setAttribute("aria-label", "QB設定");
-  launcher.appendChild(createGearIcon());
-  launcher.addEventListener("click", () => {
-    const next = !settings.enabled;
-    if (next) {
-      void saveSettings({ ...settings, enabled: true });
-    } else {
-      void closeSettingsPanel();
-    }
-  });
-
   root.appendChild(panel);
-  root.appendChild(launcher);
   document.body.appendChild(root);
 }
 
@@ -1444,6 +1435,7 @@ function ensureChatUI() {
       chatSettingsOpen = chatSettingsPanel.dataset.open === "true";
     }
     attachChatModelHandlers();
+    ensureChatScrollHandler();
     ensureChatToggle();
     ensureChatResizer();
     ensureChatTemplates();
@@ -1628,6 +1620,7 @@ function ensureChatUI() {
   ensureChatResizer();
   ensureChatOverlayHandle();
   ensureChatTemplates();
+  ensureChatScrollHandler();
   attachChatSettingsHandlers();
   populateChatSettingsPanel();
 }
@@ -2631,7 +2624,7 @@ async function handleChatSend() {
         if (placeholder) {
           setChatMessageContent(placeholder, "assistant", streamState.text || "回答中...");
           placeholder.classList.remove("is-pending");
-          chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+          scrollChatToBottom();
         }
       }
     );
@@ -2703,7 +2696,7 @@ function appendChatMessage(
     applyUserMessageCollapse(message, content);
   }
   chatMessagesEl.appendChild(message);
-  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+  scrollChatToBottom();
   return message;
 }
 
@@ -2720,6 +2713,29 @@ function setChatMessageContent(message: HTMLDivElement, role: ChatRole, content:
   } else {
     contentEl.textContent = content;
   }
+}
+
+function ensureChatScrollHandler() {
+  if (!chatMessagesEl) return;
+  if (chatMessagesEl.dataset.scrollHandlers === "true") return;
+  chatMessagesEl.dataset.scrollHandlers = "true";
+  chatAutoScrollEnabled = isChatNearBottom();
+  chatMessagesEl.addEventListener("scroll", () => {
+    chatAutoScrollEnabled = isChatNearBottom();
+  });
+}
+
+function isChatNearBottom(): boolean {
+  if (!chatMessagesEl) return true;
+  const threshold = 24;
+  const bottom = chatMessagesEl.scrollHeight - chatMessagesEl.clientHeight;
+  return bottom - chatMessagesEl.scrollTop <= threshold;
+}
+
+function scrollChatToBottom(force = false) {
+  if (!chatMessagesEl) return;
+  if (!force && !chatAutoScrollEnabled) return;
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
 }
 
 function renderMarkdown(text: string): string {
@@ -3245,15 +3261,17 @@ function showChatAuthPrompt(message: string) {
 }
 
 function applySettings() {
-  if (!root || !panel || !launcher) return;
+  if (!root || !panel) return;
   root.dataset.position = settings.position;
   panel.classList.toggle("is-hidden", !settings.enabled);
-  launcher.classList.toggle("is-disabled", settings.enabled);
-  launcher.classList.toggle("is-hidden", settings.enabled);
-  if (settings.shortcut) {
-    launcher.dataset.shortcut = settings.shortcut;
-  } else {
-    launcher.removeAttribute("data-shortcut");
+  if (launcher) {
+    launcher.classList.toggle("is-disabled", settings.enabled);
+    launcher.classList.toggle("is-hidden", settings.enabled);
+    if (settings.shortcut) {
+      launcher.dataset.shortcut = settings.shortcut;
+    } else {
+      launcher.removeAttribute("data-shortcut");
+    }
   }
   toggleMarker(settings.debugEnabled);
   if (shortcutsToggle) shortcutsToggle.checked = settings.shortcutsEnabled;
@@ -3426,6 +3444,7 @@ function attachEventHandlers() {
       }
       if (!settings.shortcutsEnabled) return;
       if (event.isComposing) return;
+      const eventBaseKey = getEventBaseKey(event);
       const key = normalizeKey(event.key);
       const navPrevMatch = isShortcutMatch(event, settings.navPrevKey);
       const navNextMatch = isShortcutMatch(event, settings.navNextKey);
@@ -3436,16 +3455,19 @@ function attachEventHandlers() {
           ? settings.navNextKey
           : "";
       const navBaseKey = navShortcut ? getShortcutBaseKey(navShortcut) : "";
-      const optionIndex = settings.optionKeys.findIndex((shortcut) =>
-        isShortcutMatch(event, shortcut)
+      const optionIndex = settings.optionKeys.findIndex(
+        (shortcut) =>
+          isShortcutMatch(event, shortcut) ||
+          isPlainShortcutMatch(event, shortcut, eventBaseKey)
       );
       const isOptionKey = optionIndex >= 0;
       const optionBaseKey =
         isOptionKey && settings.optionKeys[optionIndex]
           ? getShortcutBaseKey(settings.optionKeys[optionIndex])
           : "";
-      const isTyping = isTypingTarget(event.target);
-      if (isTyping && !event.ctrlKey) return;
+      const isTyping =
+        isTypingTarget(event.target) || isTypingTarget(document.activeElement);
+      if (isTyping) return;
       const templateShortcut = getChatTemplateShortcut(event);
       if (templateShortcut && window === window.top && (!isTyping || event.ctrlKey)) {
         consumeShortcutEvent(event);
@@ -3515,7 +3537,9 @@ function attachEventHandlers() {
         return;
       }
 
-      const revealMatch = isShortcutMatch(event, settings.revealKey);
+      const revealMatch =
+        isShortcutMatch(event, settings.revealKey) ||
+        isPlainShortcutMatch(event, settings.revealKey, eventBaseKey);
       if (hasModifier(event) && !isNavKey && !isOptionKey && !revealMatch) {
         if (shouldLogKey) {
           console.log("[QB_SUPPORT][key-skip]", {
@@ -3915,9 +3939,42 @@ function consumeShortcutEvent(event: KeyboardEvent) {
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!target || !(target instanceof HTMLElement)) return false;
+  if (!isElementVisible(target)) return false;
   if (target.isContentEditable) return true;
   const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  if (tag === "INPUT") {
+    const input = target as HTMLInputElement;
+    const type = (input.type || "text").toLowerCase();
+    if (
+      type === "hidden" ||
+      type === "checkbox" ||
+      type === "radio" ||
+      type === "button" ||
+      type === "submit" ||
+      type === "file"
+    ) {
+      return false;
+    }
+    if (input.disabled || input.readOnly) return false;
+    return true;
+  }
+  if (tag === "TEXTAREA") {
+    const textarea = target as HTMLTextAreaElement;
+    if (textarea.disabled || textarea.readOnly) return false;
+    return true;
+  }
+  return tag === "SELECT";
+}
+
+function isElementVisible(target: HTMLElement): boolean {
+  if (target.offsetParent !== null) return true;
+  const rect = target.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function isExtensionUiTarget(target: EventTarget | null): boolean {
+  if (!target || !(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest(`#${ROOT_ID}, #${CHAT_ROOT_ID}`));
 }
 
 function isQuestionPage(): boolean {
@@ -4087,6 +4144,30 @@ function getShortcutBaseKey(shortcut: string): string {
   if (!normalized) return "";
   const parts = normalized.split("+");
   return parts[parts.length - 1] ?? "";
+}
+
+function getEventBaseKey(event: KeyboardEvent): string {
+  const normalized = normalizeKey(event.key);
+  if (normalized.length === 1) return normalized;
+  const code = event.code ?? "";
+  if (code.startsWith("Key")) return code.slice(3).toUpperCase();
+  if (code.startsWith("Digit")) return code.slice(5);
+  return normalized;
+}
+
+function isPlainShortcut(shortcut: string): boolean {
+  const normalized = normalizeShortcut(shortcut);
+  return Boolean(normalized && !normalized.includes("+"));
+}
+
+function isPlainShortcutMatch(
+  event: KeyboardEvent,
+  shortcut: string,
+  eventBaseKey: string
+): boolean {
+  if (!isPlainShortcut(shortcut)) return false;
+  if (hasModifier(event)) return false;
+  return eventBaseKey === getShortcutBaseKey(shortcut);
 }
 
 function isTargetKey(rawKey: string): boolean {

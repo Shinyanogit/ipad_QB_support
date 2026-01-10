@@ -30,7 +30,22 @@
   var REVEAL_KEYWORDS = ["解答を確認する", "解答を確認", "解答を見る", "解説を見る"];
   var HINT_BASE_PHRASE = "絶妙なヒント";
   var HINT_ANSWER_TEXT_LIMIT = 2400;
+  var HINT_ANSWER_HTML_SCAN_LIMIT = 400000;
+  var HINT_ANSWER_SCRIPT_SCAN_LIMIT = 200000;
+  var HINT_ANSWER_KEYWORDS = [/解説/, /解答/, /正解/, /解法/];
   var HINT_ANSWER_MIN_LENGTH = 80;
+  var HINT_ANSWER_CANDIDATE_SELECTORS = [
+    "#answerSection",
+    "[id*=\"answer\"]",
+    "[class*=\"answer\"]",
+    "[id*=\"explanation\"]",
+    "[class*=\"explanation\"]",
+    "[id*=\"kaisetsu\"]",
+    "[class*=\"kaisetsu\"]",
+    "[data-answer]",
+    "[data-explanation]",
+    "[data-ans]"
+  ];
   function extractQuestionInfo(doc, url) {
     const container = doc.querySelector(SELECTORS.container);
     if (!container) return null;
@@ -81,6 +96,16 @@
     }
     const main = extractAnswerFromContentsMain(doc);
     if (main.text) return main;
+    const candidate = extractAnswerFromCandidates(doc);
+    if (candidate.text) return candidate;
+    const block = extractAnswerFromTextBlocks(doc);
+    if (block.text) return block;
+    const fromScript = extractAnswerFromScriptText(doc);
+    if (fromScript.text) return fromScript;
+    const fromHtml = extractAnswerFromDocumentHtml(doc);
+    if (fromHtml.text) return fromHtml;
+    const fromDoc = extractAnswerFromDocumentText(doc);
+    if (fromDoc.text) return fromDoc;
     return { text: "", meta: { source: "empty", length: 0, preview: "" } };
   }
   function buildAnswerMeta(source, text, element, extra) {
@@ -118,38 +143,368 @@
   function extractAnswerFromContentsMain(doc) {
     const element = doc.querySelector("div.contents-main");
     if (!(element instanceof HTMLElement)) {
+      logDebug("hint-answer-main", { found: false });
       return { text: "", meta: { source: "contents-main", found: false } };
     }
     if (isSupportUiElement(element)) {
+      logDebug("hint-answer-main", { found: false, reason: "ui" });
       return { text: "", meta: { source: "contents-main", found: false, reason: "ui" } };
     }
     const raw = extractAnswerTextFromElement(element);
     if (!raw) {
+      logDebug("hint-answer-main", { found: true, usable: 0 });
       return { text: "", meta: { source: "contents-main", found: true, usable: 0 } };
     }
     const sliced = sliceAnswerByKeyword(raw);
-    if (sliced.length < HINT_ANSWER_MIN_LENGTH) {
+    const questionText = currentSnapshot?.questionText ?? extractQuestionSnapshot(doc, location.href)?.questionText ?? "";
+    const score = scoreAnswerCandidateText(sliced, questionText);
+    if (!score) {
+      logDebug("hint-answer-main", { found: true, usable: 0, length: sliced.length });
       return { text: "", meta: { source: "contents-main", found: true, usable: 0 } };
     }
     const trimmed = sliced.slice(0, HINT_ANSWER_TEXT_LIMIT);
-    const meta = buildAnswerMeta("contents-main", trimmed, element);
+    const meta = buildAnswerMeta("contents-main", trimmed, element, {
+      score,
+      keywordHit: hasHintAnswerKeywords(trimmed)
+    });
+    logDebug("hint-answer-main", meta);
     return { text: trimmed, meta };
   }
-  function isHintMessage(text) {
-    return text.includes(HINT_BASE_PHRASE);
+  function extractAnswerFromCandidates(doc) {
+    const candidates = /* @__PURE__ */ new Set();
+    for (const selector of HINT_ANSWER_CANDIDATE_SELECTORS) {
+      doc.querySelectorAll(selector).forEach((node) => candidates.add(node));
+    }
+    if (!candidates.size) {
+      logDebug("hint-answer-candidate", { found: 0 });
+      return { text: "", meta: { source: "candidate", found: 0 } };
+    }
+    const questionText = currentSnapshot?.questionText ?? extractQuestionSnapshot(doc, location.href)?.questionText ?? "";
+    let bestText = "";
+    let bestScore = 0;
+    let bestMeta = null;
+    candidates.forEach((element) => {
+      if (!(element instanceof HTMLElement)) return;
+      if (isSupportUiElement(element)) return;
+      const text = extractAnswerTextFromElement(element);
+      const score = scoreAnswerCandidateText(text, questionText);
+      if (!score) return;
+      if (score > bestScore) {
+        bestScore = score;
+        bestText = text;
+        bestMeta = {
+          tag: element.tagName,
+          id: element.id || null,
+          className: element.className || null,
+          length: text.length,
+          keywordHit: hasHintAnswerKeywords(text),
+          score,
+          preview: getHintAnswerPreview(text)
+        };
+      }
+    });
+    if (bestMeta) {
+      logDebug("hint-answer-candidate", { found: candidates.size, ...bestMeta });
+    } else {
+      logDebug("hint-answer-candidate", { found: candidates.size, usable: 0 });
+    }
+    const resultText = bestText ? bestText.slice(0, HINT_ANSWER_TEXT_LIMIT) : "";
+    return {
+      text: resultText,
+      meta: bestMeta ? { source: "candidate", found: candidates.size, ...bestMeta } : { source: "candidate", found: candidates.size, usable: 0 }
+    };
   }
-  function getHintAnswerPreview(value) {
-    if (!value) return "";
-    const normalized = normalizeSpace(value);
-    return normalized.length > 120 ? `${normalized.slice(0, 120)}...` : normalized;
+  function extractAnswerFromTextBlocks(doc) {
+    const nodes = Array.from(doc.querySelectorAll("section, article, div, p, li, table"));
+    if (!nodes.length) {
+      logDebug("hint-answer-block", { found: 0 });
+      return { text: "", meta: { source: "block", found: 0 } };
+    }
+    const questionText = currentSnapshot?.questionText ?? extractQuestionSnapshot(doc, location.href)?.questionText ?? "";
+    let bestText = "";
+    let bestScore = 0;
+    let bestMeta = null;
+    const limit = 320;
+    for (let i = 0; i < Math.min(nodes.length, limit); i += 1) {
+      const element = nodes[i];
+      if (!(element instanceof HTMLElement)) continue;
+      if (isSupportUiElement(element)) continue;
+      const raw = normalizeSpace(element.textContent ?? "");
+      if (!raw) continue;
+      const text = raw.length > HINT_ANSWER_TEXT_LIMIT ? raw.slice(0, HINT_ANSWER_TEXT_LIMIT) : raw;
+      const score = scoreAnswerCandidateText(text, questionText);
+      if (!score) continue;
+      if (score > bestScore) {
+        bestScore = score;
+        bestText = text;
+        bestMeta = {
+          tag: element.tagName,
+          id: element.id || null,
+          className: element.className || null,
+          length: text.length,
+          keywordHit: hasHintAnswerKeywords(text),
+          score,
+          preview: getHintAnswerPreview(text)
+        };
+      }
+    }
+    if (bestMeta) {
+      logDebug("hint-answer-block", { found: nodes.length, ...bestMeta });
+    } else {
+      logDebug("hint-answer-block", { found: nodes.length, usable: 0 });
+    }
+    return {
+      text: bestText ? bestText.slice(0, HINT_ANSWER_TEXT_LIMIT) : "",
+      meta: bestMeta ? { source: "block", found: nodes.length, ...bestMeta } : { source: "block", found: nodes.length, usable: 0 }
+    };
   }
-  function isSupportUiElement(element) {
-    if (!(element instanceof HTMLElement)) return false;
-    return Boolean(element.closest("[id^='qb-support-'], [class*='qb-support']"));
+  function extractAnswerFromScriptText(doc) {
+    const scripts = Array.from(doc.querySelectorAll("script"));
+    if (!scripts.length) {
+      logDebug("hint-answer-script", { found: 0 });
+      return { text: "", meta: { source: "script", found: 0 } };
+    }
+    const patterns = [
+      /kaisetsu/i,
+      /explanation/i,
+      /answer/i,
+      /解説/,
+      /正解/,
+      /解法/
+    ];
+    const valuePattern = /(kaisetsu|explanation|answer|解説|正解|解法)[^=:{]{0,80}[:=]\s*("([^"\\]|\\.){30,}")/i;
+    for (const script of scripts) {
+      const text = script.textContent ?? "";
+      if (!text) continue;
+      const scanText = text.length > HINT_ANSWER_SCRIPT_SCAN_LIMIT ? text.slice(0, HINT_ANSWER_SCRIPT_SCAN_LIMIT) : text;
+      if (!patterns.some((pattern) => pattern.test(scanText))) continue;
+      const match = scanText.match(valuePattern);
+      if (match) {
+        const literal = match[2];
+        const decoded = decodeJsonStringLiteral(literal);
+        const normalized = stripTagsAndDecode(decoded);
+        const questionText = currentSnapshot?.questionText ?? "";
+        const score = scoreAnswerCandidateText(normalized, questionText);
+        if (score) {
+          const trimmed = normalized.slice(0, HINT_ANSWER_TEXT_LIMIT);
+          const meta = buildAnswerMeta("script", trimmed, script, { key: match[1], score });
+          logDebug("hint-answer-script", meta);
+          return { text: trimmed, meta };
+        }
+      }
+      if (script.type && script.type.includes("json")) {
+        const jsonCandidate = extractAnswerFromJsonPayload(text);
+        if (jsonCandidate.text) {
+          const meta = buildAnswerMeta("script-json", jsonCandidate.text, script, { key: jsonCandidate.key, score: jsonCandidate.score });
+          logDebug("hint-answer-script", meta);
+          return { text: jsonCandidate.text, meta };
+        }
+      }
+    }
+    logDebug("hint-answer-script", { found: scripts.length, usable: 0 });
+    return { text: "", meta: { source: "script", found: scripts.length, usable: 0 } };
   }
-  function stripSupportUi(root) {
+  function extractAnswerFromJsonPayload(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) return { text: "", score: 0, key: null };
+    try {
+      const data = JSON.parse(trimmed);
+      const questionText = currentSnapshot?.questionText ?? "";
+      const best = { text: "", score: 0, key: null };
+      const visit = (value, keyPath) => {
+        if (typeof value === "string") {
+          const normalized = stripTagsAndDecode(value);
+          const score = scoreAnswerCandidateText(normalized, questionText);
+          if (score > best.score) {
+            best.text = normalized.slice(0, HINT_ANSWER_TEXT_LIMIT);
+            best.score = score;
+            best.key = keyPath;
+          }
+          return;
+        }
+        if (Array.isArray(value)) {
+          value.forEach((item, index) => visit(item, `${keyPath}[${index}]`));
+          return;
+        }
+        if (value && typeof value === "object") {
+          Object.entries(value).forEach(([key, entry]) => visit(entry, keyPath ? `${keyPath}.${key}` : key));
+        }
+      };
+      visit(data, "");
+      return best;
+    } catch {
+      return { text: "", score: 0, key: null };
+    }
+  }
+  function extractAnswerFromDocumentHtml(doc) {
+    const root = doc.documentElement;
+    if (!root) {
+      logDebug("hint-answer-html", { found: false });
+      return { text: "", meta: { source: "document-html", found: false } };
+    }
+    const clone = root.cloneNode(true);
+    stripSupportUi(clone);
+    const html = clone.innerHTML ?? "";
+    if (!html) {
+      logDebug("hint-answer-html", { found: false });
+      return { text: "", meta: { source: "document-html", found: false } };
+    }
+    const scanHtml = html.length > HINT_ANSWER_HTML_SCAN_LIMIT ? html.slice(0, HINT_ANSWER_HTML_SCAN_LIMIT) : html;
+    const keywordMatch = scanHtml.match(/解説|正解|解法|解答|kaisetsu|explanation/i);
+    if (!keywordMatch) {
+      logDebug("hint-answer-html", { found: false });
+      return { text: "", meta: { source: "document-html", found: false } };
+    }
+    const index = keywordMatch.index ?? -1;
+    if (index < 0) {
+      logDebug("hint-answer-html", { found: false });
+      return { text: "", meta: { source: "document-html", found: false } };
+    }
+    const sliceStart = Math.max(0, index - 400);
+    const sliceEnd = Math.min(scanHtml.length, index + 4000);
+    const slice = scanHtml.slice(sliceStart, sliceEnd);
+    const cleaned = stripTagsAndDecode(slice);
+    const questionText = currentSnapshot?.questionText ?? "";
+    const score = scoreAnswerCandidateText(cleaned, questionText);
+    if (!score) {
+      logDebug("hint-answer-html", { found: true, usable: 0 });
+      return { text: "", meta: { source: "document-html", found: true, usable: 0 } };
+    }
+    const trimmed = cleaned.slice(0, HINT_ANSWER_TEXT_LIMIT);
+    const meta = buildAnswerMeta("document-html", trimmed, null, { keyword: keywordMatch[0], score });
+    logDebug("hint-answer-html", meta);
+    return { text: trimmed, meta };
+  }
+  function runPageContextAnswerScan(scanId) {
+    const root = document.documentElement || document.body;
     if (!root) return;
-    root.querySelectorAll("[id^='qb-support-'], [class*='qb-support']").forEach((node) => node.remove());
+    logDebug("hint-answer-global-request", { scanId });
+    const script = document.createElement("script");
+    const scanIdLiteral = JSON.stringify(scanId);
+    script.textContent = `(function(){try{
+      const scanId=${scanIdLiteral};
+      const MAX_RESULTS=3;
+      const MAX_TEXT=${HINT_ANSWER_TEXT_LIMIT};
+      const MIN_LEN=${HINT_ANSWER_MIN_LENGTH};
+      const MAX_DEPTH=3;
+      const MAX_KEYS=60;
+      const MAX_NODES=1200;
+      const jpRe=/[\\u3041-\\u3096\\u30A1-\\u30FA\\u4E00-\\u9FFF]/g;
+      const keywordRe=/\\u89E3\\u8AAC|\\u6B63\\u89E3|\\u89E3\\u6CD5|\\u89E3\\u7B54/;
+      const results=[];
+      const seen=new WeakSet();
+      let nodes=0;
+      function jpRatio(text){
+        const matches=text.match(jpRe);
+        return (matches?matches.length:0)/Math.max(text.length,1);
+      }
+      function score(text){
+        if (!text || text.length<MIN_LEN) return 0;
+        const ratio=jpRatio(text);
+        if (ratio<0.05) return 0;
+        let s=text.length+Math.round(ratio*500);
+        if (keywordRe.test(text)) s+=400;
+        if (/\\bfunction\\b|\\breturn\\b|\\bvar\\b|\\bconst\\b|\\bwindow\\b|\\bdocument\\b/.test(text)) s-=300;
+        return s;
+      }
+      function consider(path, text){
+        const s=score(text);
+        if (!s) return;
+        const trimmed=text.length>MAX_TEXT?text.slice(0, MAX_TEXT):text;
+        results.push({ path, score:s, length:text.length, text:trimmed });
+        results.sort((a,b)=>b.score-a.score);
+        if (results.length>MAX_RESULTS) results.length=MAX_RESULTS;
+      }
+      function visit(value, path, depth){
+        if (nodes>MAX_NODES || depth>MAX_DEPTH || value==null) return;
+        if (typeof value==='string'){ consider(path, value); return; }
+        if (typeof value!=='object') return;
+        if (seen.has(value)) return;
+        seen.add(value);
+        nodes++;
+        if (Array.isArray(value)){
+          for (let i=0;i<value.length && i<MAX_KEYS;i++){ visit(value[i], path + '[' + i + ']', depth+1); }
+          return;
+        }
+        const keys=Object.keys(value);
+        for (let i=0;i<keys.length && i<MAX_KEYS;i++){
+          const key=keys[i];
+          let next;
+          try { next=value[key]; } catch { continue; }
+          visit(next, path ? path + '.' + key : key, depth+1);
+        }
+      }
+      const roots=['__INITIAL_STATE__','__NUXT__','__NEXT_DATA__','__DATA__','__QB_DATA__','__STATE__','__STORE__','__APP__','__APOLLO_STATE__','app','store','state','data'];
+      for (let i=0;i<roots.length;i++){
+        const key=roots[i];
+        if (key in window) visit(window[key], key, 0);
+      }
+      try{
+        for (let i=0;i<localStorage.length && i<MAX_KEYS;i++){
+          const key=localStorage.key(i);
+          if (!key) continue;
+          const value=localStorage.getItem(key);
+          if (value) consider('localStorage.'+key, value);
+        }
+      }catch(e){}
+      try{
+        for (let i=0;i<sessionStorage.length && i<MAX_KEYS;i++){
+          const key=sessionStorage.key(i);
+          if (!key) continue;
+          const value=sessionStorage.getItem(key);
+          if (value) consider('sessionStorage.'+key, value);
+        }
+      }catch(e){}
+      window.postMessage({__qb_support:true, type:'QB_ANSWER_GLOBAL_SCAN_RESULT', scanId, results}, '*');
+    }catch(err){
+      window.postMessage({__qb_support:true, type:'QB_ANSWER_GLOBAL_SCAN_RESULT', scanId:${scanIdLiteral}, error:String(err), results:[]}, '*');
+    }})();`;
+    root.appendChild(script);
+    script.remove();
+  }
+  function extractAnswerFromDocumentText(doc) {
+    const body = doc.body;
+    if (!body) return { text: "", meta: { source: "document-text", found: false } };
+    const clone = body.cloneNode(true);
+    stripSupportUi(clone);
+    clone.querySelectorAll("script, style, noscript").forEach((node) => node.remove());
+    let text = normalizeSpace(clone.textContent ?? "");
+    if (!text) return { text: "", meta: { source: "document-text", found: false } };
+    let keyword = "";
+    let index = -1;
+    const strongMatch = text.match(/解説|正解|解法/);
+    if (strongMatch) {
+      keyword = strongMatch[0];
+      index = text.indexOf(keyword);
+    } else {
+      const answerIndex = text.indexOf("解答");
+      if (answerIndex !== -1 && text.length - answerIndex >= HINT_ANSWER_MIN_LENGTH) {
+        keyword = "解答";
+        index = answerIndex;
+      }
+    }
+    if (index === -1) {
+      logDebug("hint-answer-document", { found: false });
+      return { text: "", meta: { source: "document-text", found: false } };
+    }
+    const slice = text.slice(index, index + HINT_ANSWER_TEXT_LIMIT);
+    if (slice.includes("解答を確認する") || slice.includes("この問題について報告する")) {
+      logDebug("hint-answer-document", { found: false, reason: "ui-only" });
+      return { text: "", meta: { source: "document-text", found: false, reason: "ui-only" } };
+    }
+    const questionText = currentSnapshot?.questionText ?? "";
+    const score = scoreAnswerCandidateText(slice, questionText);
+    if (!score) {
+      logDebug("hint-answer-document", { found: false, reason: "score" });
+      return { text: "", meta: { source: "document-text", found: false, reason: "score" } };
+    }
+    const meta = buildAnswerMeta("document-text", slice, null, {
+      keyword,
+      found: true,
+      score
+    });
+    logDebug("hint-answer-document", meta);
+    return { text: slice, meta };
   }
   function getNavigationTarget(doc, direction) {
     const iconSelector = direction === "next" ? SELECTORS.navNextIcon : SELECTORS.navPrevIcon;
@@ -197,6 +552,43 @@
     const candidates = collectCandidates(answerArea ?? doc.body);
     const matched = findFirstMatching(candidates, REVEAL_KEYWORDS);
     return matched ? findClickableAncestor(matched) ?? matched : null;
+  }
+  function isHintMessage(text) {
+    return text.includes(HINT_BASE_PHRASE);
+  }
+  function hasHintAnswerKeywords(text) {
+    return HINT_ANSWER_KEYWORDS.some((pattern) => pattern.test(text));
+  }
+  function stripTagsAndDecode(html) {
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    return normalizeSpace(container.textContent ?? "");
+  }
+  function decodeJsonStringLiteral(literal) {
+    if (!literal) return "";
+    try {
+      return JSON.parse(literal);
+    } catch {
+      return literal;
+    }
+  }
+  function getJapaneseRatio(text) {
+    const matches = text.match(/[ぁ-んァ-ン一-龥]/g) ?? [];
+    return matches.length / Math.max(text.length, 1);
+  }
+  function scoreAnswerCandidateText(text, questionText) {
+    if (!text || text.length < HINT_ANSWER_MIN_LENGTH) return 0;
+    const jpRatio = getJapaneseRatio(text);
+    if (jpRatio < 0.05) return 0;
+    let score = text.length + Math.round(jpRatio * 500);
+    if (hasHintAnswerKeywords(text)) score += 400;
+    if (questionText && text.includes(questionText)) {
+      score -= Math.min(questionText.length, 800);
+    }
+    if (/\bfunction\b|\breturn\b|\bvar\b|\bconst\b|\bwindow\b|\bdocument\b/.test(text)) {
+      score -= 300;
+    }
+    return score;
   }
   function questionIdFromUrl(url) {
     try {
@@ -764,10 +1156,11 @@
   var cachedAnswerContext = null;
   var pendingAnswerResolvers = [];
   var answerFrameEl = null;
-  var answerContextWanted = false;
-  var lastAnswerContextText = "";
-  var answerObserver = null;
   var answerObserverBound = false;
+  var answerObserver = null;
+  var lastAnswerContextText = "";
+  var answerContextWanted = false;
+  var pendingAnswerScanId = null;
   var root = null;
   var panel = null;
   var launcher = null;
@@ -779,6 +1172,7 @@
   var chatMessagesEl = null;
   var chatInput = null;
   var lastHintDraftSource = null;
+  var lastHintDraftSnapshot = null;
   var chatSendButton = null;
   var chatStatusField = null;
   var chatInputWrap = null;
@@ -791,6 +1185,8 @@
   var chatSettingsPanel = null;
   var chatSettingsButton = null;
   var chatSettingsOpen = false;
+  var lastSettingsToggleSource = null;
+  var lastSettingsToggleMeta = null;
   var chatApiKeyVisible = false;
   var chatAuthPromptActive = false;
   var chatTemplateBar = null;
@@ -828,8 +1224,6 @@
   var authSyncField = null;
   var authSignInButton = null;
   var authSignOutButton = null;
-  var authLoginButton = null;
-  var authLoginUrl = null;
   var authInitialized = false;
   var authSyncTimer = null;
   var authSyncInFlight = false;
@@ -847,11 +1241,11 @@
   var explanationSectionEl = null;
   var authSectionEl = null;
   var themeQuery = null;
-  var lastPointerDownAt = 0;
   var start = () => {
     logInjectionOnce();
     ensureMarker();
     logFramesOnce();
+    initNetworkLogger();
     attachMessageHandlers();
     removeHeaderGearButton();
     if (isQbHost()) {
@@ -973,10 +1367,6 @@
       authSignInButton.disabled = false;
       authSignInButton.style.display = "inline-flex";
       authSignOutButton.style.display = "none";
-      if (authLoginButton) {
-        authLoginButton.style.display = authLoginUrl ? "inline-flex" : "none";
-        authLoginButton.disabled = !authLoginUrl;
-      }
       return;
     }
     const name = authProfile.email || "Googleユーザー";
@@ -984,7 +1374,6 @@
     authMetaField.textContent = authProfile.email ?? "";
     authSignInButton.style.display = "none";
     authSignOutButton.style.display = "inline-flex";
-    if (authLoginButton) authLoginButton.style.display = "none";
   }
   function setAuthStatus(message, isError) {
     if (!authStatusField) return;
@@ -1085,41 +1474,14 @@
     throw new Error("ログインが完了しませんでした。もう一度お試しください。");
   }
   async function requestBackendAuthSession() {
-    authLoginUrl = null;
-    if (authLoginButton) authLoginButton.style.display = "none";
-    let popup = null;
-    try {
-      popup = window.open("about:blank", "_blank");
-      if (popup) popup.opener = null;
-    } catch {
-      popup = null;
-    }
-    let start2;
-    try {
-      start2 = await fetchBackendAuthStart();
-    } catch (error) {
-      if (popup && popup.close) popup.close();
-      throw error;
-    }
-    if (popup) {
-      try {
-        popup.location.href = start2.authUrl;
-      } catch (error) {
-        console.warn("[QB_SUPPORT][auth-ui] popup navigation failed", error);
-        popup = null;
-      }
-    }
+    const start2 = await fetchBackendAuthStart();
+    const popup = window.open(start2.authUrl, "_blank", "noopener,noreferrer");
     if (!popup) {
       console.warn("[QB_SUPPORT][auth-ui] popup blocked", { authUrl: start2.authUrl });
       setAuthStatus(
-        "ポップアップがブロックされました。下の「ログインURLを開く」をタップしてください。",
+        "ポップアップがブロックされました。ログインURLを新規タブで開いてください。",
         true
       );
-      authLoginUrl = start2.authUrl;
-      if (authLoginButton) {
-        authLoginButton.style.display = "inline-flex";
-        authLoginButton.disabled = false;
-      }
       logInfo("[QB_SUPPORT][auth-ui] login url", start2.authUrl);
     } else {
       setAuthStatus("ブラウザでログインを完了してください", false);
@@ -1144,8 +1506,6 @@
     return data;
   }
   function applyAuthSession(session) {
-    authLoginUrl = null;
-    if (authLoginButton) authLoginButton.style.display = "none";
     authAccessToken = session.token;
     authProfile = session.profile;
     updateAuthUI();
@@ -1403,6 +1763,12 @@
   function ensureUI() {
     if (document.getElementById(ROOT_ID)) {
       root = document.getElementById(ROOT_ID);
+      panel = root.querySelector(".qb-support-panel");
+      const existingLauncher = root.querySelector(".qb-support-launcher");
+      if (existingLauncher) {
+        existingLauncher.remove();
+      }
+      launcher = null;
       return;
     }
     root = document.createElement("div");
@@ -1752,22 +2118,6 @@
     authSignInButton.addEventListener("click", () => {
       void handleAuthSignIn();
     });
-    authLoginButton = document.createElement("button");
-    authLoginButton.type = "button";
-    authLoginButton.className = "qb-support-save qb-support-auth-button qb-support-auth-open";
-    applyButtonVariant(authLoginButton, "ghost");
-    authLoginButton.textContent = "ログインURLを開く";
-    authLoginButton.style.display = "none";
-    authLoginButton.addEventListener("click", () => {
-      if (!authLoginUrl) return;
-      const opened = window.open(authLoginUrl, "_blank", "noopener,noreferrer");
-      if (!opened) {
-        setAuthStatus(
-          "新規タブを開けませんでした。Safariのポップアップ設定を確認してください。",
-          true
-        );
-      }
-    });
     authSignOutButton = document.createElement("button");
     authSignOutButton.type = "button";
     authSignOutButton.className = "qb-support-save qb-support-auth-button qb-support-auth-signout";
@@ -1780,7 +2130,6 @@
     const authActions = document.createElement("div");
     authActions.className = "qb-support-auth-actions";
     authActions.appendChild(authSignInButton);
-    authActions.appendChild(authLoginButton);
     authActions.appendChild(authSignOutButton);
     authSection.appendChild(authStatusField);
     authSection.appendChild(authMetaField);
@@ -1792,27 +2141,7 @@
     panel.appendChild(templateSection);
     panel.appendChild(explanationSection);
     panel.appendChild(authSection);
-    launcher = document.createElement("button");
-    launcher.type = "button";
-    launcher.className = "qb-support-launcher";
-    launcher.title = "QB設定";
-    launcher.setAttribute("aria-label", "QB設定");
-    launcher.appendChild(createGearIcon());
-    launcher.style.display = "none";
-    launcher.addEventListener("click", () => {
-      if (!chatSettingsPanel) {
-        ensureChatUI();
-      }
-      if (!settings.chatOpen) {
-        void saveSettings({ ...settings, chatOpen: true }).then(() => {
-          toggleChatSettings(true);
-        });
-      } else {
-        toggleChatSettings(true);
-      }
-    });
     root.appendChild(panel);
-    root.appendChild(launcher);
     document.body.appendChild(root);
   }
   function ensureChatUI() {
@@ -1993,7 +2322,7 @@
           const button = document.createElement("button");
           button.type = "button";
           button.className = "qb-support-chat-settings-btn";
-          button.appendChild(createGearIcon());
+          button.textContent = "設定";
           button.setAttribute("aria-label", "チャット設定");
           actions2.insertBefore(button, actions2.firstChild);
           chatSettingsButton = button;
@@ -2021,20 +2350,6 @@
         }
       }
       if (chatSettingsPanel) {
-        let closeButton = chatSettingsPanel.querySelector(
-          ".qb-support-chat-settings-close"
-        );
-        if (!closeButton) {
-          closeButton = document.createElement("button");
-          closeButton.type = "button";
-          closeButton.className = "qb-support-chat-settings-close";
-          closeButton.textContent = "×";
-          closeButton.setAttribute("aria-label", "設定を閉じる");
-          closeButton.addEventListener("click", () => {
-            toggleChatSettings(false);
-          });
-          chatSettingsPanel.appendChild(closeButton);
-        }
         chatSettingsOpen = chatSettingsPanel.dataset.open === "true";
       }
       attachChatModelHandlers();
@@ -2078,7 +2393,7 @@
     const settingsButton = document.createElement("button");
     settingsButton.type = "button";
     settingsButton.className = "qb-support-chat-settings-btn";
-    settingsButton.appendChild(createGearIcon());
+    settingsButton.textContent = "設定";
     settingsButton.setAttribute("aria-label", "チャット設定");
     chatSettingsButton = settingsButton;
     settingsButton.dataset.shortcut = "Ctrl+S";
@@ -2099,15 +2414,6 @@
     chatSettingsPanel = document.createElement("div");
     chatSettingsPanel.className = "qb-support-chat-settings";
     chatSettingsPanel.dataset.open = "false";
-    const settingsCloseButton = document.createElement("button");
-    settingsCloseButton.type = "button";
-    settingsCloseButton.className = "qb-support-chat-settings-close";
-    settingsCloseButton.textContent = "×";
-    settingsCloseButton.setAttribute("aria-label", "設定を閉じる");
-    settingsCloseButton.addEventListener("click", () => {
-      toggleChatSettings(false);
-    });
-    chatSettingsPanel.appendChild(settingsCloseButton);
     const apiSection = document.createElement("div");
     apiSection.className = "qb-support-chat-api qb-support-chat-settings-section";
     const apiLabel = document.createElement("label");
@@ -2262,6 +2568,8 @@
     applyChatDockLayout();
     ensureChatLayoutHandler();
     if (!settings.chatOpen && chatSettingsOpen) {
+      setSettingsToggleSource("chat-close", { reason: "chatOpen=false" });
+      logDebug("chat-close", { chatOpen: settings.chatOpen, settingsOpen: chatSettingsOpen });
       toggleChatSettings(false);
     }
     if (chatApiInput && document.activeElement !== chatApiInput) {
@@ -2425,6 +2733,10 @@
       ensureChatUI();
     }
     const openPanel = () => {
+      if (!lastSettingsToggleSource) {
+        setSettingsToggleSource("template-editor", { index });
+        logDebug("template-editor-open", { index });
+      }
       toggleChatSettings(true);
       setSectionCollapsed(templateSectionEl, false);
       const row = chatTemplateRows[index];
@@ -2456,6 +2768,8 @@
     button.addEventListener("mouseenter", () => {
       clearHover();
       hoverTimer = window.setTimeout(() => {
+        setSettingsToggleSource("template-hover", { index });
+        logDebug("template-hover", { index });
         openTemplateEditor(index);
       }, 900);
     });
@@ -2466,6 +2780,8 @@
       clearPress();
       pressTimer = window.setTimeout(() => {
         longPressTriggered = true;
+        setSettingsToggleSource("template-longpress", { index });
+        logDebug("template-longpress", { index });
         openTemplateEditor(index);
       }, 650);
     });
@@ -2499,6 +2815,13 @@
     if (!settings.debugEnabled) return;
     globalThis.console.debug(...args);
   }
+  function logDebug(event, meta) {
+    logInfo("[QB_SUPPORT][debug]", { event, ...(meta ?? {}) });
+  }
+  function setSettingsToggleSource(source, meta) {
+    lastSettingsToggleSource = source;
+    lastSettingsToggleMeta = meta ?? null;
+  }
   function isEligibleHintDraftSource(target) {
     if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return false;
     if (target instanceof HTMLInputElement) {
@@ -2510,18 +2833,74 @@
     if (target.classList.contains("qb-support-chat-api-key")) return false;
     return true;
   }
+  function getHintDraftPreview(value) {
+    if (!value) return "";
+    return value.length > 60 ? `${value.slice(0, 60)}...` : value;
+  }
+  function getHintAnswerPreview(value) {
+    if (!value) return "";
+    const normalized = normalizeSpace(value);
+    return normalized.length > 120 ? `${normalized.slice(0, 120)}...` : normalized;
+  }
+  function isSupportUiElement(element) {
+    if (!(element instanceof HTMLElement)) return false;
+    return Boolean(element.closest("[id^='qb-support-'], [class*='qb-support']"));
+  }
+  function stripSupportUi(root) {
+    if (!root) return;
+    root.querySelectorAll("[id^='qb-support-'], [class*='qb-support']").forEach((node) => node.remove());
+  }
+  function summarizeHintDraftSource(target, value) {
+    return {
+      tag: target.tagName,
+      type: target instanceof HTMLInputElement ? (target.type || "text").toLowerCase() : null,
+      id: target.id || null,
+      name: target.name || null,
+      className: target.className || null,
+      valueLength: value.length,
+      valuePreview: getHintDraftPreview(value),
+      frame: window === window.top ? "top" : "iframe",
+      url: location.href
+    };
+  }
   function resolveHintDraft() {
     const chatDraft = chatInput?.value?.trim() ?? "";
-    if (chatDraft) return chatDraft;
+    if (chatDraft) {
+      logDebug("hint-draft-resolve", {
+        used: "chat-input",
+        valueLength: chatDraft.length,
+        valuePreview: getHintDraftPreview(chatDraft)
+      });
+      return chatDraft;
+    }
     const chatTextarea = document.querySelector(
       ".qb-support-chat-textarea"
     );
     const fallbackDraft = chatTextarea?.value?.trim() ?? "";
-    if (fallbackDraft) return fallbackDraft;
+    if (fallbackDraft) {
+      logDebug("hint-draft-resolve", {
+        used: "chat-textarea",
+        valueLength: fallbackDraft.length,
+        valuePreview: getHintDraftPreview(fallbackDraft)
+      });
+      return fallbackDraft;
+    }
     if (lastHintDraftSource && document.contains(lastHintDraftSource)) {
       const value = lastHintDraftSource.value?.trim() ?? "";
-      if (value) return value;
+      if (value) {
+        logDebug("hint-draft-resolve", {
+          used: "last-source",
+          ...summarizeHintDraftSource(lastHintDraftSource, value)
+        });
+        return value;
+      }
+      logDebug("hint-draft-resolve", {
+        used: "last-source-empty",
+        ...summarizeHintDraftSource(lastHintDraftSource, value)
+      });
+      return "";
     }
+    logDebug("hint-draft-resolve", { used: "none" });
     return "";
   }
   function updateHintQuickButton() {
@@ -2558,7 +2937,10 @@
       if (!chatInput) {
         ensureChatUI();
       }
-      const message = buildHintQuickMessage(resolveHintDraft());
+      const draft = resolveHintDraft();
+      setSettingsToggleSource("hint-click", { draftLength: draft.length });
+      logDebug("hint-click", { draftLength: draft.length, hasDraft: Boolean(draft) });
+      const message = buildHintQuickMessage(draft);
       void sendTemplateMessage(message);
     };
     attachTemplateEditJump(hintQuickButton, hintEntry.index);
@@ -2588,6 +2970,9 @@
         button.dataset.shortcut = template.shortcut;
       }
       button.addEventListener("click", () => {
+        const label = button.textContent ?? "";
+        setSettingsToggleSource("template-click", { index, label });
+        logDebug("template-click", { index, label });
         void sendTemplateMessage(template);
       });
       attachTemplateEditJump(button, index);
@@ -2625,12 +3010,29 @@
     if (chatSettingsButton.dataset.handlers === "true") return;
     chatSettingsButton.dataset.handlers = "true";
     chatSettingsButton.addEventListener("click", () => {
+      const label = chatSettingsButton.textContent ?? "";
+      setSettingsToggleSource("settings-button", { label });
+      logDebug("settings-button-click", { label });
       toggleChatSettings();
     });
   }
   function toggleChatSettings(force) {
     if (!chatSettingsPanel || !chatSettingsButton) return;
     const nextOpen = typeof force === "boolean" ? force : !chatSettingsOpen;
+    const meta = {
+      source: lastSettingsToggleSource ?? "unknown",
+      meta: lastSettingsToggleMeta,
+      force,
+      nextOpen,
+      prevOpen: chatSettingsOpen,
+      chatOpen: settings.chatOpen
+    };
+    if (!lastSettingsToggleSource) {
+      meta.stack = new Error("toggleChatSettings").stack;
+    }
+    logDebug("toggle-chat-settings", meta);
+    lastSettingsToggleSource = null;
+    lastSettingsToggleMeta = null;
     if (chatSettingsOpen && !nextOpen) {
       void commitSettingsFromPanel();
     }
@@ -2880,7 +3282,10 @@
     if (typeof template === "string") {
       rawMessage = template;
     } else if (isHintTemplate(template)) {
-      rawMessage = buildHintQuickMessage(resolveHintDraft());
+      const draft = resolveHintDraft();
+      setSettingsToggleSource("hint-template", { draftLength: draft.length });
+      logDebug("hint-template", { draftLength: draft.length, hasDraft: Boolean(draft) });
+      rawMessage = buildHintQuickMessage(draft);
     } else {
       rawMessage = template?.prompt ?? "";
     }
@@ -2937,7 +3342,7 @@
   function shouldUseBottomOverlay() {
     const width = window.innerWidth || 0;
     const height = window.innerHeight || 1;
-    return width / height <= 0.9;
+    return width / height <= 1.2;
   }
   function getDockWidth() {
     const min = CHAT_DOCK_MIN_WIDTH;
@@ -2967,7 +3372,6 @@
     if (!document.body.classList.contains(CHAT_DOCK_CLASS)) return;
     captureQuestionImageBaseSizes();
     chatResizeActive = true;
-    chatResizer.dataset.dragging = "true";
     chatResizer.setPointerCapture(event.pointerId);
     event.preventDefault();
     const onMove = (ev) => {
@@ -2979,9 +3383,6 @@
     };
     const onUp = (ev) => {
       chatResizeActive = false;
-      if (chatResizer) {
-        delete chatResizer.dataset.dragging;
-      }
       chatResizer?.releasePointerCapture(ev.pointerId);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
@@ -3097,12 +3498,9 @@
           }
           streamState.text += delta;
           if (placeholder) {
-            const autoScroll = shouldAutoScroll(chatMessagesEl);
             setChatMessageContent(placeholder, "assistant", streamState.text || "回答中...");
             placeholder.classList.remove("is-pending");
-            if (autoScroll) {
-              chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-            }
+            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
           }
         }
       );
@@ -3155,14 +3553,8 @@
       chatHistory = chatHistory.slice(-maxMessages);
     }
   }
-  function shouldAutoScroll(container) {
-    const threshold = 32;
-    const distance = container.scrollHeight - (container.scrollTop + container.clientHeight);
-    return distance <= threshold;
-  }
   function appendChatMessage(role, content, options) {
     if (!chatMessagesEl) return null;
-    const autoScroll = shouldAutoScroll(chatMessagesEl);
     const message = document.createElement("div");
     message.className = `qb-support-chat-msg is-${role}`;
     if (options?.pending) message.classList.add("is-pending");
@@ -3174,9 +3566,7 @@
       applyUserMessageCollapse(message, content);
     }
     chatMessagesEl.appendChild(message);
-    if (autoScroll) {
-      chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
-    }
+    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
     return message;
   }
   function setChatMessageContent(message, role, content) {
@@ -3364,6 +3754,13 @@
         timeoutMs: 1500
       };
       postToAnswerFrame(watchMessage);
+      if (settings.debugEnabled && pendingAnswerScanId) {
+        postToAnswerFrame({
+          __qb_support: true,
+          type: "QB_ANSWER_GLOBAL_SCAN",
+          scanId: pendingAnswerScanId
+        });
+      }
     });
     document.body.appendChild(iframe);
     answerFrameEl = iframe;
@@ -3384,19 +3781,6 @@
       }, timeoutMs);
     });
   }
-  function sendAnswerContextPush(context) {
-    if (!context?.text) return;
-    const payload = {
-      __qb_support: true,
-      type: "QB_ANSWER_CONTEXT_PUSH",
-      context
-    };
-    try {
-      window.top?.postMessage(payload, QB_TOP_ORIGIN);
-    } catch (error) {
-      console.warn("[QB_SUPPORT][answer-push]", error);
-    }
-  }
   function startAnswerObserver(options = {}) {
     if (answerObserverBound) return;
     answerObserverBound = true;
@@ -3409,6 +3793,7 @@
       if (!context.text) return;
       if (context.text === lastAnswerContextText) return;
       lastAnswerContextText = context.text;
+      logDebug("hint-answer-push", context.meta ?? { source: "observer" });
       sendAnswerContextPush(context);
       if (options.once) {
         stopAnswerObserver();
@@ -3439,13 +3824,25 @@
   }
   async function resolveHintAnswerContext(snapshot) {
     if (cachedAnswerContext?.text) {
+      logDebug("hint-answer-context", cachedAnswerContext.meta ?? {
+        source: "cache",
+        length: cachedAnswerContext.text.length,
+        preview: getHintAnswerPreview(cachedAnswerContext.text)
+      });
       return cachedAnswerContext.text;
     }
     answerContextWanted = true;
+    pendingAnswerScanId = createChatRequestId();
     const local = extractAnswerExplanationContext(document);
     if (local.text) {
       cachedAnswerContext = local;
+      logDebug("hint-answer-context", local.meta ?? {
+        source: "local",
+        length: local.text.length,
+        preview: getHintAnswerPreview(local.text)
+      });
       answerContextWanted = false;
+      pendingAnswerScanId = null;
       return local.text;
     }
     if (window !== window.top) return "";
@@ -3459,19 +3856,45 @@
       };
       postToAnswerFrame(watchMessage);
       postToInputFrame(watchMessage);
+      if (settings.debugEnabled && pendingAnswerScanId) {
+        const scanMessage = {
+          __qb_support: true,
+          type: "QB_ANSWER_GLOBAL_SCAN",
+          scanId: pendingAnswerScanId
+        };
+        postToAnswerFrame(scanMessage);
+        postToInputFrame(scanMessage);
+      }
     }
     const awaited = await waitForAnswerContext(1200);
     if (awaited?.text) {
       cachedAnswerContext = awaited;
+      logDebug("hint-answer-context", awaited.meta ?? {
+        source: "observer",
+        length: awaited.text.length,
+        preview: getHintAnswerPreview(awaited.text)
+      });
       answerContextWanted = false;
+      pendingAnswerScanId = null;
       return awaited.text;
     }
     const response = await requestAnswerContextFromFrame(900);
-    if (response?.text) {
+    const resolved = response?.text ?? "";
+    if (resolved) {
       cachedAnswerContext = response;
     }
+    if (response?.meta) {
+      logDebug("hint-answer-context", response.meta);
+    } else {
+      logDebug("hint-answer-context", {
+        source: resolved ? "frame" : "empty",
+        length: resolved.length,
+        preview: getHintAnswerPreview(resolved)
+      });
+    }
     answerContextWanted = false;
-    return response?.text ?? "";
+    pendingAnswerScanId = null;
+    return resolved;
   }
   async function buildChatRequest(snapshot, userMessage, includeContext) {
     const input = [];
@@ -3485,7 +3908,7 @@
     const hintAnswerText = isHintMessage(userMessage) ? await resolveHintAnswerContext(snapshot) : "";
     return { input, instructions: buildChatInstructions(hintAnswerText) };
   }
-  function buildChatInstructions(hintAnswerText = "") {
+  function buildChatInstructions(hintAnswerText) {
     const levelKey = settings.explanationLevel ?? "med-junior";
     const levelLabel = EXPLANATION_LEVEL_LABELS[levelKey] ?? levelKey;
     const prompt = settings.explanationPrompts?.[levelKey] ?? "";
@@ -3598,6 +4021,7 @@
     if (prevId && snapshot.id && prevId !== snapshot.id) {
       cachedAnswerContext = null;
       lastAnswerContextText = "";
+      pendingAnswerScanId = null;
       if (answerFrameEl) {
         answerFrameEl.remove();
         answerFrameEl = null;
@@ -3724,7 +4148,7 @@
       };
       const timeoutId = window.setTimeout(() => {
         finish(new Error("応答がタイムアウトしました"));
-      }, 18e4);
+      }, 12e4);
       port.onMessage.addListener(onMessage);
       port.onDisconnect.addListener(onDisconnect);
       const model = auth.mode === "backend" ? resolveBackendModel(settings.chatModel) : settings.chatModel;
@@ -3789,15 +4213,17 @@
     chatStatusField.appendChild(actions);
   }
   function applySettings() {
-    if (!root || !panel || !launcher) return;
+    if (!root || !panel) return;
     root.dataset.position = settings.position;
     panel.classList.toggle("is-hidden", !settings.enabled);
-    launcher.classList.toggle("is-disabled", settings.enabled);
-    launcher.classList.toggle("is-hidden", settings.enabled);
-    if (settings.shortcut) {
-      launcher.dataset.shortcut = settings.shortcut;
-    } else {
-      launcher.removeAttribute("data-shortcut");
+    if (launcher) {
+      launcher.classList.toggle("is-disabled", settings.enabled);
+      launcher.classList.toggle("is-hidden", settings.enabled);
+      if (settings.shortcut) {
+        launcher.dataset.shortcut = settings.shortcut;
+      } else {
+        launcher.removeAttribute("data-shortcut");
+      }
     }
     toggleMarker(settings.debugEnabled);
     if (shortcutsToggle) shortcutsToggle.checked = settings.shortcutsEnabled;
@@ -3920,24 +4346,30 @@
     }, 500);
   }
   function attachEventHandlers() {
-    const markPointerDown = (event) => {
-      if (event && "pointerType" in event) {
-        const pointerEvent = event;
-        if (pointerEvent.pointerType && pointerEvent.pointerType !== "touch" && pointerEvent.pointerType !== "pen") {
-          return;
-        }
-      }
-      lastPointerDownAt = Date.now();
-    };
     const trackHintDraftSource = (event) => {
       const target = event.target;
-      if (!isEligibleHintDraftSource(target)) return;
+      if (!isEligibleHintDraftSource(target)) {
+        if (target instanceof HTMLElement && target.isContentEditable) {
+          logDebug("hint-draft-contenteditable-ignored", {
+            tag: target.tagName,
+            id: target.id || null,
+            className: target.className || null,
+            frame: window === window.top ? "top" : "iframe",
+            url: location.href
+          });
+        }
+        return;
+      }
+      const value = target.value?.trim() ?? "";
+      const shouldLog = !lastHintDraftSnapshot || lastHintDraftSnapshot.element !== target || lastHintDraftSnapshot.value !== value;
       lastHintDraftSource = target;
+      if (shouldLog) {
+        lastHintDraftSnapshot = { element: target, value };
+        logDebug("hint-draft-source", summarizeHintDraftSource(target, value));
+      }
     };
     document.addEventListener("focusin", trackHintDraftSource, true);
     document.addEventListener("input", trackHintDraftSource, true);
-    window.addEventListener("pointerdown", markPointerDown, { capture: true, passive: true });
-    window.addEventListener("touchstart", markPointerDown, { capture: true, passive: true });
     window.addEventListener(
       "keydown",
       (event) => {
@@ -3996,17 +4428,20 @@
           return;
         }
         if (isShortcutMatch(event, "Ctrl+S") && window === window.top) {
-          const sincePointerDown = Date.now() - lastPointerDownAt;
-          if (sincePointerDown >= 0 && sincePointerDown < 600) {
-            if (debug) {
-              logVerbose("[QB_SUPPORT][key-skip]", {
-                key: event.key,
-                reason: "recent-touch",
-                sincePointerDown
-              });
-            }
-            return;
-          }
+          setSettingsToggleSource("shortcut-ctrl-s", {
+            key: event.key,
+            target: event.target instanceof HTMLElement ? event.target.tagName : null,
+            isTyping,
+            ctrlKey: event.ctrlKey,
+            metaKey: event.metaKey,
+            altKey: event.altKey,
+            shiftKey: event.shiftKey
+          });
+          logDebug("shortcut-ctrl-s", {
+            key: event.key,
+            target: event.target instanceof HTMLElement ? event.target.tagName : null,
+            isTyping
+          });
           consumeShortcutEvent(event);
           if (!chatSettingsPanel) {
             ensureChatUI();
@@ -4485,10 +4920,71 @@
         }, timeoutMs);
         return;
       }
+      if (data.type === "QB_ANSWER_GLOBAL_SCAN") {
+        if (!isInputHost() && window === window.top) return;
+        runPageContextAnswerScan(data.scanId ?? createChatRequestId());
+        return;
+      }
+      if (data.type === "QB_ANSWER_GLOBAL_SCAN_RESULT") {
+        if (!isInputHost() && window === window.top) return;
+        const results = Array.isArray(data.results) ? data.results : [];
+        if (data.error) {
+          logDebug("hint-answer-global", { source: "error", message: data.error });
+          return;
+        }
+        if (!results.length) {
+          logDebug("hint-answer-global", { source: "empty" });
+          return;
+        }
+        const best = results[0];
+        const text = typeof best.text === "string" ? best.text : "";
+        if (!text) {
+          logDebug("hint-answer-global", { source: "empty" });
+          return;
+        }
+        const context = {
+          text,
+          meta: {
+            source: "global-scan",
+            scanId: data.scanId ?? null,
+            path: best.path ?? null,
+            score: best.score ?? null,
+            length: text.length,
+            preview: getHintAnswerPreview(text)
+          }
+        };
+        logDebug("hint-answer-global", context.meta);
+        sendAnswerContextPush(context);
+        return;
+      }
+      if (data.type === "QB_ANSWER_REVEAL") {
+        if (!isInputHost() && window === window.top) return;
+        const revealButton = getAnswerRevealButton(document);
+        logDebug("hint-answer-reveal", {
+          found: Boolean(revealButton),
+          target: describeElement(revealButton)
+        });
+        if (revealButton) {
+          clickWithFallback(revealButton, { tag: "hint-reveal", logAlways: true });
+        }
+        startAnswerObserver({ once: true });
+        window.setTimeout(() => {
+          const context = extractAnswerExplanationContext(document);
+          if (context.text) {
+            sendAnswerContextPush(context);
+          }
+        }, 300);
+        return;
+      }
+      if (data.type === "QB_NET_LOG") {
+        logInfo("[QB_SUPPORT][net]", data.payload ?? {});
+        return;
+      }
       if (data.type === "QB_ANSWER_CONTEXT_PUSH") {
         const context = data.context ?? null;
         if (context?.text) {
           cachedAnswerContext = context;
+          logDebug("hint-answer-push", context.meta ?? { source: "push" });
         }
         if (pendingAnswerResolvers.length) {
           const pending = pendingAnswerResolvers.slice();
@@ -4536,17 +5032,6 @@
       }
     }
     return { sent: false, method: "none", frameIndex: null, errors };
-  }
-  function postToAnswerFrame(message) {
-    if (!answerFrameEl || !answerFrameEl.contentWindow) return false;
-    const origin = getFrameOrigin(answerFrameEl) || "*";
-    const targetOrigin = answerFrameEl.dataset.loaded === "true" ? origin : "*";
-    try {
-      answerFrameEl.contentWindow.postMessage(message, targetOrigin);
-      return true;
-    } catch {
-      return false;
-    }
   }
   function requestQuestionSnapshotFromFrame(timeoutMs) {
     return new Promise((resolve) => {
@@ -4882,6 +5367,185 @@
       ts: Date.now(),
       version
     });
+  }
+  function shouldLogNetwork(url) {
+    try {
+      const parsed = new URL(url, location.href);
+      return parsed.hostname.includes("medilink-study.com");
+    } catch {
+      return false;
+    }
+  }
+  function shouldInspectNetworkBody(url) {
+    return /operation|qbdispv2\.php/i.test(url);
+  }
+  function buildNetworkPreview(text) {
+    const normalized = normalizeSpace(text);
+    return normalized.length > 200 ? `${normalized.slice(0, 200)}...` : normalized;
+  }
+  function emitNetworkLog(payload) {
+    const enriched = { frame: window === window.top ? "top" : "iframe", ...payload };
+    if (window === window.top) {
+      logInfo("[QB_SUPPORT][net]", enriched);
+      return;
+    }
+    try {
+      window.top?.postMessage({ __qb_support: true, type: "QB_NET_LOG", payload: enriched }, QB_TOP_ORIGIN);
+    } catch (error) {
+      logInfo("[QB_SUPPORT][net]", {
+        ...enriched,
+        forwardError: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+  function sendAnswerContextPush(context) {
+    if (!context?.text) return;
+    const payload = {
+      __qb_support: true,
+      type: "QB_ANSWER_CONTEXT_PUSH",
+      context
+    };
+    try {
+      window.top?.postMessage(payload, QB_TOP_ORIGIN);
+    } catch (error) {
+      console.warn("[QB_SUPPORT][answer-push]", error);
+    }
+  }
+  function postToAnswerFrame(message) {
+    if (!answerFrameEl || !answerFrameEl.contentWindow) return false;
+    const origin = getFrameOrigin(answerFrameEl) || "*";
+    const targetOrigin = answerFrameEl.dataset.loaded === "true" ? origin : "*";
+    try {
+      answerFrameEl.contentWindow.postMessage(message, targetOrigin);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function initNetworkLogger() {
+    if (window.__qbSupportNetworkHooked) return;
+    window.__qbSupportNetworkHooked = true;
+    logInfo("[QB_SUPPORT][net-hook]", {
+      url: location.href,
+      frame: window === window.top ? "top" : "iframe"
+    });
+    const netSeen = window.__qbSupportNetSeen ?? /* @__PURE__ */ new Set();
+    window.__qbSupportNetSeen = netSeen;
+    const markSeen = (url) => {
+      if (!url) return false;
+      if (netSeen.has(url)) return false;
+      netSeen.add(url);
+      return true;
+    };
+    if ("PerformanceObserver" in window) {
+      try {
+        const observer = new PerformanceObserver((list) => {
+          list.getEntries().forEach((entry) => {
+            const name = entry?.name ?? "";
+            if (!shouldInspectNetworkBody(name)) return;
+            if (!markSeen(name)) return;
+            emitNetworkLog({
+              type: "resource",
+              url: name,
+              initiatorType: entry.initiatorType ?? null,
+              durationMs: Math.round(entry.duration ?? 0),
+              transferSize: "transferSize" in entry ? entry.transferSize : null,
+              encodedBodySize: "encodedBodySize" in entry ? entry.encodedBodySize : null,
+              decodedBodySize: "decodedBodySize" in entry ? entry.decodedBodySize : null
+            });
+          });
+        });
+        observer.observe({ entryTypes: ["resource"] });
+      } catch (error) {
+        console.warn("[QB_SUPPORT][net-hook]", "performance-observer-failed", error);
+      }
+    }
+    const originalFetch = window.fetch;
+    if (typeof originalFetch === "function") {
+      window.fetch = async (...args) => {
+        const request = args[0];
+        const url = typeof request === "string" ? request : request?.url ?? "";
+        const method = typeof request === "string" ? (args[1]?.method ?? "GET") : request?.method ?? "GET";
+        const startedAt = Date.now();
+        const response = await originalFetch(...args);
+        if (!shouldLogNetwork(url)) return response;
+        const durationMs = Date.now() - startedAt;
+        const cloned = response.clone();
+        const contentType = cloned.headers.get("content-type") ?? "";
+        const contentLength = Number(cloned.headers.get("content-length") ?? 0);
+        let preview = "";
+        let hasAnswerKeywords = false;
+        try {
+          const shouldRead = !contentLength || contentLength < 200000 || shouldInspectNetworkBody(url);
+          if (shouldRead) {
+            if (contentType.includes("application/json") || contentType.includes("text") || contentType.includes("html") || shouldInspectNetworkBody(url)) {
+              const text = await cloned.text();
+              preview = buildNetworkPreview(text);
+              hasAnswerKeywords = hasHintAnswerKeywords(text);
+            }
+          }
+        } catch (error) {
+          preview = `preview-failed:${error instanceof Error ? error.message : String(error)}`;
+        }
+        emitNetworkLog({
+          type: "fetch",
+          url,
+          method,
+          status: response.status,
+          durationMs,
+          contentType,
+          contentLength,
+          hasAnswerKeywords,
+          preview
+        });
+        return response;
+      };
+    }
+    const originalXhrOpen = XMLHttpRequest.prototype.open;
+    const originalXhrSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+      this.__qbSupportUrl = url;
+      this.__qbSupportMethod = method;
+      return originalXhrOpen.call(this, method, url, ...rest);
+    };
+    XMLHttpRequest.prototype.send = function(...args) {
+      const startAt = Date.now();
+      const url = this.__qbSupportUrl ?? "";
+      const method = this.__qbSupportMethod ?? "";
+      const done = () => {
+        if (!shouldLogNetwork(url)) return;
+        const durationMs = Date.now() - startAt;
+        const contentType = this.getResponseHeader("content-type") ?? "";
+        const contentLength = Number(this.getResponseHeader("content-length") ?? 0);
+        let preview = "";
+        let hasAnswerKeywords = false;
+        try {
+          const shouldRead = !contentLength || contentLength < 200000 || shouldInspectNetworkBody(url);
+          if (shouldRead) {
+            if (contentType.includes("application/json") || contentType.includes("text") || contentType.includes("html") || shouldInspectNetworkBody(url)) {
+              const text = typeof this.responseText === "string" ? this.responseText : "";
+              preview = buildNetworkPreview(text);
+              hasAnswerKeywords = hasHintAnswerKeywords(text);
+            }
+          }
+        } catch (error) {
+          preview = `preview-failed:${error instanceof Error ? error.message : String(error)}`;
+        }
+        emitNetworkLog({
+          type: "xhr",
+          url,
+          method,
+          status: this.status,
+          durationMs,
+          contentType,
+          contentLength,
+          hasAnswerKeywords,
+          preview
+        });
+      };
+      this.addEventListener("loadend", done);
+      return originalXhrSend.apply(this, args);
+    };
   }
   function ensureMarker() {
     if (document.getElementById(MARKER_ID)) return;
