@@ -16,6 +16,8 @@ export const CHAT_MODEL_OPTIONS = [
   "gpt-4.1",
   "gpt-4o",
 ];
+export const DEFAULT_OPTION_KEYS = ["A", "B", "C", "D", "E", "F", "G"] as const;
+const LEGACY_OPTION_KEYS = DEFAULT_OPTION_KEYS.slice(0, 5);
 const CHAT_TEMPLATE_LIMIT = 5;
 const DEFAULT_EXPLANATION_PROMPTS: Record<ExplanationLevel, string> = {
   highschool:
@@ -156,8 +158,8 @@ export const defaultSettings: Settings = {
   searchVisible: true,
   navPrevKey: "ArrowLeft",
   navNextKey: "ArrowRight",
-  revealKey: "Ctrl+S",
-  optionKeys: ["A", "B", "C", "D", "E"],
+  revealKey: "S",
+  optionKeys: [...DEFAULT_OPTION_KEYS],
   position: "bottom-right",
   shortcut: "Alt+Q",
   chatOpen: false,
@@ -181,10 +183,16 @@ export function normalizeSettings(
   if (!input) return { ...defaultSettings };
   const legacyNoteVisible =
     typeof input.noteHeaderVisible === "boolean" ? input.noteHeaderVisible : undefined;
-  const optionKeys =
+  const normalizedOptionKeys =
     Array.isArray(input.optionKeys) && input.optionKeys.length > 0
       ? input.optionKeys.map((key) => normalizeShortcut(key)).filter(Boolean)
-      : defaultSettings.optionKeys;
+      : [...defaultSettings.optionKeys];
+  const optionKeys =
+    normalizedOptionKeys.length === LEGACY_OPTION_KEYS.length &&
+    normalizedOptionKeys.every((key, index) => key === LEGACY_OPTION_KEYS[index])
+      ? [...DEFAULT_OPTION_KEYS]
+      : normalizedOptionKeys;
+  const normalizedRevealKey = normalizeShortcut(input.revealKey);
   return {
     enabled: typeof input.enabled === "boolean" ? input.enabled : defaultSettings.enabled,
     shortcutsEnabled:
@@ -205,7 +213,10 @@ export function normalizeSettings(
         : defaultSettings.searchVisible,
     navPrevKey: normalizeShortcut(input.navPrevKey) || defaultSettings.navPrevKey,
     navNextKey: normalizeShortcut(input.navNextKey) || defaultSettings.navNextKey,
-    revealKey: normalizeShortcut(input.revealKey) || defaultSettings.revealKey,
+    revealKey:
+      normalizedRevealKey === "Ctrl+S"
+        ? defaultSettings.revealKey
+        : normalizedRevealKey || defaultSettings.revealKey,
     optionKeys,
     position: isPosition(input.position) ? input.position : defaultSettings.position,
     shortcut: normalizeShortcut(input.shortcut) || defaultSettings.shortcut,

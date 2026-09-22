@@ -7,14 +7,23 @@ type RuntimeLike = {
   getManifest?: () => chrome.runtime.Manifest;
   sendMessage?: (...args: any[]) => any;
   onMessage?: chrome.runtime.ExtensionMessageEvent;
+  onConnect?: chrome.runtime.ExtensionConnectEvent;
   connect?: (...args: any[]) => chrome.runtime.Port;
   lastError?: { message?: string };
+  id?: string;
+};
+
+type IdentityLike = {
+  getRedirectURL: (path?: string) => string;
+  launchWebAuthFlow?: typeof chrome.identity.launchWebAuthFlow;
+  getAuthToken?: typeof chrome.identity.getAuthToken;
+  removeCachedAuthToken?: typeof chrome.identity.removeCachedAuthToken;
 };
 
 type WebExtLike = {
   storage?: { sync?: StorageAreaLike; local?: StorageAreaLike };
   runtime?: RuntimeLike;
-  identity?: typeof chrome.identity;
+  identity?: IdentityLike;
   tabs?: typeof chrome.tabs;
   webNavigation?: typeof chrome.webNavigation;
   debugger?: typeof chrome.debugger;
@@ -107,9 +116,10 @@ export function getManifest(): chrome.runtime.Manifest | null {
 export function sendRuntimeMessage<T>(message: unknown): Promise<T | undefined> {
   const runtime = webext.runtime;
   if (!runtime?.sendMessage) return Promise.resolve(undefined);
-  if (runtime.sendMessage.length <= 1) {
+  const sendMessage = runtime.sendMessage;
+  if (sendMessage.length <= 1) {
     try {
-      const result = runtime.sendMessage(message);
+      const result = sendMessage(message);
       if (result && typeof (result as Promise<T>).then === "function") {
         return result as Promise<T>;
       }
@@ -118,5 +128,5 @@ export function sendRuntimeMessage<T>(message: unknown): Promise<T | undefined> 
       return Promise.reject(error);
     }
   }
-  return promisify<T | undefined>((callback) => runtime.sendMessage(message, callback));
+  return promisify<T | undefined>((callback) => sendMessage(message, callback));
 }

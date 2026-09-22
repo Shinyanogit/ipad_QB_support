@@ -15,48 +15,40 @@
     answerSection: "#answerSection",
     answerRevealButton: "#answerSection .btn"
   };
-  var NEXT_KEYWORDS = ["次へ", "次の問題", "次", "Next"];
-  var PREV_KEYWORDS = ["前へ", "前の問題", "前", "Prev", "Previous"];
+  var QUESTION_ID_PATTERN = /\b\d{3}[A-Z]\d{1,3}\b/;
+  var OPTION_LABEL_PATTERN = /^[a-g]$/;
+  var FULLWIDTH_OPTION_LABEL_PATTERN = /^[ａ-ｇ]$/;
+  var NEXT_KEYWORDS = ["\u6B21\u3078", "\u6B21\u306E\u554F\u984C", "\u6B21", "Next"];
+  var PREV_KEYWORDS = ["\u524D\u3078", "\u524D\u306E\u554F\u984C", "\u524D", "Prev", "Previous"];
   var SUBMIT_KEYWORDS = [
-    "回答を送信",
-    "解答を送信",
-    "回答を提出",
-    "解答を提出",
-    "送信する",
-    "提出する",
-    "判定する",
-    "採点する"
+    "\u89E3\u7B54\u3059\u308B",
+    "\u56DE\u7B54\u3092\u9001\u4FE1",
+    "\u89E3\u7B54\u3092\u9001\u4FE1",
+    "\u56DE\u7B54\u3092\u63D0\u51FA",
+    "\u89E3\u7B54\u3092\u63D0\u51FA",
+    "\u9001\u4FE1\u3059\u308B",
+    "\u63D0\u51FA\u3059\u308B",
+    "\u5224\u5B9A\u3059\u308B",
+    "\u63A1\u70B9\u3059\u308B"
   ];
-  var REVEAL_KEYWORDS = ["解答を確認する", "解答を確認", "解答を見る", "解説を見る"];
-  var HINT_BASE_PHRASE = "絶妙なヒント";
-  var HINT_ANSWER_TEXT_LIMIT = 2400;
-  var HINT_ANSWER_HTML_SCAN_LIMIT = 400000;
-  var HINT_ANSWER_SCRIPT_SCAN_LIMIT = 200000;
-  var HINT_ANSWER_KEYWORDS = [/解説/, /解答/, /正解/, /解法/];
-  var HINT_ANSWER_MIN_LENGTH = 80;
-  var HINT_ANSWER_CANDIDATE_SELECTORS = [
-    "#answerSection",
-    "[id*=\"answer\"]",
-    "[class*=\"answer\"]",
-    "[id*=\"explanation\"]",
-    "[class*=\"explanation\"]",
-    "[id*=\"kaisetsu\"]",
-    "[class*=\"kaisetsu\"]",
-    "[data-answer]",
-    "[data-explanation]",
-    "[data-ans]"
-  ];
+  var REVEAL_KEYWORDS = ["\u89E3\u7B54\u3092\u78BA\u8A8D\u3059\u308B", "\u89E3\u7B54\u3092\u78BA\u8A8D", "\u89E3\u7B54\u3092\u898B\u308B", "\u89E3\u8AAC\u3092\u898B\u308B"];
   function extractQuestionInfo(doc, url) {
-    const container = doc.querySelector(SELECTORS.container);
+    const container = getQuestionContainer(doc);
     if (!container) return null;
-    const idFromDom = textFrom(container.querySelector(SELECTORS.questionId));
+    const idFromDom = textFrom(container.querySelector(SELECTORS.questionId)) || findQuestionIdFromText(container) || findQuestionIdFromText(doc.body);
     const idFromUrl = questionIdFromUrl(url);
-    const progressText = normalizeSpace(textFrom(container.querySelector(SELECTORS.progress)));
-    const pageRef = textFrom(container.querySelector(SELECTORS.footerRef));
-    const optionCount = countElements(container, SELECTORS.options);
+    const progressText = normalizeSpace(textFrom(container.querySelector(SELECTORS.progress))) || findTextMatching(container, /演習\s*\d+\s*\/\s*\d+\s*問目/);
+    const pageRef = textFrom(container.querySelector(SELECTORS.footerRef)) || findTextMatching(container, /\[?\s*掲載頁[：:][^\]\n]+]?/);
+    const oldOptionCount = countElements(container, SELECTORS.options);
+    const newOptionCount = getNewUiOptionElements(doc).length;
+    const optionCount = oldOptionCount ?? (newOptionCount > 0 ? newOptionCount : null);
     const tags = [];
     if (container.querySelector(SELECTORS.tagFirst)) tags.push("first");
     if (container.querySelector(SELECTORS.tagCompulsory)) tags.push("compulsory");
+    const imageAlts = Array.from(container.querySelectorAll("img[alt]")).map((img) => img.alt.trim()).filter(Boolean);
+    for (const alt of imageAlts) {
+      if (!tags.includes(alt)) tags.push(alt);
+    }
     return {
       id: idFromDom || idFromUrl,
       progressText: progressText || null,
@@ -67,7 +59,7 @@
     };
   }
   function extractQuestionSnapshot(doc, url) {
-    const container = doc.querySelector(SELECTORS.container);
+    const container = getQuestionContainer(doc);
     if (!container) return null;
     const info = extractQuestionInfo(doc, url);
     const questionText = extractQuestionText(container);
@@ -85,426 +77,11 @@
       updatedAt: Date.now()
     };
   }
-  function extractAnswerExplanationContext(doc) {
-    const answerSection = doc.querySelector(SELECTORS.answerSection);
-    const sectionText = extractAnswerTextFromElement(answerSection);
-    if (sectionText) {
-      return {
-        text: sectionText,
-        meta: buildAnswerMeta("answer-section", sectionText, answerSection)
-      };
-    }
-    const main = extractAnswerFromContentsMain(doc);
-    if (main.text) return main;
-    const candidate = extractAnswerFromCandidates(doc);
-    if (candidate.text) return candidate;
-    const block = extractAnswerFromTextBlocks(doc);
-    if (block.text) return block;
-    const fromScript = extractAnswerFromScriptText(doc);
-    if (fromScript.text) return fromScript;
-    const fromHtml = extractAnswerFromDocumentHtml(doc);
-    if (fromHtml.text) return fromHtml;
-    const fromDoc = extractAnswerFromDocumentText(doc);
-    if (fromDoc.text) return fromDoc;
-    return { text: "", meta: { source: "empty", length: 0, preview: "" } };
-  }
-  function buildAnswerMeta(source, text, element, extra) {
-    return {
-      source,
-      length: text.length,
-      preview: getHintAnswerPreview(text),
-      tag: element instanceof HTMLElement ? element.tagName : null,
-      id: element instanceof HTMLElement ? element.id || null : null,
-      className: element instanceof HTMLElement ? element.className || null : null,
-      ...(extra ?? {})
-    };
-  }
-  function extractAnswerTextFromElement(element) {
-    if (!element) return "";
-    const clone = element.cloneNode(true);
-    clone.querySelectorAll("button, .btn, script, style").forEach((node) => node.remove());
-    let text = normalizeSpace(clone.textContent ?? "");
-    if (!text) return "";
-    for (const keyword of REVEAL_KEYWORDS) {
-      text = text.split(keyword).join("");
-    }
-    text = normalizeSpace(text);
-    if (!text) return "";
-    return text.slice(0, HINT_ANSWER_TEXT_LIMIT);
-  }
-  function sliceAnswerByKeyword(text) {
-    if (!text) return "";
-    const match = text.match(/解説|正解|解法|解答/);
-    if (!match || match.index == null) return text;
-    const index = match.index;
-    if (text.length - index < HINT_ANSWER_MIN_LENGTH) return text;
-    return text.slice(index);
-  }
-  function extractAnswerFromContentsMain(doc) {
-    const element = doc.querySelector("div.contents-main");
-    if (!(element instanceof HTMLElement)) {
-      logDebug("hint-answer-main", { found: false });
-      return { text: "", meta: { source: "contents-main", found: false } };
-    }
-    if (isSupportUiElement(element)) {
-      logDebug("hint-answer-main", { found: false, reason: "ui" });
-      return { text: "", meta: { source: "contents-main", found: false, reason: "ui" } };
-    }
-    const raw = extractAnswerTextFromElement(element);
-    if (!raw) {
-      logDebug("hint-answer-main", { found: true, usable: 0 });
-      return { text: "", meta: { source: "contents-main", found: true, usable: 0 } };
-    }
-    const sliced = sliceAnswerByKeyword(raw);
-    const questionText = currentSnapshot?.questionText ?? extractQuestionSnapshot(doc, location.href)?.questionText ?? "";
-    const score = scoreAnswerCandidateText(sliced, questionText);
-    if (!score) {
-      logDebug("hint-answer-main", { found: true, usable: 0, length: sliced.length });
-      return { text: "", meta: { source: "contents-main", found: true, usable: 0 } };
-    }
-    const trimmed = sliced.slice(0, HINT_ANSWER_TEXT_LIMIT);
-    const meta = buildAnswerMeta("contents-main", trimmed, element, {
-      score,
-      keywordHit: hasHintAnswerKeywords(trimmed)
-    });
-    logDebug("hint-answer-main", meta);
-    return { text: trimmed, meta };
-  }
-  function extractAnswerFromCandidates(doc) {
-    const candidates = /* @__PURE__ */ new Set();
-    for (const selector of HINT_ANSWER_CANDIDATE_SELECTORS) {
-      doc.querySelectorAll(selector).forEach((node) => candidates.add(node));
-    }
-    if (!candidates.size) {
-      logDebug("hint-answer-candidate", { found: 0 });
-      return { text: "", meta: { source: "candidate", found: 0 } };
-    }
-    const questionText = currentSnapshot?.questionText ?? extractQuestionSnapshot(doc, location.href)?.questionText ?? "";
-    let bestText = "";
-    let bestScore = 0;
-    let bestMeta = null;
-    candidates.forEach((element) => {
-      if (!(element instanceof HTMLElement)) return;
-      if (isSupportUiElement(element)) return;
-      const text = extractAnswerTextFromElement(element);
-      const score = scoreAnswerCandidateText(text, questionText);
-      if (!score) return;
-      if (score > bestScore) {
-        bestScore = score;
-        bestText = text;
-        bestMeta = {
-          tag: element.tagName,
-          id: element.id || null,
-          className: element.className || null,
-          length: text.length,
-          keywordHit: hasHintAnswerKeywords(text),
-          score,
-          preview: getHintAnswerPreview(text)
-        };
-      }
-    });
-    if (bestMeta) {
-      logDebug("hint-answer-candidate", { found: candidates.size, ...bestMeta });
-    } else {
-      logDebug("hint-answer-candidate", { found: candidates.size, usable: 0 });
-    }
-    const resultText = bestText ? bestText.slice(0, HINT_ANSWER_TEXT_LIMIT) : "";
-    return {
-      text: resultText,
-      meta: bestMeta ? { source: "candidate", found: candidates.size, ...bestMeta } : { source: "candidate", found: candidates.size, usable: 0 }
-    };
-  }
-  function extractAnswerFromTextBlocks(doc) {
-    const nodes = Array.from(doc.querySelectorAll("section, article, div, p, li, table"));
-    if (!nodes.length) {
-      logDebug("hint-answer-block", { found: 0 });
-      return { text: "", meta: { source: "block", found: 0 } };
-    }
-    const questionText = currentSnapshot?.questionText ?? extractQuestionSnapshot(doc, location.href)?.questionText ?? "";
-    let bestText = "";
-    let bestScore = 0;
-    let bestMeta = null;
-    const limit = 320;
-    for (let i = 0; i < Math.min(nodes.length, limit); i += 1) {
-      const element = nodes[i];
-      if (!(element instanceof HTMLElement)) continue;
-      if (isSupportUiElement(element)) continue;
-      const raw = normalizeSpace(element.textContent ?? "");
-      if (!raw) continue;
-      const text = raw.length > HINT_ANSWER_TEXT_LIMIT ? raw.slice(0, HINT_ANSWER_TEXT_LIMIT) : raw;
-      const score = scoreAnswerCandidateText(text, questionText);
-      if (!score) continue;
-      if (score > bestScore) {
-        bestScore = score;
-        bestText = text;
-        bestMeta = {
-          tag: element.tagName,
-          id: element.id || null,
-          className: element.className || null,
-          length: text.length,
-          keywordHit: hasHintAnswerKeywords(text),
-          score,
-          preview: getHintAnswerPreview(text)
-        };
-      }
-    }
-    if (bestMeta) {
-      logDebug("hint-answer-block", { found: nodes.length, ...bestMeta });
-    } else {
-      logDebug("hint-answer-block", { found: nodes.length, usable: 0 });
-    }
-    return {
-      text: bestText ? bestText.slice(0, HINT_ANSWER_TEXT_LIMIT) : "",
-      meta: bestMeta ? { source: "block", found: nodes.length, ...bestMeta } : { source: "block", found: nodes.length, usable: 0 }
-    };
-  }
-  function extractAnswerFromScriptText(doc) {
-    const scripts = Array.from(doc.querySelectorAll("script"));
-    if (!scripts.length) {
-      logDebug("hint-answer-script", { found: 0 });
-      return { text: "", meta: { source: "script", found: 0 } };
-    }
-    const patterns = [
-      /kaisetsu/i,
-      /explanation/i,
-      /answer/i,
-      /解説/,
-      /正解/,
-      /解法/
-    ];
-    const valuePattern = /(kaisetsu|explanation|answer|解説|正解|解法)[^=:{]{0,80}[:=]\s*("([^"\\]|\\.){30,}")/i;
-    for (const script of scripts) {
-      const text = script.textContent ?? "";
-      if (!text) continue;
-      const scanText = text.length > HINT_ANSWER_SCRIPT_SCAN_LIMIT ? text.slice(0, HINT_ANSWER_SCRIPT_SCAN_LIMIT) : text;
-      if (!patterns.some((pattern) => pattern.test(scanText))) continue;
-      const match = scanText.match(valuePattern);
-      if (match) {
-        const literal = match[2];
-        const decoded = decodeJsonStringLiteral(literal);
-        const normalized = stripTagsAndDecode(decoded);
-        const questionText = currentSnapshot?.questionText ?? "";
-        const score = scoreAnswerCandidateText(normalized, questionText);
-        if (score) {
-          const trimmed = normalized.slice(0, HINT_ANSWER_TEXT_LIMIT);
-          const meta = buildAnswerMeta("script", trimmed, script, { key: match[1], score });
-          logDebug("hint-answer-script", meta);
-          return { text: trimmed, meta };
-        }
-      }
-      if (script.type && script.type.includes("json")) {
-        const jsonCandidate = extractAnswerFromJsonPayload(text);
-        if (jsonCandidate.text) {
-          const meta = buildAnswerMeta("script-json", jsonCandidate.text, script, { key: jsonCandidate.key, score: jsonCandidate.score });
-          logDebug("hint-answer-script", meta);
-          return { text: jsonCandidate.text, meta };
-        }
-      }
-    }
-    logDebug("hint-answer-script", { found: scripts.length, usable: 0 });
-    return { text: "", meta: { source: "script", found: scripts.length, usable: 0 } };
-  }
-  function extractAnswerFromJsonPayload(raw) {
-    const trimmed = raw.trim();
-    if (!trimmed || (!trimmed.startsWith("{") && !trimmed.startsWith("["))) return { text: "", score: 0, key: null };
-    try {
-      const data = JSON.parse(trimmed);
-      const questionText = currentSnapshot?.questionText ?? "";
-      const best = { text: "", score: 0, key: null };
-      const visit = (value, keyPath) => {
-        if (typeof value === "string") {
-          const normalized = stripTagsAndDecode(value);
-          const score = scoreAnswerCandidateText(normalized, questionText);
-          if (score > best.score) {
-            best.text = normalized.slice(0, HINT_ANSWER_TEXT_LIMIT);
-            best.score = score;
-            best.key = keyPath;
-          }
-          return;
-        }
-        if (Array.isArray(value)) {
-          value.forEach((item, index) => visit(item, `${keyPath}[${index}]`));
-          return;
-        }
-        if (value && typeof value === "object") {
-          Object.entries(value).forEach(([key, entry]) => visit(entry, keyPath ? `${keyPath}.${key}` : key));
-        }
-      };
-      visit(data, "");
-      return best;
-    } catch {
-      return { text: "", score: 0, key: null };
-    }
-  }
-  function extractAnswerFromDocumentHtml(doc) {
-    const root = doc.documentElement;
-    if (!root) {
-      logDebug("hint-answer-html", { found: false });
-      return { text: "", meta: { source: "document-html", found: false } };
-    }
-    const clone = root.cloneNode(true);
-    stripSupportUi(clone);
-    const html = clone.innerHTML ?? "";
-    if (!html) {
-      logDebug("hint-answer-html", { found: false });
-      return { text: "", meta: { source: "document-html", found: false } };
-    }
-    const scanHtml = html.length > HINT_ANSWER_HTML_SCAN_LIMIT ? html.slice(0, HINT_ANSWER_HTML_SCAN_LIMIT) : html;
-    const keywordMatch = scanHtml.match(/解説|正解|解法|解答|kaisetsu|explanation/i);
-    if (!keywordMatch) {
-      logDebug("hint-answer-html", { found: false });
-      return { text: "", meta: { source: "document-html", found: false } };
-    }
-    const index = keywordMatch.index ?? -1;
-    if (index < 0) {
-      logDebug("hint-answer-html", { found: false });
-      return { text: "", meta: { source: "document-html", found: false } };
-    }
-    const sliceStart = Math.max(0, index - 400);
-    const sliceEnd = Math.min(scanHtml.length, index + 4000);
-    const slice = scanHtml.slice(sliceStart, sliceEnd);
-    const cleaned = stripTagsAndDecode(slice);
-    const questionText = currentSnapshot?.questionText ?? "";
-    const score = scoreAnswerCandidateText(cleaned, questionText);
-    if (!score) {
-      logDebug("hint-answer-html", { found: true, usable: 0 });
-      return { text: "", meta: { source: "document-html", found: true, usable: 0 } };
-    }
-    const trimmed = cleaned.slice(0, HINT_ANSWER_TEXT_LIMIT);
-    const meta = buildAnswerMeta("document-html", trimmed, null, { keyword: keywordMatch[0], score });
-    logDebug("hint-answer-html", meta);
-    return { text: trimmed, meta };
-  }
-  function runPageContextAnswerScan(scanId) {
-    const root = document.documentElement || document.body;
-    if (!root) return;
-    logDebug("hint-answer-global-request", { scanId });
-    const script = document.createElement("script");
-    const scanIdLiteral = JSON.stringify(scanId);
-    script.textContent = `(function(){try{
-      const scanId=${scanIdLiteral};
-      const MAX_RESULTS=3;
-      const MAX_TEXT=${HINT_ANSWER_TEXT_LIMIT};
-      const MIN_LEN=${HINT_ANSWER_MIN_LENGTH};
-      const MAX_DEPTH=3;
-      const MAX_KEYS=60;
-      const MAX_NODES=1200;
-      const jpRe=/[\\u3041-\\u3096\\u30A1-\\u30FA\\u4E00-\\u9FFF]/g;
-      const keywordRe=/\\u89E3\\u8AAC|\\u6B63\\u89E3|\\u89E3\\u6CD5|\\u89E3\\u7B54/;
-      const results=[];
-      const seen=new WeakSet();
-      let nodes=0;
-      function jpRatio(text){
-        const matches=text.match(jpRe);
-        return (matches?matches.length:0)/Math.max(text.length,1);
-      }
-      function score(text){
-        if (!text || text.length<MIN_LEN) return 0;
-        const ratio=jpRatio(text);
-        if (ratio<0.05) return 0;
-        let s=text.length+Math.round(ratio*500);
-        if (keywordRe.test(text)) s+=400;
-        if (/\\bfunction\\b|\\breturn\\b|\\bvar\\b|\\bconst\\b|\\bwindow\\b|\\bdocument\\b/.test(text)) s-=300;
-        return s;
-      }
-      function consider(path, text){
-        const s=score(text);
-        if (!s) return;
-        const trimmed=text.length>MAX_TEXT?text.slice(0, MAX_TEXT):text;
-        results.push({ path, score:s, length:text.length, text:trimmed });
-        results.sort((a,b)=>b.score-a.score);
-        if (results.length>MAX_RESULTS) results.length=MAX_RESULTS;
-      }
-      function visit(value, path, depth){
-        if (nodes>MAX_NODES || depth>MAX_DEPTH || value==null) return;
-        if (typeof value==='string'){ consider(path, value); return; }
-        if (typeof value!=='object') return;
-        if (seen.has(value)) return;
-        seen.add(value);
-        nodes++;
-        if (Array.isArray(value)){
-          for (let i=0;i<value.length && i<MAX_KEYS;i++){ visit(value[i], path + '[' + i + ']', depth+1); }
-          return;
-        }
-        const keys=Object.keys(value);
-        for (let i=0;i<keys.length && i<MAX_KEYS;i++){
-          const key=keys[i];
-          let next;
-          try { next=value[key]; } catch { continue; }
-          visit(next, path ? path + '.' + key : key, depth+1);
-        }
-      }
-      const roots=['__INITIAL_STATE__','__NUXT__','__NEXT_DATA__','__DATA__','__QB_DATA__','__STATE__','__STORE__','__APP__','__APOLLO_STATE__','app','store','state','data'];
-      for (let i=0;i<roots.length;i++){
-        const key=roots[i];
-        if (key in window) visit(window[key], key, 0);
-      }
-      try{
-        for (let i=0;i<localStorage.length && i<MAX_KEYS;i++){
-          const key=localStorage.key(i);
-          if (!key) continue;
-          const value=localStorage.getItem(key);
-          if (value) consider('localStorage.'+key, value);
-        }
-      }catch(e){}
-      try{
-        for (let i=0;i<sessionStorage.length && i<MAX_KEYS;i++){
-          const key=sessionStorage.key(i);
-          if (!key) continue;
-          const value=sessionStorage.getItem(key);
-          if (value) consider('sessionStorage.'+key, value);
-        }
-      }catch(e){}
-      window.postMessage({__qb_support:true, type:'QB_ANSWER_GLOBAL_SCAN_RESULT', scanId, results}, '*');
-    }catch(err){
-      window.postMessage({__qb_support:true, type:'QB_ANSWER_GLOBAL_SCAN_RESULT', scanId:${scanIdLiteral}, error:String(err), results:[]}, '*');
-    }})();`;
-    root.appendChild(script);
-    script.remove();
-  }
-  function extractAnswerFromDocumentText(doc) {
-    const body = doc.body;
-    if (!body) return { text: "", meta: { source: "document-text", found: false } };
-    const clone = body.cloneNode(true);
-    stripSupportUi(clone);
-    clone.querySelectorAll("script, style, noscript").forEach((node) => node.remove());
-    let text = normalizeSpace(clone.textContent ?? "");
-    if (!text) return { text: "", meta: { source: "document-text", found: false } };
-    let keyword = "";
-    let index = -1;
-    const strongMatch = text.match(/解説|正解|解法/);
-    if (strongMatch) {
-      keyword = strongMatch[0];
-      index = text.indexOf(keyword);
-    } else {
-      const answerIndex = text.indexOf("解答");
-      if (answerIndex !== -1 && text.length - answerIndex >= HINT_ANSWER_MIN_LENGTH) {
-        keyword = "解答";
-        index = answerIndex;
-      }
-    }
-    if (index === -1) {
-      logDebug("hint-answer-document", { found: false });
-      return { text: "", meta: { source: "document-text", found: false } };
-    }
-    const slice = text.slice(index, index + HINT_ANSWER_TEXT_LIMIT);
-    if (slice.includes("解答を確認する") || slice.includes("この問題について報告する")) {
-      logDebug("hint-answer-document", { found: false, reason: "ui-only" });
-      return { text: "", meta: { source: "document-text", found: false, reason: "ui-only" } };
-    }
-    const questionText = currentSnapshot?.questionText ?? "";
-    const score = scoreAnswerCandidateText(slice, questionText);
-    if (!score) {
-      logDebug("hint-answer-document", { found: false, reason: "score" });
-      return { text: "", meta: { source: "document-text", found: false, reason: "score" } };
-    }
-    const meta = buildAnswerMeta("document-text", slice, null, {
-      keyword,
-      found: true,
-      score
-    });
-    logDebug("hint-answer-document", meta);
-    return { text: slice, meta };
+  function isQuestionDocument(doc, url) {
+    if (getQuestionContainer(doc)) return true;
+    if (questionIdFromUrl(url) && getSubmitButton(doc)) return true;
+    if (getNavigationTarget(doc, "prev") || getNavigationTarget(doc, "next")) return true;
+    return false;
   }
   function getNavigationTarget(doc, direction) {
     const iconSelector = direction === "next" ? SELECTORS.navNextIcon : SELECTORS.navPrevIcon;
@@ -522,10 +99,20 @@
       const target = findFirstMatching(candidates, keywords);
       if (target) return target;
     }
+    const pageKeywords = direction === "next" ? ["\u6B21\u306E\u554F\u984C", "\u6B21\u3078", "\u5B8C\u4E86\uFF08\u6F14\u7FD2\u7D50\u679C\uFF09"] : ["\u524D\u306E\u554F\u984C", "\u524D\u3078"];
+    const pageCandidates = collectCandidates(doc.body).filter(
+      (el) => !matchesKeywords(el, REVEAL_KEYWORDS)
+    );
+    const pageTarget = findFirstMatching(pageCandidates, pageKeywords);
+    if (pageTarget) return pageTarget;
+    const newUiTarget = findNewUiNavigationTarget(doc, direction);
+    if (newUiTarget) return newUiTarget;
     return null;
   }
   function getOptionElements(doc) {
-    return Array.from(doc.querySelectorAll(SELECTORS.options));
+    const oldOptions = Array.from(doc.querySelectorAll(SELECTORS.options));
+    if (oldOptions.length > 0) return oldOptions;
+    return getNewUiOptionElements(doc);
   }
   function getClickableOptionElement(option) {
     const input = option.querySelector("input");
@@ -539,7 +126,7 @@
     return findClickableAncestor(option) ?? (isEnabled(option) ? option : null);
   }
   function getSubmitButton(doc) {
-    const container = doc.querySelector(SELECTORS.container);
+    const container = getQuestionContainer(doc);
     const candidates = collectCandidates(container ?? doc.body);
     return findFirstMatching(candidates, SUBMIT_KEYWORDS);
   }
@@ -553,48 +140,13 @@
     const matched = findFirstMatching(candidates, REVEAL_KEYWORDS);
     return matched ? findClickableAncestor(matched) ?? matched : null;
   }
-  function isHintMessage(text) {
-    return text.includes(HINT_BASE_PHRASE);
-  }
-  function hasHintAnswerKeywords(text) {
-    return HINT_ANSWER_KEYWORDS.some((pattern) => pattern.test(text));
-  }
-  function stripTagsAndDecode(html) {
-    const container = document.createElement("div");
-    container.innerHTML = html;
-    return normalizeSpace(container.textContent ?? "");
-  }
-  function decodeJsonStringLiteral(literal) {
-    if (!literal) return "";
-    try {
-      return JSON.parse(literal);
-    } catch {
-      return literal;
-    }
-  }
-  function getJapaneseRatio(text) {
-    const matches = text.match(/[ぁ-んァ-ン一-龥]/g) ?? [];
-    return matches.length / Math.max(text.length, 1);
-  }
-  function scoreAnswerCandidateText(text, questionText) {
-    if (!text || text.length < HINT_ANSWER_MIN_LENGTH) return 0;
-    const jpRatio = getJapaneseRatio(text);
-    if (jpRatio < 0.05) return 0;
-    let score = text.length + Math.round(jpRatio * 500);
-    if (hasHintAnswerKeywords(text)) score += 400;
-    if (questionText && text.includes(questionText)) {
-      score -= Math.min(questionText.length, 800);
-    }
-    if (/\bfunction\b|\breturn\b|\bvar\b|\bconst\b|\bwindow\b|\bdocument\b/.test(text)) {
-      score -= 300;
-    }
-    return score;
-  }
   function questionIdFromUrl(url) {
     try {
       const parsed = new URL(url);
       const pathMatch = parsed.pathname.match(/\/Answer\/([^/]+)/i);
       if (pathMatch && pathMatch[1]) return pathMatch[1];
+      const queryId = parsed.searchParams.get("question_id");
+      if (queryId) return queryId;
       if (parsed.hash.includes("/Answer/")) {
         const hashMatch = parsed.hash.match(/\/Answer\/([^/]+)/i);
         if (hashMatch && hashMatch[1]) return hashMatch[1];
@@ -613,6 +165,89 @@
   function countElements(root2, selector) {
     const list = root2.querySelectorAll(selector);
     return list.length > 0 ? list.length : null;
+  }
+  function getQuestionContainer(doc) {
+    const oldContainer = doc.querySelector(SELECTORS.container);
+    if (oldContainer) return oldContainer;
+    const idElement = findQuestionIdElement(doc);
+    if (idElement) {
+      return idElement.closest("main") ?? idElement.closest(".rounded-lg") ?? idElement.parentElement;
+    }
+    const submitButton = findFirstMatching(collectCandidates(doc.body), SUBMIT_KEYWORDS);
+    if (submitButton) return submitButton.closest("main") ?? submitButton.parentElement;
+    return null;
+  }
+  function findQuestionIdElement(root2) {
+    const elements = Array.from(root2.querySelectorAll("span, div, h1, h2, h3"));
+    return elements.find((element) => {
+      if (isSupportElement(element)) return false;
+      return Array.from(element.childNodes).some(
+        (node) => node.nodeType === 3 && QUESTION_ID_PATTERN.test(normalizeSpace(node.textContent ?? ""))
+      );
+    }) ?? null;
+  }
+  function findQuestionIdFromText(root2) {
+    if (!root2) return null;
+    const doc = root2 instanceof Document ? root2 : root2.ownerDocument;
+    if (!doc) return null;
+    const walker = doc.createTreeWalker(root2, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node) {
+      const parent = node.parentElement;
+      if (parent && !isSupportElement(parent)) {
+        const match = normalizeSpace(node.textContent ?? "").match(QUESTION_ID_PATTERN);
+        if (match) return match[0];
+      }
+      node = walker.nextNode();
+    }
+    return null;
+  }
+  function findTextMatching(root2, pattern) {
+    if (!root2) return null;
+    const doc = root2 instanceof Document ? root2 : root2.ownerDocument;
+    if (!doc) return null;
+    const walker = doc.createTreeWalker(root2, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node) {
+      const parent = node.parentElement;
+      if (parent && !isSupportElement(parent)) {
+        const text = normalizeSpace(node.textContent ?? "");
+        const match = text.match(pattern);
+        if (match) return match[0];
+      }
+      node = walker.nextNode();
+    }
+    return null;
+  }
+  function getNewUiOptionElements(doc) {
+    return Array.from(doc.querySelectorAll("button")).filter(isNewUiOptionButton);
+  }
+  function isNewUiOptionButton(button) {
+    if (!isEnabled(button) || isSupportElement(button)) return false;
+    if (!button.querySelector(".html_renderer")) return false;
+    const labels = Array.from(button.querySelectorAll("span")).filter(
+      (element) => !element.closest(".html_renderer")
+    );
+    return labels.some((element) => {
+      const label = normalizeSpace(element.textContent ?? "").toLowerCase();
+      return OPTION_LABEL_PATTERN.test(label) || FULLWIDTH_OPTION_LABEL_PATTERN.test(label);
+    });
+  }
+  function findNewUiNavigationTarget(doc, direction) {
+    const buttons = Array.from(doc.querySelectorAll("button")).filter(
+      (button) => isEnabled(button) && !isSupportElement(button)
+    );
+    const matches = buttons.filter((button) => {
+      const pathData = Array.from(button.querySelectorAll("path")).map((path) => path.getAttribute("d") ?? "").join(" ");
+      return direction === "next" ? pathData.includes("M10 6L8.59") : pathData.includes("M15.41 7.41");
+    });
+    const fixedNavigationButton = matches.find(
+      (button) => button.className.toString().split(/\s+/).includes("h-32")
+    );
+    if (fixedNavigationButton) return fixedNavigationButton;
+    return matches.sort(
+      (a, b) => normalizeSpace(a.textContent ?? "").length - normalizeSpace(b.textContent ?? "").length
+    )[0] ?? null;
   }
   function extractQuestionText(container) {
     const clone = container.cloneNode(true);
@@ -633,7 +268,9 @@
     return text ? text.slice(0, 2400) : null;
   }
   function extractOptionTexts(container) {
-    const options = Array.from(container.querySelectorAll(SELECTORS.options));
+    const doc = container.ownerDocument;
+    const legacyOptions = Array.from(container.querySelectorAll(SELECTORS.options));
+    const options = legacyOptions.length > 0 ? legacyOptions : getNewUiOptionElements(doc);
     const results = [];
     for (const option of options) {
       const text = normalizeSpace(option.textContent ?? "");
@@ -668,7 +305,7 @@
   function collectCandidates(root2) {
     if (!root2) return [];
     const elements = root2.querySelectorAll("a, button, [role='button'], .btn");
-    return Array.from(elements).filter((el) => isEnabled(el));
+    return Array.from(elements).filter((el) => isEnabled(el) && !isSupportElement(el));
   }
   function findFirstMatching(elements, keywords) {
     for (const keyword of keywords) {
@@ -711,6 +348,13 @@
     if ("disabled" in element && element.disabled) return false;
     return true;
   }
+  function isSupportElement(element) {
+    return Boolean(
+      element.closest(
+        "#qb-support-root, #qb-support-marker, #qb-support-chat-root, [data-qb-support-root]"
+      )
+    );
+  }
 
   // src/core/settings.ts
   var MODIFIER_LABELS = ["Ctrl", "Alt", "Shift", "Meta"];
@@ -722,119 +366,121 @@
     "gpt-4.1",
     "gpt-4o"
   ];
+  var DEFAULT_OPTION_KEYS = ["A", "B", "C", "D", "E", "F", "G"];
+  var LEGACY_OPTION_KEYS = DEFAULT_OPTION_KEYS.slice(0, 5);
   var CHAT_TEMPLATE_LIMIT = 5;
   var DEFAULT_EXPLANATION_PROMPTS = {
-    highschool: "高校生でもわかるように、専門用語はできるだけ避け、必要なら簡単な言い換えと短い例えを添えて説明してください。",
-    "med-junior": "医学部低学年向けに、基本的な専門用語は使ってよいので、重要ポイントを簡潔に整理して説明してください。",
-    "med-senior": "医学部高学年〜研修医レベルで、病態生理や鑑別ポイントに踏み込み、簡潔だが密度の高い説明にしてください。"
+    highschool: "\u9AD8\u6821\u751F\u3067\u3082\u308F\u304B\u308B\u3088\u3046\u306B\u3001\u5C02\u9580\u7528\u8A9E\u306F\u3067\u304D\u308B\u3060\u3051\u907F\u3051\u3001\u5FC5\u8981\u306A\u3089\u7C21\u5358\u306A\u8A00\u3044\u63DB\u3048\u3068\u77ED\u3044\u4F8B\u3048\u3092\u6DFB\u3048\u3066\u8AAC\u660E\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+    "med-junior": "\u533B\u5B66\u90E8\u4F4E\u5B66\u5E74\u5411\u3051\u306B\u3001\u57FA\u672C\u7684\u306A\u5C02\u9580\u7528\u8A9E\u306F\u4F7F\u3063\u3066\u3088\u3044\u306E\u3067\u3001\u91CD\u8981\u30DD\u30A4\u30F3\u30C8\u3092\u7C21\u6F54\u306B\u6574\u7406\u3057\u3066\u8AAC\u660E\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+    "med-senior": "\u533B\u5B66\u90E8\u9AD8\u5B66\u5E74\u301C\u7814\u4FEE\u533B\u30EC\u30D9\u30EB\u3067\u3001\u75C5\u614B\u751F\u7406\u3084\u9451\u5225\u30DD\u30A4\u30F3\u30C8\u306B\u8E0F\u307F\u8FBC\u307F\u3001\u7C21\u6F54\u3060\u304C\u5BC6\u5EA6\u306E\u9AD8\u3044\u8AAC\u660E\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
   };
   var DEFAULT_CHAT_TEMPLATES = [
     {
       enabled: true,
-      label: "ヒント",
+      label: "\u30D2\u30F3\u30C8",
       shortcut: "Ctrl+Z",
-      prompt: "絶妙なヒント（答えありきでなく、所見や症状から推論する視点で思考力を養う答えに迫りすぎないもの）をどうぞ。※400文字以内で回答してください。"
+      prompt: "\u7D76\u5999\u306A\u30D2\u30F3\u30C8\uFF08\u7B54\u3048\u3042\u308A\u304D\u3067\u306A\u304F\u3001\u6240\u898B\u3084\u75C7\u72B6\u304B\u3089\u63A8\u8AD6\u3059\u308B\u8996\u70B9\u3067\u601D\u8003\u529B\u3092\u990A\u3046\u7B54\u3048\u306B\u8FEB\u308A\u3059\u304E\u306A\u3044\u3082\u306E\uFF09\u3092\u3069\u3046\u305E\u3002\u203B400\u6587\u5B57\u4EE5\u5185\u3067\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
     },
     {
       enabled: true,
-      label: "4箇条",
+      label: "4\u7B87\u6761",
       shortcut: "Ctrl+4",
       prompt: [
-        "各々の選択肢について、以下の4箇条を守ってわかりやすく解説してください。",
+        "\u5404\u3005\u306E\u9078\u629E\u80A2\u306B\u3064\u3044\u3066\u3001\u4EE5\u4E0B\u306E4\u7B87\u6761\u3092\u5B88\u3063\u3066\u308F\u304B\u308A\u3084\u3059\u304F\u89E3\u8AAC\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
         "",
-        "❶ 一言でいうと？（直感的なイメージ）",
+        "\u2776 \u4E00\u8A00\u3067\u3044\u3046\u3068\uFF1F\uFF08\u76F4\u611F\u7684\u306A\u30A4\u30E1\u30FC\u30B8\uFF09",
         "",
-        "その病態・症状・所見について、初めて聞いた人でも直感的に理解できるような、具体的なイメージや比喩を一文で表現する（基本的に体言止め）。専門用語や厳密な定義ではなく、「なるほど、そういう感じか」とイメージが湧く表現を心がける。",
+        "\u305D\u306E\u75C5\u614B\u30FB\u75C7\u72B6\u30FB\u6240\u898B\u306B\u3064\u3044\u3066\u3001\u521D\u3081\u3066\u805E\u3044\u305F\u4EBA\u3067\u3082\u76F4\u611F\u7684\u306B\u7406\u89E3\u3067\u304D\u308B\u3088\u3046\u306A\u3001\u5177\u4F53\u7684\u306A\u30A4\u30E1\u30FC\u30B8\u3084\u6BD4\u55A9\u3092\u4E00\u6587\u3067\u8868\u73FE\u3059\u308B\uFF08\u57FA\u672C\u7684\u306B\u4F53\u8A00\u6B62\u3081\uFF09\u3002\u5C02\u9580\u7528\u8A9E\u3084\u53B3\u5BC6\u306A\u5B9A\u7FA9\u3067\u306F\u306A\u304F\u3001\u300C\u306A\u308B\u307B\u3069\u3001\u305D\u3046\u3044\u3046\u611F\u3058\u304B\u300D\u3068\u30A4\u30E1\u30FC\u30B8\u304C\u6E67\u304F\u8868\u73FE\u3092\u5FC3\u304C\u3051\u308B\u3002",
         "",
-        "例（裂肛の場合）：",
-        "✅ 「硬い便で肛門が“紙のようにピリッと裂ける”」",
-        "❌ 「裂肛の多くは後方正中にできる」（具体性やイメージが不足）",
+        "\u4F8B\uFF08\u88C2\u809B\u306E\u5834\u5408\uFF09\uFF1A",
+        "\u2705 \u300C\u786C\u3044\u4FBF\u3067\u809B\u9580\u304C\u201C\u7D19\u306E\u3088\u3046\u306B\u30D4\u30EA\u30C3\u3068\u88C2\u3051\u308B\u201D\u300D",
+        "\u274C \u300C\u88C2\u809B\u306E\u591A\u304F\u306F\u5F8C\u65B9\u6B63\u4E2D\u306B\u3067\u304D\u308B\u300D\uFF08\u5177\u4F53\u6027\u3084\u30A4\u30E1\u30FC\u30B8\u304C\u4E0D\u8DB3\uFF09",
         "",
-        "❷ 因果関係スタイル（Pathophysiologyの連鎖）",
+        "\u2777 \u56E0\u679C\u95A2\u4FC2\u30B9\u30BF\u30A4\u30EB\uFF08Pathophysiology\u306E\u9023\u9396\uFF09",
         "",
-        "診断に至る思考プロセスではなく、病態そのものが体内で引き起こす現象の連鎖を時系列・因果関係順に示す。キーワードを「↓→」で結び、生体内で実際に起きている内容・症状・所見を順序立てて表現する。",
+        "\u8A3A\u65AD\u306B\u81F3\u308B\u601D\u8003\u30D7\u30ED\u30BB\u30B9\u3067\u306F\u306A\u304F\u3001\u75C5\u614B\u305D\u306E\u3082\u306E\u304C\u4F53\u5185\u3067\u5F15\u304D\u8D77\u3053\u3059\u73FE\u8C61\u306E\u9023\u9396\u3092\u6642\u7CFB\u5217\u30FB\u56E0\u679C\u95A2\u4FC2\u9806\u306B\u793A\u3059\u3002\u30AD\u30FC\u30EF\u30FC\u30C9\u3092\u300C\u2193\u2192\u300D\u3067\u7D50\u3073\u3001\u751F\u4F53\u5185\u3067\u5B9F\u969B\u306B\u8D77\u304D\u3066\u3044\u308B\u5185\u5BB9\u30FB\u75C7\u72B6\u30FB\u6240\u898B\u3092\u9806\u5E8F\u7ACB\u3066\u3066\u8868\u73FE\u3059\u308B\u3002",
         "",
-        "例（ASO発症機序）：",
-        "糖尿病・高血圧・高脂血症・喫煙などの動脈硬化リスク↑",
-        "↓",
-        "中〜大動脈（主に下肢動脈）で動脈硬化性プラーク形成（脂質核＋線維性被膜）",
-        "↓",
-        "管腔狭窄 → 安静時は血流保たれるが、運動時は需要＞供給に",
-        "↓",
-        "下肢の間欠性跛行（claudication）、さらには安静時痛へと進行",
-        "↓",
-        "血流不足が高度化 → 末梢潰瘍（足趾先端など）・皮膚萎縮・壊疽",
-        "↓",
-        "夜間や足挙上時に血流がさらに低下 → 安静時痛が悪化 → 足を垂らして寝ると楽になる",
+        "\u4F8B\uFF08ASO\u767A\u75C7\u6A5F\u5E8F\uFF09\uFF1A",
+        "\u7CD6\u5C3F\u75C5\u30FB\u9AD8\u8840\u5727\u30FB\u9AD8\u8102\u8840\u75C7\u30FB\u55AB\u7159\u306A\u3069\u306E\u52D5\u8108\u786C\u5316\u30EA\u30B9\u30AF\u2191",
+        "\u2193",
+        "\u4E2D\u301C\u5927\u52D5\u8108\uFF08\u4E3B\u306B\u4E0B\u80A2\u52D5\u8108\uFF09\u3067\u52D5\u8108\u786C\u5316\u6027\u30D7\u30E9\u30FC\u30AF\u5F62\u6210\uFF08\u8102\u8CEA\u6838\uFF0B\u7DDA\u7DAD\u6027\u88AB\u819C\uFF09",
+        "\u2193",
+        "\u7BA1\u8154\u72ED\u7A84 \u2192 \u5B89\u9759\u6642\u306F\u8840\u6D41\u4FDD\u305F\u308C\u308B\u304C\u3001\u904B\u52D5\u6642\u306F\u9700\u8981\uFF1E\u4F9B\u7D66\u306B",
+        "\u2193",
+        "\u4E0B\u80A2\u306E\u9593\u6B20\u6027\u8DDB\u884C\uFF08claudication\uFF09\u3001\u3055\u3089\u306B\u306F\u5B89\u9759\u6642\u75DB\u3078\u3068\u9032\u884C",
+        "\u2193",
+        "\u8840\u6D41\u4E0D\u8DB3\u304C\u9AD8\u5EA6\u5316 \u2192 \u672B\u68A2\u6F70\u760D\uFF08\u8DB3\u8DBE\u5148\u7AEF\u306A\u3069\uFF09\u30FB\u76AE\u819A\u840E\u7E2E\u30FB\u58CA\u75BD",
+        "\u2193",
+        "\u591C\u9593\u3084\u8DB3\u6319\u4E0A\u6642\u306B\u8840\u6D41\u304C\u3055\u3089\u306B\u4F4E\u4E0B \u2192 \u5B89\u9759\u6642\u75DB\u304C\u60AA\u5316 \u2192 \u8DB3\u3092\u5782\u3089\u3057\u3066\u5BDD\u308B\u3068\u697D\u306B\u306A\u308B",
         "",
-        "❸ 情報を落とさない",
+        "\u2778 \u60C5\u5831\u3092\u843D\u3068\u3055\u306A\u3044",
         "",
-        "問題文に記載されている臨床情報（症状、所見、誘因、背景など）は必ず因果関係スタイル内に適切に組み込む。追加の補足情報を入れることは可能だが、元の問題文の情報を削除しないよう注意する。",
+        "\u554F\u984C\u6587\u306B\u8A18\u8F09\u3055\u308C\u3066\u3044\u308B\u81E8\u5E8A\u60C5\u5831\uFF08\u75C7\u72B6\u3001\u6240\u898B\u3001\u8A98\u56E0\u3001\u80CC\u666F\u306A\u3069\uFF09\u306F\u5FC5\u305A\u56E0\u679C\u95A2\u4FC2\u30B9\u30BF\u30A4\u30EB\u5185\u306B\u9069\u5207\u306B\u7D44\u307F\u8FBC\u3080\u3002\u8FFD\u52A0\u306E\u88DC\u8DB3\u60C5\u5831\u3092\u5165\u308C\u308B\u3053\u3068\u306F\u53EF\u80FD\u3060\u304C\u3001\u5143\u306E\u554F\u984C\u6587\u306E\u60C5\u5831\u3092\u524A\u9664\u3057\u306A\u3044\u3088\u3046\u6CE8\u610F\u3059\u308B\u3002",
         "",
-        "❹ 正解選択肢をえこひいきしない",
+        "\u2779 \u6B63\u89E3\u9078\u629E\u80A2\u3092\u3048\u3053\u3072\u3044\u304D\u3057\u306A\u3044",
         "",
-        "すべての選択肢に対して、同じレベルの詳細さと明確さで解説を行う。ただし、問題文の所見や症状が明らかに正解選択肢の病態に関連する場合、それらは正解選択肢の因果関係スタイルに明示的に組み込む。",
+        "\u3059\u3079\u3066\u306E\u9078\u629E\u80A2\u306B\u5BFE\u3057\u3066\u3001\u540C\u3058\u30EC\u30D9\u30EB\u306E\u8A73\u7D30\u3055\u3068\u660E\u78BA\u3055\u3067\u89E3\u8AAC\u3092\u884C\u3046\u3002\u305F\u3060\u3057\u3001\u554F\u984C\u6587\u306E\u6240\u898B\u3084\u75C7\u72B6\u304C\u660E\u3089\u304B\u306B\u6B63\u89E3\u9078\u629E\u80A2\u306E\u75C5\u614B\u306B\u95A2\u9023\u3059\u308B\u5834\u5408\u3001\u305D\u308C\u3089\u306F\u6B63\u89E3\u9078\u629E\u80A2\u306E\u56E0\u679C\u95A2\u4FC2\u30B9\u30BF\u30A4\u30EB\u306B\u660E\u793A\u7684\u306B\u7D44\u307F\u8FBC\u3080\u3002",
         "",
-        "⸻",
+        "\u2E3B",
         "",
-        "以下は改善後の具体例です。",
+        "\u4EE5\u4E0B\u306F\u6539\u5584\u5F8C\u306E\u5177\u4F53\u4F8B\u3067\u3059\u3002",
         "",
-        "✅ 正解：F. Posterior midline of the anal verge",
+        "\u2705 \u6B63\u89E3\uFF1AF. Posterior midline of the anal verge",
         "",
-        "❶ 一言でいうと？",
+        "\u2776 \u4E00\u8A00\u3067\u3044\u3046\u3068\uFF1F",
         "",
-        "硬い便が「紙を破るように」肛門の後ろ側を裂いてしまう",
+        "\u786C\u3044\u4FBF\u304C\u300C\u7D19\u3092\u7834\u308B\u3088\u3046\u306B\u300D\u809B\u9580\u306E\u5F8C\u308D\u5074\u3092\u88C2\u3044\u3066\u3057\u307E\u3046",
         "",
-        "❷ 因果関係スタイル",
+        "\u2777 \u56E0\u679C\u95A2\u4FC2\u30B9\u30BF\u30A4\u30EB",
         "",
-        "慢性便秘・硬便",
-        "↓",
-        "肛門部への過度な張力と伸展",
-        "↓",
-        "肛門粘膜が裂ける（特に後方正中は血流が少なく弱い）",
-        "↓",
-        "裂肛形成",
-        "＋",
-        "肛門括約筋のけいれん → 裂創の治癒が遅れ、強い痛み",
+        "\u6162\u6027\u4FBF\u79D8\u30FB\u786C\u4FBF",
+        "\u2193",
+        "\u809B\u9580\u90E8\u3078\u306E\u904E\u5EA6\u306A\u5F35\u529B\u3068\u4F38\u5C55",
+        "\u2193",
+        "\u809B\u9580\u7C98\u819C\u304C\u88C2\u3051\u308B\uFF08\u7279\u306B\u5F8C\u65B9\u6B63\u4E2D\u306F\u8840\u6D41\u304C\u5C11\u306A\u304F\u5F31\u3044\uFF09",
+        "\u2193",
+        "\u88C2\u809B\u5F62\u6210",
+        "\uFF0B",
+        "\u809B\u9580\u62EC\u7D04\u7B4B\u306E\u3051\u3044\u308C\u3093 \u2192 \u88C2\u5275\u306E\u6CBB\u7652\u304C\u9045\u308C\u3001\u5F37\u3044\u75DB\u307F",
         "",
-        "❸ 情報を落とさない",
-        "• 裂肛は歯状線より遠位（皮膚寄り）の縦方向の裂創",
-        "• 硬便の通過、慢性便秘、過度の伸展が誘因となる",
-        "• 後方正中が血流不足のため最も起こりやすい",
-        "• 鮮血便（トイレットペーパーに付着）と排便時の鋭い痛みが典型的な症状",
+        "\u2778 \u60C5\u5831\u3092\u843D\u3068\u3055\u306A\u3044",
+        "\u2022 \u88C2\u809B\u306F\u6B6F\u72B6\u7DDA\u3088\u308A\u9060\u4F4D\uFF08\u76AE\u819A\u5BC4\u308A\uFF09\u306E\u7E26\u65B9\u5411\u306E\u88C2\u5275",
+        "\u2022 \u786C\u4FBF\u306E\u901A\u904E\u3001\u6162\u6027\u4FBF\u79D8\u3001\u904E\u5EA6\u306E\u4F38\u5C55\u304C\u8A98\u56E0\u3068\u306A\u308B",
+        "\u2022 \u5F8C\u65B9\u6B63\u4E2D\u304C\u8840\u6D41\u4E0D\u8DB3\u306E\u305F\u3081\u6700\u3082\u8D77\u3053\u308A\u3084\u3059\u3044",
+        "\u2022 \u9BAE\u8840\u4FBF\uFF08\u30C8\u30A4\u30EC\u30C3\u30C8\u30DA\u30FC\u30D1\u30FC\u306B\u4ED8\u7740\uFF09\u3068\u6392\u4FBF\u6642\u306E\u92ED\u3044\u75DB\u307F\u304C\u5178\u578B\u7684\u306A\u75C7\u72B6",
         "",
-        "（他の選択肢についても同様の基準で説明）"
+        "\uFF08\u4ED6\u306E\u9078\u629E\u80A2\u306B\u3064\u3044\u3066\u3082\u540C\u69D8\u306E\u57FA\u6E96\u3067\u8AAC\u660E\uFF09"
       ].join("\n")
     },
     {
       enabled: true,
-      label: "統合",
+      label: "\u7D71\u5408",
       shortcut: "Ctrl+T",
       prompt: [
-        "統合因果関係スタイル(正解選択肢を中心にして、所見や症状などをすべて盛り込んだ巨大な１つのフローチャート。当然箇条書きではないので番号をふるなど不要。→↓で因果列、時系列にキーワードを結んだ忠実な図を作成。以下は一例(本当はこの2倍程度の分量を期待します。可能なら他の選択肢で言及されている内容を矛盾なく結合させて。)",
-        "例（ASO）：",
-        "糖尿病・高血圧・高脂血症・喫煙などの動脈硬化リスク↑",
-        "↓",
-        "中〜大動脈（主に下肢動脈）で動脈硬化性プラーク形成（脂質核＋線維性被膜）",
-        "↓",
-        "管腔狭窄 → 安静時は血流保たれるが、運動時は需要＞供給に",
-        "↓",
-        "下肢の間欠性跛行（claudication）、さらには安静時痛へと進行",
-        "↓",
-        "血流不足が高度化 → 末梢潰瘍（足趾先端など）・皮膚萎縮・壊疽",
-        "↓",
-        "夜間や足挙上時に血流がさらに低下 → 安静時痛が悪化 → 足を垂らして寝ると楽になる"
+        "\u7D71\u5408\u56E0\u679C\u95A2\u4FC2\u30B9\u30BF\u30A4\u30EB(\u6B63\u89E3\u9078\u629E\u80A2\u3092\u4E2D\u5FC3\u306B\u3057\u3066\u3001\u6240\u898B\u3084\u75C7\u72B6\u306A\u3069\u3092\u3059\u3079\u3066\u76DB\u308A\u8FBC\u3093\u3060\u5DE8\u5927\u306A\uFF11\u3064\u306E\u30D5\u30ED\u30FC\u30C1\u30E3\u30FC\u30C8\u3002\u5F53\u7136\u7B87\u6761\u66F8\u304D\u3067\u306F\u306A\u3044\u306E\u3067\u756A\u53F7\u3092\u3075\u308B\u306A\u3069\u4E0D\u8981\u3002\u2192\u2193\u3067\u56E0\u679C\u5217\u3001\u6642\u7CFB\u5217\u306B\u30AD\u30FC\u30EF\u30FC\u30C9\u3092\u7D50\u3093\u3060\u5FE0\u5B9F\u306A\u56F3\u3092\u4F5C\u6210\u3002\u4EE5\u4E0B\u306F\u4E00\u4F8B(\u672C\u5F53\u306F\u3053\u306E2\u500D\u7A0B\u5EA6\u306E\u5206\u91CF\u3092\u671F\u5F85\u3057\u307E\u3059\u3002\u53EF\u80FD\u306A\u3089\u4ED6\u306E\u9078\u629E\u80A2\u3067\u8A00\u53CA\u3055\u308C\u3066\u3044\u308B\u5185\u5BB9\u3092\u77DB\u76FE\u306A\u304F\u7D50\u5408\u3055\u305B\u3066\u3002)",
+        "\u4F8B\uFF08ASO\uFF09\uFF1A",
+        "\u7CD6\u5C3F\u75C5\u30FB\u9AD8\u8840\u5727\u30FB\u9AD8\u8102\u8840\u75C7\u30FB\u55AB\u7159\u306A\u3069\u306E\u52D5\u8108\u786C\u5316\u30EA\u30B9\u30AF\u2191",
+        "\u2193",
+        "\u4E2D\u301C\u5927\u52D5\u8108\uFF08\u4E3B\u306B\u4E0B\u80A2\u52D5\u8108\uFF09\u3067\u52D5\u8108\u786C\u5316\u6027\u30D7\u30E9\u30FC\u30AF\u5F62\u6210\uFF08\u8102\u8CEA\u6838\uFF0B\u7DDA\u7DAD\u6027\u88AB\u819C\uFF09",
+        "\u2193",
+        "\u7BA1\u8154\u72ED\u7A84 \u2192 \u5B89\u9759\u6642\u306F\u8840\u6D41\u4FDD\u305F\u308C\u308B\u304C\u3001\u904B\u52D5\u6642\u306F\u9700\u8981\uFF1E\u4F9B\u7D66\u306B",
+        "\u2193",
+        "\u4E0B\u80A2\u306E\u9593\u6B20\u6027\u8DDB\u884C\uFF08claudication\uFF09\u3001\u3055\u3089\u306B\u306F\u5B89\u9759\u6642\u75DB\u3078\u3068\u9032\u884C",
+        "\u2193",
+        "\u8840\u6D41\u4E0D\u8DB3\u304C\u9AD8\u5EA6\u5316 \u2192 \u672B\u68A2\u6F70\u760D\uFF08\u8DB3\u8DBE\u5148\u7AEF\u306A\u3069\uFF09\u30FB\u76AE\u819A\u840E\u7E2E\u30FB\u58CA\u75BD",
+        "\u2193",
+        "\u591C\u9593\u3084\u8DB3\u6319\u4E0A\u6642\u306B\u8840\u6D41\u304C\u3055\u3089\u306B\u4F4E\u4E0B \u2192 \u5B89\u9759\u6642\u75DB\u304C\u60AA\u5316 \u2192 \u8DB3\u3092\u5782\u3089\u3057\u3066\u5BDD\u308B\u3068\u697D\u306B\u306A\u308B"
       ].join("\n")
     },
     {
       enabled: false,
-      label: "テンプレ4",
+      label: "\u30C6\u30F3\u30D7\u30EC4",
       shortcut: "",
       prompt: ""
     },
     {
       enabled: false,
-      label: "テンプレ5",
+      label: "\u30C6\u30F3\u30D7\u30EC5",
       shortcut: "",
       prompt: ""
     }
@@ -857,8 +503,8 @@
     searchVisible: true,
     navPrevKey: "ArrowLeft",
     navNextKey: "ArrowRight",
-    revealKey: "Ctrl+S",
-    optionKeys: ["A", "B", "C", "D", "E"],
+    revealKey: "S",
+    optionKeys: [...DEFAULT_OPTION_KEYS],
     position: "bottom-right",
     shortcut: "Alt+Q",
     chatOpen: false,
@@ -869,7 +515,7 @@
     chatTemplates: DEFAULT_CHAT_TEMPLATES,
     chatTemplateCount: 3,
     commonPrompt: "",
-    hintConstraintPrompt: "※400文字以内で回答してください。",
+    hintConstraintPrompt: "\u203B400\u6587\u5B57\u4EE5\u5185\u3067\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
     explanationLevel: "med-junior",
     explanationPrompts: DEFAULT_EXPLANATION_PROMPTS,
     themePreference: "system",
@@ -878,7 +524,9 @@
   function normalizeSettings(input) {
     if (!input) return { ...defaultSettings };
     const legacyNoteVisible = typeof input.noteHeaderVisible === "boolean" ? input.noteHeaderVisible : void 0;
-    const optionKeys = Array.isArray(input.optionKeys) && input.optionKeys.length > 0 ? input.optionKeys.map((key) => normalizeShortcut(key)).filter(Boolean) : defaultSettings.optionKeys;
+    const normalizedOptionKeys = Array.isArray(input.optionKeys) && input.optionKeys.length > 0 ? input.optionKeys.map((key) => normalizeShortcut(key)).filter(Boolean) : [...defaultSettings.optionKeys];
+    const optionKeys = normalizedOptionKeys.length === LEGACY_OPTION_KEYS.length && normalizedOptionKeys.every((key, index) => key === LEGACY_OPTION_KEYS[index]) ? [...DEFAULT_OPTION_KEYS] : normalizedOptionKeys;
+    const normalizedRevealKey = normalizeShortcut(input.revealKey);
     return {
       enabled: typeof input.enabled === "boolean" ? input.enabled : defaultSettings.enabled,
       shortcutsEnabled: typeof input.shortcutsEnabled === "boolean" ? input.shortcutsEnabled : defaultSettings.shortcutsEnabled,
@@ -887,7 +535,7 @@
       searchVisible: typeof input.searchVisible === "boolean" ? input.searchVisible : defaultSettings.searchVisible,
       navPrevKey: normalizeShortcut(input.navPrevKey) || defaultSettings.navPrevKey,
       navNextKey: normalizeShortcut(input.navNextKey) || defaultSettings.navNextKey,
-      revealKey: normalizeShortcut(input.revealKey) || defaultSettings.revealKey,
+      revealKey: normalizedRevealKey === "Ctrl+S" ? defaultSettings.revealKey : normalizedRevealKey || defaultSettings.revealKey,
       optionKeys,
       position: isPosition(input.position) ? input.position : defaultSettings.position,
       shortcut: normalizeShortcut(input.shortcut) || defaultSettings.shortcut,
@@ -924,7 +572,7 @@
     for (let i = 0; i < count; i += 1) {
       const fallback = safeDefaults[i] ?? {
         enabled: false,
-        label: `テンプレ${i + 1}`,
+        label: `\u30C6\u30F3\u30D7\u30EC${i + 1}`,
         shortcut: "",
         prompt: ""
       };
@@ -937,7 +585,7 @@
     }
     for (let i = next.length; i < CHAT_TEMPLATE_LIMIT; i += 1) {
       next.push(
-        safeDefaults[i] ?? { enabled: false, label: `テンプレ${i + 1}`, shortcut: "", prompt: "" }
+        safeDefaults[i] ?? { enabled: false, label: `\u30C6\u30F3\u30D7\u30EC${i + 1}`, shortcut: "", prompt: "" }
       );
     }
     return next;
@@ -1027,6 +675,207 @@
     return value === "left" || value === "right";
   }
 
+  // src/core/reflection.ts
+  var QB_REFLECTION_STORAGE_KEY = "qb_support_reflections_v1";
+  var QB_REFLECTION_IMAGE_STORAGE_PREFIX = "qb_support_reflection_images_v1:";
+  var QB_REFLECTION_PDF_ID = "Vital_Step2CK";
+  var QB_REFLECTION_SCHEMA_VERSION = 1;
+  var QB_REFLECTION_CACHE_MAX_ENTRIES = 1e3;
+  function getReflectionImageStorageKey(questionId) {
+    return `${QB_REFLECTION_IMAGE_STORAGE_PREFIX}${questionId}`;
+  }
+  function getReflectionQuestionId(url, fallbackId) {
+    try {
+      const parsed = new URL(url);
+      const questionId = parsed.searchParams.get("question_id")?.trim();
+      if (questionId) return questionId;
+    } catch {
+    }
+    return String(fallbackId ?? "").trim();
+  }
+  function getCanonicalQuestionUrl(url, questionId) {
+    try {
+      const parsed = new URL(url);
+      parsed.search = "";
+      parsed.hash = "";
+      if (questionId) parsed.searchParams.set("question_id", questionId);
+      return parsed.toString();
+    } catch {
+      return url;
+    }
+  }
+  function buildReflectionRecord(input) {
+    const now = input.now ?? (/* @__PURE__ */ new Date()).toISOString();
+    return {
+      schemaVersion: QB_REFLECTION_SCHEMA_VERSION,
+      source: "QB_support",
+      questionId: input.questionId,
+      questionCode: input.info?.id ?? input.snapshot?.id ?? input.existing?.questionCode ?? null,
+      questionUrl: getCanonicalQuestionUrl(input.url, input.questionId),
+      questionText: input.snapshot?.questionText ?? input.existing?.questionText ?? null,
+      optionTexts: input.snapshot?.optionTexts ?? input.existing?.optionTexts ?? [],
+      pageRef: input.info?.pageRef ?? input.snapshot?.pageRef ?? input.existing?.pageRef ?? null,
+      tags: input.info?.tags ?? input.snapshot?.tags ?? input.existing?.tags ?? [],
+      reflection: input.reflection,
+      pdfId: QB_REFLECTION_PDF_ID,
+      pdfRefs: input.existing?.pdfRefs ?? [],
+      createdAt: input.existing?.createdAt ?? now,
+      updatedAt: now
+    };
+  }
+  function pruneReflectionStore(store, maxEntries = QB_REFLECTION_CACHE_MAX_ENTRIES) {
+    const entries = Object.entries(store);
+    if (entries.length <= maxEntries) return store;
+    entries.sort(([, a], [, b]) => b.updatedAt.localeCompare(a.updatedAt));
+    return Object.fromEntries(entries.slice(0, maxEntries));
+  }
+
+  // src/core/moshiDom.ts
+  var MOSHI_HOST = "moshi.medilink-study.com";
+  var MOSHI_REVIEW_PATH = "/kokushi/review/answer";
+  function getLegacyMoshiReflectionImagePrefix(legacyQuestionId) {
+    const match = legacyQuestionId.match(/^moshi:kokushi-mm(\d+):(\d+)$/);
+    return match ? `QB_MM${match[1]}_${match[2]}_reflection_` : null;
+  }
+  function detectMoshiLegacyContamination(input) {
+    const legacyImagePrefix = input.legacyImagePrefix ?? null;
+    const hasLegacyImageMarker = Boolean(
+      legacyImagePrefix && input.reflection.includes(`![[${legacyImagePrefix}`)
+    );
+    const hasLegacyImageRecord = Boolean(
+      legacyImagePrefix && input.savedImageNames.some((name) => name.startsWith(legacyImagePrefix))
+    );
+    const hasVerifiedLegacyText = Boolean(
+      input.verifiedReflectionFragments?.some(
+        (fragment) => input.reflection.includes(fragment)
+      )
+    );
+    const duplicatesLegacyText = Boolean(
+      input.reflection.trim() && input.legacyReflection?.trim() && input.reflection === input.legacyReflection
+    );
+    return {
+      hasLegacyImageMarker,
+      hasLegacyImageRecord,
+      hasVerifiedLegacyText,
+      duplicatesLegacyText,
+      shouldSuppress: hasLegacyImageMarker || hasLegacyImageRecord || hasVerifiedLegacyText || duplicatesLegacyText
+    };
+  }
+  function isMoshiHost(url) {
+    try {
+      return new URL(url).hostname === MOSHI_HOST;
+    } catch {
+      return false;
+    }
+  }
+  function isMoshiReviewPage(url) {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname === MOSHI_HOST && parsed.pathname === MOSHI_REVIEW_PATH;
+    } catch {
+      return false;
+    }
+  }
+  function extractMoshiReflectionData(doc, url) {
+    if (!isMoshiReviewPage(url)) return null;
+    let rawQuestionId = null;
+    try {
+      rawQuestionId = new URL(url).searchParams.get("question_id")?.trim() ?? null;
+    } catch {
+      return null;
+    }
+    if (!rawQuestionId || !/^\d+$/.test(rawQuestionId)) return null;
+    const root2 = doc.querySelector("#vue-container");
+    if (!root2) return null;
+    const examNumber = extractExamNumber(doc);
+    const questionNumber = normalizeText(root2.querySelector(".h3label h3"));
+    const identity = buildMoshiReflectionIdentity(
+      examNumber,
+      rawQuestionId,
+      questionNumber
+    );
+    if (!identity) return null;
+    const questionCode = `MM${examNumber}_${identity.displayNumber}`;
+    const progressText = normalizeText(root2.querySelector(".h2label h2"));
+    const questionText = normalizeText(root2.querySelector(".question"));
+    const optionTexts = Array.from(
+      root2.querySelectorAll(".choice-table .checkAns")
+    ).map((element) => normalizeText(element)).filter((value) => Boolean(value));
+    const imageUrls = Array.from(
+      root2.querySelectorAll(".question img, .choice-table img")
+    ).map((image) => image.currentSrc || image.src).filter(Boolean);
+    const now = Date.now();
+    return {
+      questionId: identity.questionId,
+      legacyQuestionId: identity.legacyQuestionId === identity.questionId ? null : identity.legacyQuestionId,
+      info: {
+        id: questionCode,
+        progressText,
+        pageRef: null,
+        optionCount: optionTexts.length || null,
+        tags: ["moshi", `kokushi-mm${examNumber}`],
+        updatedAt: now
+      },
+      snapshot: {
+        id: questionCode,
+        url,
+        questionText,
+        imageUrls,
+        optionTexts,
+        progressText,
+        pageRef: null,
+        tags: ["moshi", `kokushi-mm${examNumber}`],
+        updatedAt: now
+      }
+    };
+  }
+  function buildMoshiReflectionIdentity(examNumber, rawQuestionId, questionNumber) {
+    const namespace = `moshi:kokushi-mm${examNumber}`;
+    const displayNumber = normalizeMoshiQuestionNumber(questionNumber);
+    if (!displayNumber) return null;
+    return {
+      questionId: `${namespace}:${displayNumber}`,
+      legacyQuestionId: `${namespace}:${rawQuestionId}`,
+      displayNumber
+    };
+  }
+  function getMoshiReflectionPlacement(doc) {
+    const navigation = doc.querySelector(
+      "#vue-container .qwrap section .btn-group"
+    );
+    if (navigation?.parentNode) {
+      return { parent: navigation.parentNode, before: navigation };
+    }
+    const section = doc.querySelector("#vue-container .qwrap section");
+    return section ? { parent: section, before: null } : null;
+  }
+  function extractExamNumber(doc) {
+    const feedbackLinks = Array.from(
+      doc.querySelectorAll("a[href^='mailto:']")
+    );
+    for (const link of feedbackLinks) {
+      const value = safeDecode(link.getAttribute("href") ?? "");
+      const match = value.match(/第\s*(\d+)\s*回/);
+      if (match) return match[1];
+    }
+    return "1";
+  }
+  function normalizeText(element) {
+    const value = element?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+    return value || null;
+  }
+  function normalizeMoshiQuestionNumber(value) {
+    const normalized = String(value ?? "").normalize("NFKC").replace(/\s+/g, "").toUpperCase();
+    return /^[A-Z]-\d+$/.test(normalized) ? normalized : null;
+  }
+  function safeDecode(value) {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+
   // src/lib/webext.ts
   var globalApi = globalThis;
   var webext = globalApi.browser ?? globalApi.chrome ?? {};
@@ -1103,9 +952,10 @@
   function sendRuntimeMessage(message) {
     const runtime = webext.runtime;
     if (!runtime?.sendMessage) return Promise.resolve(void 0);
-    if (runtime.sendMessage.length <= 1) {
+    const sendMessage = runtime.sendMessage;
+    if (sendMessage.length <= 1) {
       try {
-        const result = runtime.sendMessage(message);
+        const result = sendMessage(message);
         if (result && typeof result.then === "function") {
           return result;
         }
@@ -1114,13 +964,26 @@
         return Promise.reject(error);
       }
     }
-    return promisify((callback) => runtime.sendMessage(message, callback));
+    return promisify((callback) => sendMessage(message, callback));
   }
 
   // src/content.ts
   var STORAGE_KEY = "qb_support_settings_v1";
+  var CHAT_ENABLED = false;
   var ROOT_ID = "qb-support-root";
   var MARKER_ID = "qb-support-marker";
+  var REFLECTION_CONTAINER_ID = "qb-support-reflection";
+  var REFLECTION_LIGHTBOX_ID = "qb-support-reflection-lightbox";
+  var REFLECTION_SAVE_DEBOUNCE_MS = 500;
+  var REFLECTION_IMAGE_MAX_BYTES = 12e6;
+  var VERIFIED_MOSHI_LEGACY_RECORDS = {
+    "moshi:kokushi-mm1:14": {
+      ownerQuestionId: "moshi:kokushi-mm1:A-14",
+      reflectionFragments: [
+        "\u507D\u819C\u6027\u8178\u708E\u306F\u6297\u83CC\u85AC\u3092\u7D4C\u53E3\u6295\u4E0E\u4EE5\u5916\u3067\u3082\u751F\u3058\u3046\u308B"
+      ]
+    }
+  };
   var CHAT_ROOT_ID = "qb-support-chat-root";
   var CHAT_TOGGLE_ID = "qb-support-chat-toggle";
   var CHAT_DOCK_CLASS = "qb-support-chat-dock";
@@ -1146,21 +1009,13 @@
   var AUTH_SESSION_POLL_INTERVAL_MS = 1e3;
   var AUTH_SESSION_FALLBACK_MS = 6 * 60 * 60 * 1e3;
   var EXPLANATION_LEVEL_LABELS = {
-    highschool: "高校生でもわかる",
-    "med-junior": "医学部低学年",
-    "med-senior": "医学部高学年〜研修医"
+    highschool: "\u9AD8\u6821\u751F\u3067\u3082\u308F\u304B\u308B",
+    "med-junior": "\u533B\u5B66\u90E8\u4F4E\u5B66\u5E74",
+    "med-senior": "\u533B\u5B66\u90E8\u9AD8\u5B66\u5E74\u301C\u7814\u4FEE\u533B"
   };
   var settings = { ...defaultSettings };
   var currentInfo = null;
   var currentSnapshot = null;
-  var cachedAnswerContext = null;
-  var pendingAnswerResolvers = [];
-  var answerFrameEl = null;
-  var answerObserverBound = false;
-  var answerObserver = null;
-  var lastAnswerContextText = "";
-  var answerContextWanted = false;
-  var pendingAnswerScanId = null;
   var root = null;
   var panel = null;
   var launcher = null;
@@ -1172,7 +1027,6 @@
   var chatMessagesEl = null;
   var chatInput = null;
   var lastHintDraftSource = null;
-  var lastHintDraftSnapshot = null;
   var chatSendButton = null;
   var chatStatusField = null;
   var chatInputWrap = null;
@@ -1185,8 +1039,6 @@
   var chatSettingsPanel = null;
   var chatSettingsButton = null;
   var chatSettingsOpen = false;
-  var lastSettingsToggleSource = null;
-  var lastSettingsToggleMeta = null;
   var chatApiKeyVisible = false;
   var chatAuthPromptActive = false;
   var chatTemplateBar = null;
@@ -1201,6 +1053,9 @@
   var chatRequestPending = false;
   var chatComposing = false;
   var chatLayoutBound = false;
+  var chatAutoScrollEnabled = true;
+  var chatScrollProgrammatic = false;
+  var chatLastScrollTop = 0;
   var chatDockWidth = 0;
   var chatResizeActive = false;
   var lastChatOpen = false;
@@ -1241,13 +1096,21 @@
   var explanationSectionEl = null;
   var authSectionEl = null;
   var themeQuery = null;
+  var contentThemeRepairFrame = null;
+  var reflectionRenderQuestionId = null;
+  var reflectionSaveChain = Promise.resolve();
   var start = () => {
     logInjectionOnce();
     ensureMarker();
     logFramesOnce();
-    initNetworkLogger();
     attachMessageHandlers();
     removeHeaderGearButton();
+    if (isMoshiHost2()) {
+      if (window === window.top && isMoshiReviewPage(location.href)) {
+        initMoshi().catch((error) => console.warn("[QB_SUPPORT] moshi init failed", error));
+      }
+      return;
+    }
     if (isQbHost()) {
       init().catch((error) => console.warn("[QB_SUPPORT] init failed", error));
       return;
@@ -1256,17 +1119,115 @@
       initFrame().catch((error) => console.warn("[QB_SUPPORT] frame init failed", error));
     }
   };
+  async function initMoshi() {
+    document.documentElement.dataset.qbSite = "moshi";
+    await loadSettings();
+    ensureThemeListener();
+    applyTheme();
+    toggleMarker(settings.debugEnabled);
+    refreshQuestionInfo();
+    startObservers();
+    attachMoshiShortcutHandlers();
+  }
+  function attachMoshiShortcutHandlers() {
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        if (!settings.shortcutsEnabled) return;
+        const isTyping = isTypingTarget(event.target) || isTypingTarget(document.activeElement);
+        if (isTyping || event.isComposing) return;
+        const eventBaseKey = getEventBaseKey(event);
+        const navPrevMatch = isShortcutMatch(event, settings.navPrevKey) || isShortcutMatch(event, defaultSettings.navPrevKey);
+        const navNextMatch = isShortcutMatch(event, settings.navNextKey) || isShortcutMatch(event, defaultSettings.navNextKey);
+        const optionIndex = settings.optionKeys.findIndex(
+          (shortcut) => isShortcutMatch(event, shortcut) || isPlainShortcutMatch(event, shortcut, eventBaseKey)
+        );
+        const revealMatch = isShortcutMatch(event, settings.revealKey) || isPlainShortcutMatch(event, settings.revealKey, eventBaseKey) || isShortcutMatch(event, defaultSettings.revealKey) || isPlainShortcutMatch(event, defaultSettings.revealKey, eventBaseKey);
+        let action = null;
+        let target = null;
+        if (optionIndex >= 0) {
+          action = "option";
+          target = getMoshiOptionTargets()[optionIndex] ?? null;
+        } else if (navPrevMatch) {
+          action = "prev";
+          target = getMoshiControl("prev");
+        } else if (navNextMatch) {
+          action = "next";
+          target = getMoshiControl("next");
+        } else if (revealMatch) {
+          action = "reveal";
+          target = getMoshiControl("reveal");
+        }
+        if (!action) return;
+        consumeShortcutEvent(event);
+        console.log("[QB_SUPPORT][moshi-shortcut]", {
+          action,
+          key: eventBaseKey,
+          optionIndex: optionIndex >= 0 ? optionIndex : null,
+          target: describeElement(target),
+          url: location.href
+        });
+        if (target) {
+          clickWithFallback(target, { tag: `moshi-${action}`, logAlways: true });
+        }
+      },
+      { capture: true }
+    );
+  }
+  function getMoshiOptionTargets() {
+    return Array.from(
+      document.querySelectorAll(
+        "#vue-container .choiceAns .choice-table .choice-cell"
+      )
+    ).filter(isMoshiShortcutTargetAvailable);
+  }
+  function getMoshiControl(action) {
+    const selector = action === "prev" ? "#vue-container .btn-group .btn-prev:not(.hidden) a" : action === "next" ? "#vue-container .btn-group .btn-next:not(.hidden) a" : "#vue-container .btn-group a, #vue-container .btn-group button";
+    const candidates = Array.from(
+      document.querySelectorAll(selector)
+    ).filter(isMoshiShortcutTargetAvailable);
+    if (action !== "reveal") return candidates[0] ?? null;
+    const revealLabels = [
+      "\u89E3\u7B54\u3092\u78BA\u8A8D\u3059\u308B",
+      "\u89E3\u7B54\u3092\u78BA\u8A8D",
+      "\u89E3\u7B54\u3059\u308B",
+      "\u89E3\u8AAC\u3092\u898B\u308B",
+      "\u30EA\u30C8\u30E9\u30A4"
+    ];
+    return candidates.find((element) => {
+      const text = (element.textContent ?? "").replace(/\s+/g, " ").trim();
+      return revealLabels.some((label) => text.includes(label));
+    }) ?? null;
+  }
+  function isMoshiShortcutTargetAvailable(element) {
+    if (element.closest(".hidden")) return false;
+    if (element.getAttribute("aria-disabled") === "true") return false;
+    if ("disabled" in element && element.disabled) return false;
+    return window.getComputedStyle(element).visibility !== "hidden";
+  }
   async function init() {
     await loadSettings();
     ensureUI();
-    ensureChatUI();
-    initAuth();
+    if (CHAT_ENABLED) {
+      ensureChatUI();
+      initAuth();
+    } else {
+      removeDisabledChatUI();
+    }
     ensureThemeListener();
     applySettings();
     refreshQuestionInfo();
     startObservers();
     attachEventHandlers();
-    attachChatHandlers();
+    if (CHAT_ENABLED) attachChatHandlers();
+  }
+  function removeDisabledChatUI() {
+    document.getElementById(CHAT_ROOT_ID)?.remove();
+    document.getElementById(CHAT_TOGGLE_ID)?.remove();
+    document.getElementById(CHAT_TEMPLATE_ID)?.remove();
+    document.body?.classList.remove(CHAT_DOCK_CLASS);
+    document.body?.style.removeProperty("--qb-support-chat-dock-width");
+    delete document.documentElement.dataset.qbChatLayout;
   }
   async function initFrame() {
     await loadSettings();
@@ -1307,7 +1268,7 @@
       }
     }
     settings = normalizeSettings(stored?.[STORAGE_KEY]);
-    logInfo("[QB_SUPPORT][settings] loaded", {
+    console.log("[QB_SUPPORT][settings] loaded", {
       storage: storageLabel,
       apiKeyLength: settings.chatApiKey?.length ?? 0,
       apiKeyEnabled: settings.chatApiKeyEnabled
@@ -1319,7 +1280,7 @@
     if (area) {
       try {
         await storageSet(area, { [STORAGE_KEY]: settings });
-        logInfo("[QB_SUPPORT][settings] saved", {
+        console.log("[QB_SUPPORT][settings] saved", {
           storage: area === webext.storage?.sync ? "sync" : "local",
           apiKeyLength: settings.chatApiKey?.length ?? 0,
           apiKeyEnabled: settings.chatApiKeyEnabled
@@ -1333,7 +1294,7 @@
         if (fallback && fallback !== area) {
           try {
             await storageSet(fallback, { [STORAGE_KEY]: settings });
-            logInfo("[QB_SUPPORT][settings] saved fallback", {
+            console.log("[QB_SUPPORT][settings] saved fallback", {
               storage: fallback === webext.storage?.sync ? "sync" : "local",
               apiKeyLength: settings.chatApiKey?.length ?? 0,
               apiKeyEnabled: settings.chatApiKeyEnabled
@@ -1362,15 +1323,15 @@
     if (!authStatusField || !authSignInButton || !authSignOutButton || !authMetaField) return;
     authStatusField.classList.remove("is-error");
     if (!authProfile) {
-      authStatusField.textContent = "未ログイン";
+      authStatusField.textContent = "\u672A\u30ED\u30B0\u30A4\u30F3";
       authMetaField.textContent = "";
       authSignInButton.disabled = false;
       authSignInButton.style.display = "inline-flex";
       authSignOutButton.style.display = "none";
       return;
     }
-    const name = authProfile.email || "Googleユーザー";
-    authStatusField.textContent = `ログイン中: ${name}`;
+    const name = authProfile.email || "Google\u30E6\u30FC\u30B6\u30FC";
+    authStatusField.textContent = `\u30ED\u30B0\u30A4\u30F3\u4E2D: ${name}`;
     authMetaField.textContent = authProfile.email ?? "";
     authSignInButton.style.display = "none";
     authSignOutButton.style.display = "inline-flex";
@@ -1433,22 +1394,22 @@
   }
   async function fetchBackendAuthStart() {
     const url = resolveBackendAuthStartUrl();
-    if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
+    if (!url) throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
     const response = await fetch(url);
     if (!response.ok) {
       const detail = await response.text();
-      throw new Error(`認証開始に失敗しました: ${response.status} ${detail}`);
+      throw new Error(`\u8A8D\u8A3C\u958B\u59CB\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${response.status} ${detail}`);
     }
     const data = await response.json();
     if (!data?.authUrl || !data?.state) {
-      throw new Error("認証開始のレスポンスが不正です。");
+      throw new Error("\u8A8D\u8A3C\u958B\u59CB\u306E\u30EC\u30B9\u30DD\u30F3\u30B9\u304C\u4E0D\u6B63\u3067\u3059\u3002");
     }
     return data;
   }
   async function pollBackendAuthSession(state) {
     const startedAt = Date.now();
     const url = resolveBackendAuthSessionUrl(state);
-    if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
+    if (!url) throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
     while (Date.now() - startedAt < AUTH_SESSION_TIMEOUT_MS) {
       const response = await fetch(url);
       if (response.status === 204) {
@@ -1456,22 +1417,22 @@
         continue;
       }
       if (response.status === 404) {
-        throw new Error("認証セッションが見つかりませんでした。もう一度お試しください。");
+        throw new Error("\u8A8D\u8A3C\u30BB\u30C3\u30B7\u30E7\u30F3\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002");
       }
       if (response.status === 410) {
-        throw new Error("認証セッションの有効期限が切れました。もう一度お試しください。");
+        throw new Error("\u8A8D\u8A3C\u30BB\u30C3\u30B7\u30E7\u30F3\u306E\u6709\u52B9\u671F\u9650\u304C\u5207\u308C\u307E\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002");
       }
       if (!response.ok) {
         const detail = await response.text();
-        throw new Error(`認証セッション取得に失敗しました: ${response.status} ${detail}`);
+        throw new Error(`\u8A8D\u8A3C\u30BB\u30C3\u30B7\u30E7\u30F3\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${response.status} ${detail}`);
       }
       const data = await response.json();
       if (!data?.token || !data?.profile?.uid) {
-        throw new Error("認証セッションの内容が不正です。");
+        throw new Error("\u8A8D\u8A3C\u30BB\u30C3\u30B7\u30E7\u30F3\u306E\u5185\u5BB9\u304C\u4E0D\u6B63\u3067\u3059\u3002");
       }
       return data;
     }
-    throw new Error("ログインが完了しませんでした。もう一度お試しください。");
+    throw new Error("\u30ED\u30B0\u30A4\u30F3\u304C\u5B8C\u4E86\u3057\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002");
   }
   async function requestBackendAuthSession() {
     const start2 = await fetchBackendAuthStart();
@@ -1479,12 +1440,12 @@
     if (!popup) {
       console.warn("[QB_SUPPORT][auth-ui] popup blocked", { authUrl: start2.authUrl });
       setAuthStatus(
-        "ポップアップがブロックされました。ログインURLを新規タブで開いてください。",
+        "\u30DD\u30C3\u30D7\u30A2\u30C3\u30D7\u304C\u30D6\u30ED\u30C3\u30AF\u3055\u308C\u307E\u3057\u305F\u3002\u30ED\u30B0\u30A4\u30F3URL\u3092\u65B0\u898F\u30BF\u30D6\u3067\u958B\u3044\u3066\u304F\u3060\u3055\u3044\u3002",
         true
       );
-      logInfo("[QB_SUPPORT][auth-ui] login url", start2.authUrl);
+      console.log("[QB_SUPPORT][auth-ui] login url", start2.authUrl);
     } else {
-      setAuthStatus("ブラウザでログインを完了してください", false);
+      setAuthStatus("\u30D6\u30E9\u30A6\u30B6\u3067\u30ED\u30B0\u30A4\u30F3\u3092\u5B8C\u4E86\u3057\u3066\u304F\u3060\u3055\u3044", false);
     }
     const session = await pollBackendAuthSession(start2.state);
     const expiresAt = typeof session.expiresAt === "number" ? session.expiresAt : Date.now() + AUTH_SESSION_FALLBACK_MS;
@@ -1492,7 +1453,7 @@
   }
   async function fetchBackendAuthProfile(token) {
     const baseUrl = resolveBackendBaseUrl();
-    if (!baseUrl) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
+    if (!baseUrl) throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
     const url = new URL(baseUrl);
     url.pathname = url.pathname.replace(/\/+$/, "") + "/auth/me";
     const response = await fetch(url.toString(), {
@@ -1500,7 +1461,7 @@
     });
     if (!response.ok) {
       const detail = await response.text();
-      throw new Error(`認証に失敗しました: ${response.status} ${detail}`);
+      throw new Error(`\u8A8D\u8A3C\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${response.status} ${detail}`);
     }
     const data = await response.json();
     return data;
@@ -1538,7 +1499,7 @@
       return restored.token;
     }
     if (!interactive) {
-      throw new Error("ログインが必要です。");
+      throw new Error("\u30ED\u30B0\u30A4\u30F3\u304C\u5FC5\u8981\u3067\u3059\u3002");
     }
     const session = await requestBackendAuthSession();
     await saveStoredAuthSession(session);
@@ -1553,10 +1514,10 @@
           authAccessToken = null;
           authProfile = null;
           updateAuthUI();
-          setAuthSyncStatus("未ログイン", false);
+          setAuthSyncStatus("\u672A\u30ED\u30B0\u30A4\u30F3", false);
           return;
         }
-        throw new Error("ログインが必要です。");
+        throw new Error("\u30ED\u30B0\u30A4\u30F3\u304C\u5FC5\u8981\u3067\u3059\u3002");
       }
       await saveStoredAuthSession(session);
       applyAuthSession(session);
@@ -1564,14 +1525,14 @@
         remoteSettingsLoadedFor = session.profile.uid;
         void syncSettingsFromRemote();
       } else {
-        setAuthSyncStatus("同期済み", false);
+        setAuthSyncStatus("\u540C\u671F\u6E08\u307F", false);
       }
     } catch (error) {
       if (!interactive) {
         authAccessToken = null;
         authProfile = null;
         updateAuthUI();
-        setAuthSyncStatus("未ログイン", false);
+        setAuthSyncStatus("\u672A\u30ED\u30B0\u30A4\u30F3", false);
         return;
       }
       throw error;
@@ -1580,21 +1541,21 @@
   async function handleAuthSignIn() {
     const button = authSignInButton;
     if (button) button.disabled = true;
-    setAuthStatus("ログイン中...", false);
-    logInfo("[QB_SUPPORT][auth] ORIGIN", location.origin);
-    logInfo("[QB_SUPPORT][auth] HREF", location.href);
-    logInfo("[QB_SUPPORT][auth] EXT_ID", webext.runtime?.id ?? null);
+    setAuthStatus("\u30ED\u30B0\u30A4\u30F3\u4E2D...", false);
+    console.log("[QB_SUPPORT][auth] ORIGIN", location.origin);
+    console.log("[QB_SUPPORT][auth] HREF", location.href);
+    console.log("[QB_SUPPORT][auth] EXT_ID", webext.runtime?.id ?? null);
     try {
       await refreshAuthState(true);
-      setAuthStatus("ログイン完了", false);
-      logInfo("[QB_SUPPORT][auth] sign-in success");
+      setAuthStatus("\u30ED\u30B0\u30A4\u30F3\u5B8C\u4E86", false);
+      console.log("[QB_SUPPORT][auth] sign-in success");
     } catch (error) {
-      logInfo("[QB_SUPPORT][auth] AUTH_ERR_RAW", error);
+      console.log("[QB_SUPPORT][auth] AUTH_ERR_RAW", error);
       const err = error;
-      logInfo("[QB_SUPPORT][auth] AUTH_ERR_MSG", err?.message);
-      logInfo("[QB_SUPPORT][auth] AUTH_ERR_STACK", err?.stack);
+      console.log("[QB_SUPPORT][auth] AUTH_ERR_MSG", err?.message);
+      console.log("[QB_SUPPORT][auth] AUTH_ERR_STACK", err?.stack);
       const detail = err?.message ? err.message : String(error);
-      setAuthStatus(`ログイン失敗: ${detail}`, true);
+      setAuthStatus(`\u30ED\u30B0\u30A4\u30F3\u5931\u6557: ${detail}`, true);
       throw error;
     } finally {
       if (button) button.disabled = false;
@@ -1608,12 +1569,12 @@
       authProfile = null;
       remoteSettingsLoadedFor = null;
       await clearStoredAuthSession();
-      setAuthStatus("ログアウトしました", false);
+      setAuthStatus("\u30ED\u30B0\u30A2\u30A6\u30C8\u3057\u307E\u3057\u305F", false);
       updateAuthUI();
       applyChatSettings();
     } catch (error) {
       console.warn("[QB_SUPPORT][auth]", error);
-      setAuthStatus(`ログアウト失敗: ${String(error)}`, true);
+      setAuthStatus(`\u30ED\u30B0\u30A2\u30A6\u30C8\u5931\u6557: ${String(error)}`, true);
     } finally {
       if (button) button.disabled = false;
     }
@@ -1622,7 +1583,7 @@
     if (!authProfile || window !== window.top) return;
     if (!navigator.onLine) {
       authSyncPending = true;
-      setAuthSyncStatus("オフライン: 同期保留", false);
+      setAuthSyncStatus("\u30AA\u30D5\u30E9\u30A4\u30F3: \u540C\u671F\u4FDD\u7559", false);
       return;
     }
     if (authSyncTimer) window.clearTimeout(authSyncTimer);
@@ -1631,10 +1592,10 @@
     }, 700);
   }
   async function syncSettingsFromRemote() {
-    setAuthSyncStatus("同期中...", false);
+    setAuthSyncStatus("\u540C\u671F\u4E2D...", false);
     try {
       const remoteSettings = await fetchRemoteSettings();
-      logInfo("[QB_SUPPORT][auth-sync] pull", {
+      console.log("[QB_SUPPORT][auth-sync] pull", {
         hasSettings: Boolean(remoteSettings),
         apiKeyLength: remoteSettings && typeof remoteSettings.chatApiKey === "string" ? remoteSettings.chatApiKey.length : 0
       });
@@ -1648,22 +1609,22 @@
       } else {
         await syncSettingsToRemote();
       }
-      setAuthSyncStatus("同期完了", false);
+      setAuthSyncStatus("\u540C\u671F\u5B8C\u4E86", false);
     } catch (error) {
       console.warn("[QB_SUPPORT][auth-sync]", error);
       if (isOfflineSyncError(error)) {
         authRemoteFetchPending = true;
-        setAuthSyncStatus("オフライン: 同期保留", false);
+        setAuthSyncStatus("\u30AA\u30D5\u30E9\u30A4\u30F3: \u540C\u671F\u4FDD\u7559", false);
         return;
       }
-      setAuthSyncStatus(`同期エラー: ${String(error)}`, true);
+      setAuthSyncStatus(`\u540C\u671F\u30A8\u30E9\u30FC: ${String(error)}`, true);
     }
   }
   async function fetchRemoteSettings() {
     if (!authProfile) return null;
     const token = await ensureAuthAccessToken(false);
     const url = resolveBackendSettingsUrl();
-    if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
+    if (!url) throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
     const response = await fetch(url, {
       headers: {
         Authorization: `Bearer ${token}`
@@ -1671,7 +1632,7 @@
     });
     if (!response.ok) {
       const detail = await response.text();
-      throw new Error(`設定取得に失敗しました: ${response.status} ${detail}`);
+      throw new Error(`\u8A2D\u5B9A\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${response.status} ${detail}`);
     }
     const data = await response.json();
     if (!data?.settings || typeof data.settings !== "object") return null;
@@ -1689,19 +1650,19 @@
     }
     if (!navigator.onLine) {
       authSyncPending = true;
-      setAuthSyncStatus("オフライン: 同期保留", false);
+      setAuthSyncStatus("\u30AA\u30D5\u30E9\u30A4\u30F3: \u540C\u671F\u4FDD\u7559", false);
       return;
     }
     authSyncInFlight = true;
-    setAuthSyncStatus("同期中...", false);
+    setAuthSyncStatus("\u540C\u671F\u4E2D...", false);
     try {
-      logInfo("[QB_SUPPORT][auth-sync] push", {
+      console.log("[QB_SUPPORT][auth-sync] push", {
         apiKeyLength: settings.chatApiKey?.length ?? 0,
         apiKeyEnabled: settings.chatApiKeyEnabled
       });
       const token = await ensureAuthAccessToken(false);
       const url = resolveBackendSettingsUrl();
-      if (!url) throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
+      if (!url) throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -1716,17 +1677,17 @@
       });
       if (!response.ok) {
         const detail = await response.text();
-        throw new Error(`設定保存に失敗しました: ${response.status} ${detail}`);
+        throw new Error(`\u8A2D\u5B9A\u4FDD\u5B58\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${response.status} ${detail}`);
       }
-      setAuthSyncStatus("同期完了", false);
+      setAuthSyncStatus("\u540C\u671F\u5B8C\u4E86", false);
     } catch (error) {
       console.warn("[QB_SUPPORT][auth-sync]", error);
       if (isOfflineSyncError(error)) {
         authSyncPending = true;
-        setAuthSyncStatus("オフライン: 同期保留", false);
+        setAuthSyncStatus("\u30AA\u30D5\u30E9\u30A4\u30F3: \u540C\u671F\u4FDD\u7559", false);
         return;
       }
-      setAuthSyncStatus(`同期エラー: ${String(error)}`, true);
+      setAuthSyncStatus(`\u540C\u671F\u30A8\u30E9\u30FC: ${String(error)}`, true);
     } finally {
       authSyncInFlight = false;
       if (authSyncPending) {
@@ -1752,7 +1713,7 @@
     });
     window.addEventListener("offline", () => {
       if (!authProfile) return;
-      setAuthSyncStatus("オフライン: 同期保留", false);
+      setAuthSyncStatus("\u30AA\u30D5\u30E9\u30A4\u30F3: \u540C\u671F\u4FDD\u7559", false);
     });
   }
   function isOfflineSyncError(error) {
@@ -1782,14 +1743,14 @@
     title.textContent = "QB Support Settings";
     const subtitle = document.createElement("div");
     subtitle.className = "qb-support-subtitle";
-    subtitle.textContent = "ショートカット & サイドバー";
+    subtitle.textContent = "\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8 & \u30B5\u30A4\u30C9\u30D0\u30FC";
     const titleWrap = document.createElement("div");
     titleWrap.appendChild(title);
     titleWrap.appendChild(subtitle);
     header.appendChild(titleWrap);
     const settingsSection = document.createElement("div");
     settingsSection.className = "qb-support-section";
-    settingsSection.appendChild(makeSectionTitle("表示"));
+    settingsSection.appendChild(makeSectionTitle("\u8868\u793A"));
     displaySectionEl = settingsSection;
     setSectionCollapsed(settingsSection, true);
     shortcutsToggle = document.createElement("input");
@@ -1804,7 +1765,7 @@
     const shortcutsLabel = document.createElement("label");
     shortcutsLabel.className = "qb-support-toggle";
     shortcutsLabel.appendChild(shortcutsToggle);
-    shortcutsLabel.appendChild(makeSpan("ショートカット有効"));
+    shortcutsLabel.appendChild(makeSpan("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8\u6709\u52B9"));
     debugToggle = document.createElement("input");
     debugToggle.type = "checkbox";
     debugToggle.className = "qb-support-toggle-input";
@@ -1814,7 +1775,7 @@
         debugEnabled: debugToggle?.checked ?? false
       });
     });
-    const searchSwitch = createSwitch("検索バー表示", settings.searchVisible, (checked) => {
+    const searchSwitch = createSwitch("\u691C\u7D22\u30D0\u30FC\u8868\u793A", settings.searchVisible, (checked) => {
       void saveSettings({
         ...settings,
         searchVisible: checked
@@ -1822,7 +1783,7 @@
     });
     searchToggle = searchSwitch.input;
     const searchLabel = searchSwitch.label;
-    const noteSwitch = createSwitch("ノート表示", settings.noteVisible, (checked) => {
+    const noteSwitch = createSwitch("\u30CE\u30FC\u30C8\u8868\u793A", settings.noteVisible, (checked) => {
       void saveSettings({
         ...settings,
         noteVisible: checked
@@ -1842,10 +1803,10 @@
     const pageAccentLabel = document.createElement("label");
     pageAccentLabel.className = "qb-support-toggle";
     pageAccentLabel.appendChild(pageAccentToggle);
-    pageAccentLabel.appendChild(makeSpan("ページに緑アクセント"));
+    pageAccentLabel.appendChild(makeSpan("\u30DA\u30FC\u30B8\u306B\u7DD1\u30A2\u30AF\u30BB\u30F3\u30C8"));
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const isDark = settings.themePreference === "dark" || settings.themePreference === "system" && prefersDark;
-    const themeSwitch = createSwitch("ダークモード", isDark, (checked) => {
+    const themeSwitch = createSwitch("\u30C0\u30FC\u30AF\u30E2\u30FC\u30C9", isDark, (checked) => {
       const nextTheme = checked ? "dark" : "light";
       void saveSettings({
         ...settings,
@@ -1856,7 +1817,7 @@
     const themeLabel = themeSwitch.label;
     const shortcutSection = document.createElement("div");
     shortcutSection.className = "qb-support-section";
-    shortcutSection.appendChild(makeSectionTitle("ショートカット"));
+    shortcutSection.appendChild(makeSectionTitle("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8"));
     shortcutSectionEl = shortcutSection;
     setSectionCollapsed(shortcutSection, true);
     const modifierLabelFromKey = (rawKey) => {
@@ -1871,7 +1832,7 @@
       const input = document.createElement("input");
       input.type = "text";
       input.className = "qb-support-input";
-      input.placeholder = "例: A / Ctrl+A";
+      input.placeholder = "\u4F8B: A / Ctrl+A";
       input.addEventListener("keydown", (event) => {
         if (event.key === "Tab") return;
         if (event.key === "Backspace" || event.key === "Delete") {
@@ -1893,7 +1854,7 @@
       label.appendChild(input);
       return { label, input };
     };
-    const buildShortcutField = (labelText, placeholder = "例: Ctrl+S") => {
+    const buildShortcutField = (labelText, placeholder = "\u4F8B: Ctrl+S") => {
       const input = document.createElement("input");
       input.type = "text";
       input.className = "qb-support-input";
@@ -1919,16 +1880,16 @@
       label.appendChild(input);
       return { label, input };
     };
-    const navPrevField = buildKeyField("前へ");
-    const navNextField = buildKeyField("次へ");
-    const revealField = buildShortcutField("解答", "例: Ctrl+S");
+    const navPrevField = buildKeyField("\u524D\u3078");
+    const navNextField = buildKeyField("\u6B21\u3078");
+    const revealField = buildShortcutField("\u89E3\u7B54", "\u4F8B: Ctrl+S");
     navPrevInput = navPrevField.input;
     navNextInput = navNextField.input;
     revealInput = revealField.input;
     const optionsWrap = document.createElement("div");
     optionsWrap.className = "qb-support-options";
     optionInputs = [];
-    ["A", "B", "C", "D", "E"].forEach((label) => {
+    DEFAULT_OPTION_KEYS.forEach((label) => {
       const field = buildKeyField(label);
       optionInputs.push(field.input);
       optionsWrap.appendChild(field.label);
@@ -1936,7 +1897,7 @@
     const toggleShortcutLabel = document.createElement("label");
     toggleShortcutLabel.className = "qb-support-toggle";
     toggleShortcutLabel.appendChild(shortcutsToggle);
-    toggleShortcutLabel.appendChild(makeSpan("ショートカット有効"));
+    toggleShortcutLabel.appendChild(makeSpan("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8\u6709\u52B9"));
     statusField = document.createElement("div");
     statusField.className = "qb-support-status";
     settingsSection.appendChild(searchLabel);
@@ -1951,7 +1912,7 @@
     shortcutSection.appendChild(optionsWrap);
     const templateSection = document.createElement("div");
     templateSection.className = "qb-support-section";
-    templateSection.appendChild(makeSectionTitle("チャットテンプレ"));
+    templateSection.appendChild(makeSectionTitle("\u30C1\u30E3\u30C3\u30C8\u30C6\u30F3\u30D7\u30EC"));
     templateSectionEl = templateSection;
     setSectionCollapsed(templateSection, true);
     const templateControls = document.createElement("div");
@@ -1961,7 +1922,7 @@
     templateAddButton = document.createElement("button");
     templateAddButton.type = "button";
     templateAddButton.className = "qb-support-template-control";
-    templateAddButton.textContent = "追加";
+    templateAddButton.textContent = "\u8FFD\u52A0";
     applyButtonVariant(templateAddButton, "primary");
     templateAddButton.addEventListener("click", () => {
       updateTemplateCount(settings.chatTemplateCount + 1);
@@ -1969,7 +1930,7 @@
     templateRemoveButton = document.createElement("button");
     templateRemoveButton.type = "button";
     templateRemoveButton.className = "qb-support-template-control";
-    templateRemoveButton.textContent = "削除";
+    templateRemoveButton.textContent = "\u524A\u9664";
     applyButtonVariant(templateRemoveButton, "ghost");
     templateRemoveButton.addEventListener("click", () => {
       updateTemplateCount(settings.chatTemplateCount - 1);
@@ -1995,24 +1956,24 @@
       headerRow.className = "qb-support-template-header";
       const titleEl = document.createElement("div");
       titleEl.className = "qb-support-template-title";
-      titleEl.textContent = `テンプレ${i + 1}`;
+      titleEl.textContent = `\u30C6\u30F3\u30D7\u30EC${i + 1}`;
       const enabledInput = document.createElement("input");
       enabledInput.type = "checkbox";
       enabledInput.className = "qb-support-toggle-input";
       const enabledLabel = document.createElement("label");
       enabledLabel.className = "qb-support-toggle";
       enabledLabel.appendChild(enabledInput);
-      enabledLabel.appendChild(makeSpan("有効"));
+      enabledLabel.appendChild(makeSpan("\u6709\u52B9"));
       headerRow.appendChild(titleEl);
       headerRow.appendChild(enabledLabel);
       const labelInput = document.createElement("input");
       labelInput.type = "text";
       labelInput.className = "qb-support-input qb-support-template-label";
-      labelInput.placeholder = "ボタン名";
+      labelInput.placeholder = "\u30DC\u30BF\u30F3\u540D";
       const shortcutInput = document.createElement("input");
       shortcutInput.type = "text";
       shortcutInput.className = "qb-support-input qb-support-template-shortcut";
-      shortcutInput.placeholder = "例: Ctrl+Z";
+      shortcutInput.placeholder = "\u4F8B: Ctrl+Z";
       shortcutInput.addEventListener("keydown", (event) => {
         if (event.key === "Tab") return;
         if (event.key === "Backspace" || event.key === "Delete") {
@@ -2031,12 +1992,12 @@
       const promptInput = document.createElement("textarea");
       promptInput.className = "qb-support-template-prompt";
       promptInput.rows = 3;
-      promptInput.placeholder = "プロンプト";
+      promptInput.placeholder = "\u30D7\u30ED\u30F3\u30D7\u30C8";
       const fields = document.createElement("div");
       fields.className = "qb-support-template-fields";
-      fields.appendChild(buildTemplateField("ボタン名", labelInput));
-      fields.appendChild(buildTemplateField("ショートカット", shortcutInput));
-      fields.appendChild(buildTemplateField("プロンプト", promptInput));
+      fields.appendChild(buildTemplateField("\u30DC\u30BF\u30F3\u540D", labelInput));
+      fields.appendChild(buildTemplateField("\u30B7\u30E7\u30FC\u30C8\u30AB\u30C3\u30C8", shortcutInput));
+      fields.appendChild(buildTemplateField("\u30D7\u30ED\u30F3\u30D7\u30C8", promptInput));
       row.appendChild(headerRow);
       row.appendChild(fields);
       templateList.appendChild(row);
@@ -2051,16 +2012,16 @@
     templateSection.appendChild(templateList);
     const explanationSection = document.createElement("div");
     explanationSection.className = "qb-support-section";
-    explanationSection.appendChild(makeSectionTitle("プロンプト"));
+    explanationSection.appendChild(makeSectionTitle("\u30D7\u30ED\u30F3\u30D7\u30C8"));
     explanationSectionEl = explanationSection;
     setSectionCollapsed(explanationSection, true);
     const commonPromptLabel = document.createElement("label");
     commonPromptLabel.className = "qb-support-field qb-support-template-field";
-    commonPromptLabel.appendChild(makeSpan("共通プロンプト"));
+    commonPromptLabel.appendChild(makeSpan("\u5171\u901A\u30D7\u30ED\u30F3\u30D7\u30C8"));
     commonPromptInput = document.createElement("textarea");
     commonPromptInput.className = "qb-support-template-prompt qb-support-common-prompt";
     commonPromptInput.rows = 3;
-    commonPromptInput.placeholder = "全ての会話に付与する共通プロンプト";
+    commonPromptInput.placeholder = "\u5168\u3066\u306E\u4F1A\u8A71\u306B\u4ED8\u4E0E\u3059\u308B\u5171\u901A\u30D7\u30ED\u30F3\u30D7\u30C8";
     commonPromptLabel.appendChild(commonPromptInput);
     explanationLevelSelect = createOverlaySelect(
       Object.entries(EXPLANATION_LEVEL_LABELS).map(([value, label]) => ({
@@ -2071,13 +2032,13 @@
     );
     const explanationSelectLabel = document.createElement("label");
     explanationSelectLabel.className = "qb-support-field";
-    explanationSelectLabel.appendChild(makeSpan("レベル"));
+    explanationSelectLabel.appendChild(makeSpan("\u30EC\u30D9\u30EB"));
     explanationSelectLabel.appendChild(explanationLevelSelect);
     const buildExplanationPromptField = (labelText, key) => {
       const textarea = document.createElement("textarea");
       textarea.className = "qb-support-template-prompt qb-support-explanation-prompt";
       textarea.rows = 3;
-      textarea.placeholder = "プロンプト";
+      textarea.placeholder = "\u30D7\u30ED\u30F3\u30D7\u30C8";
       explanationPromptInputs[key] = textarea;
       const label = document.createElement("label");
       label.className = "qb-support-field qb-support-template-field";
@@ -2088,33 +2049,33 @@
     const promptWrap = document.createElement("div");
     promptWrap.className = "qb-support-template-fields qb-support-explanation-prompts";
     promptWrap.appendChild(
-      buildExplanationPromptField("高校生でもわかる", "highschool")
+      buildExplanationPromptField("\u9AD8\u6821\u751F\u3067\u3082\u308F\u304B\u308B", "highschool")
     );
-    promptWrap.appendChild(buildExplanationPromptField("医学部低学年", "med-junior"));
+    promptWrap.appendChild(buildExplanationPromptField("\u533B\u5B66\u90E8\u4F4E\u5B66\u5E74", "med-junior"));
     promptWrap.appendChild(
-      buildExplanationPromptField("医学部高学年〜研修医", "med-senior")
+      buildExplanationPromptField("\u533B\u5B66\u90E8\u9AD8\u5B66\u5E74\u301C\u7814\u4FEE\u533B", "med-senior")
     );
     explanationSection.appendChild(commonPromptLabel);
     explanationSection.appendChild(explanationSelectLabel);
     explanationSection.appendChild(promptWrap);
     const authSection = document.createElement("div");
     authSection.className = "qb-support-section";
-    authSection.appendChild(makeSectionTitle("認証"));
+    authSection.appendChild(makeSectionTitle("\u8A8D\u8A3C"));
     authSectionEl = authSection;
     setSectionCollapsed(authSection, false);
     authStatusField = document.createElement("div");
     authStatusField.className = "qb-support-auth-status";
-    authStatusField.textContent = "未ログイン";
+    authStatusField.textContent = "\u672A\u30ED\u30B0\u30A4\u30F3";
     authMetaField = document.createElement("div");
     authMetaField.className = "qb-support-auth-meta";
     authSyncField = document.createElement("div");
     authSyncField.className = "qb-support-auth-sync";
-    authSyncField.textContent = "未ログイン";
+    authSyncField.textContent = "\u672A\u30ED\u30B0\u30A4\u30F3";
     authSignInButton = document.createElement("button");
     authSignInButton.type = "button";
     authSignInButton.className = "qb-support-save qb-support-auth-button";
     applyButtonVariant(authSignInButton, "primary");
-    authSignInButton.textContent = "Googleでログイン";
+    authSignInButton.textContent = "Google\u3067\u30ED\u30B0\u30A4\u30F3";
     authSignInButton.addEventListener("click", () => {
       void handleAuthSignIn();
     });
@@ -2122,7 +2083,7 @@
     authSignOutButton.type = "button";
     authSignOutButton.className = "qb-support-save qb-support-auth-button qb-support-auth-signout";
     applyButtonVariant(authSignOutButton, "danger");
-    authSignOutButton.textContent = "ログアウト";
+    authSignOutButton.textContent = "\u30ED\u30B0\u30A2\u30A6\u30C8";
     authSignOutButton.style.display = "none";
     authSignOutButton.addEventListener("click", () => {
       void handleAuthSignOut();
@@ -2145,6 +2106,7 @@
     document.body.appendChild(root);
   }
   function ensureChatUI() {
+    if (!CHAT_ENABLED) return;
     if (document.getElementById(CHAT_ROOT_ID)) {
       chatRoot = document.getElementById(CHAT_ROOT_ID);
       chatPanel = chatRoot.querySelector(".qb-support-chat-panel");
@@ -2200,7 +2162,7 @@
             "qb-support-chat-model-inline"
           );
           chatHeaderModelSelect.value = settings.chatModel;
-          chatHeaderModelSelect.setAttribute("aria-label", "モデル選択");
+          chatHeaderModelSelect.setAttribute("aria-label", "\u30E2\u30C7\u30EB\u9078\u629E");
           titleWrap2.appendChild(chatHeaderModelSelect);
         }
       }
@@ -2250,7 +2212,7 @@
           chatApiKeyVisibilityButton = document.createElement("button");
           chatApiKeyVisibilityButton.type = "button";
           chatApiKeyVisibilityButton.className = "qb-support-chat-api-visibility";
-          chatApiKeyVisibilityButton.textContent = "表示";
+          chatApiKeyVisibilityButton.textContent = "\u8868\u793A";
         }
         if (chatApiKeyVisibilityButton) {
           applyButtonVariant(chatApiKeyVisibilityButton, "ghost");
@@ -2266,7 +2228,7 @@
               chatApiInput.type = chatApiKeyVisible ? "text" : "password";
             }
             if (chatApiKeyVisibilityButton) {
-              chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "非表示" : "表示";
+              chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "\u975E\u8868\u793A" : "\u8868\u793A";
             }
           });
         }
@@ -2284,7 +2246,7 @@
           chatApiKeyToggle.type = "checkbox";
           chatApiKeyToggle.className = "qb-support-toggle-input qb-support-chat-api-key-toggle";
           apiKeyToggleLabel2.appendChild(chatApiKeyToggle);
-          apiKeyToggleLabel2.appendChild(makeSpan("手動APIキーを使用"));
+          apiKeyToggleLabel2.appendChild(makeSpan("\u624B\u52D5API\u30AD\u30FC\u3092\u4F7F\u7528"));
           apiSection2.appendChild(apiKeyToggleLabel2);
         }
         if (chatApiKeyToggle && chatApiKeyToggle.dataset.handlers !== "true") {
@@ -2322,8 +2284,8 @@
           const button = document.createElement("button");
           button.type = "button";
           button.className = "qb-support-chat-settings-btn";
-          button.textContent = "設定";
-          button.setAttribute("aria-label", "チャット設定");
+          button.textContent = "\u8A2D\u5B9A";
+          button.setAttribute("aria-label", "\u30C1\u30E3\u30C3\u30C8\u8A2D\u5B9A");
           actions2.insertBefore(button, actions2.firstChild);
           chatSettingsButton = button;
         }
@@ -2353,6 +2315,7 @@
         chatSettingsOpen = chatSettingsPanel.dataset.open === "true";
       }
       attachChatModelHandlers();
+      ensureChatScrollHandler();
       ensureChatToggle();
       ensureChatResizer();
       ensureChatTemplates();
@@ -2385,7 +2348,7 @@
       "qb-support-chat-model-inline"
     );
     chatHeaderModelSelect.value = settings.chatModel;
-    chatHeaderModelSelect.setAttribute("aria-label", "モデル選択");
+    chatHeaderModelSelect.setAttribute("aria-label", "\u30E2\u30C7\u30EB\u9078\u629E");
     titleWrap.appendChild(title);
     titleWrap.appendChild(chatHeaderModelSelect);
     const actions = document.createElement("div");
@@ -2393,18 +2356,18 @@
     const settingsButton = document.createElement("button");
     settingsButton.type = "button";
     settingsButton.className = "qb-support-chat-settings-btn";
-    settingsButton.textContent = "設定";
-    settingsButton.setAttribute("aria-label", "チャット設定");
+    settingsButton.textContent = "\u8A2D\u5B9A";
+    settingsButton.setAttribute("aria-label", "\u30C1\u30E3\u30C3\u30C8\u8A2D\u5B9A");
     chatSettingsButton = settingsButton;
     settingsButton.dataset.shortcut = "Ctrl+S";
     applyButtonVariant(settingsButton, "ghost");
     const resetButton = document.createElement("button");
     resetButton.type = "button";
     resetButton.className = "qb-support-chat-new";
-    resetButton.textContent = "新規";
+    resetButton.textContent = "\u65B0\u898F";
     resetButton.dataset.shortcut = "Ctrl+N";
     resetButton.addEventListener("click", () => {
-      resetChatHistory("会話をリセットしました");
+      resetChatHistory("\u4F1A\u8A71\u3092\u30EA\u30BB\u30C3\u30C8\u3057\u307E\u3057\u305F");
     });
     applyButtonVariant(resetButton, "ghost");
     actions.appendChild(settingsButton);
@@ -2435,7 +2398,7 @@
     chatApiKeyVisibilityButton = document.createElement("button");
     chatApiKeyVisibilityButton.type = "button";
     chatApiKeyVisibilityButton.className = "qb-support-chat-api-visibility";
-    chatApiKeyVisibilityButton.textContent = "表示";
+    chatApiKeyVisibilityButton.textContent = "\u8868\u793A";
     applyButtonVariant(chatApiKeyVisibilityButton, "ghost");
     chatApiKeyVisibilityButton.addEventListener("click", () => {
       chatApiKeyVisible = !chatApiKeyVisible;
@@ -2443,7 +2406,7 @@
         chatApiInput.type = chatApiKeyVisible ? "text" : "password";
       }
       if (chatApiKeyVisibilityButton) {
-        chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "非表示" : "表示";
+        chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "\u975E\u8868\u793A" : "\u8868\u793A";
       }
     });
     apiKeyRow.appendChild(chatApiKeyVisibilityButton);
@@ -2455,7 +2418,7 @@
     chatApiKeyToggle.type = "checkbox";
     chatApiKeyToggle.className = "qb-support-toggle-input qb-support-chat-api-key-toggle";
     apiKeyToggleLabel.appendChild(chatApiKeyToggle);
-    apiKeyToggleLabel.appendChild(makeSpan("手動APIキーを使用"));
+    apiKeyToggleLabel.appendChild(makeSpan("\u624B\u52D5API\u30AD\u30FC\u3092\u4F7F\u7528"));
     chatApiKeyToggle.addEventListener("change", () => {
       void saveSettings({
         ...settings,
@@ -2483,12 +2446,12 @@
     chatInputWrap = inputWrap;
     chatInput = document.createElement("textarea");
     chatInput.className = "qb-support-chat-textarea";
-    chatInput.placeholder = "質問を入力...";
+    chatInput.placeholder = "\u8CEA\u554F\u3092\u5165\u529B...";
     chatInput.rows = 3;
     chatSendButton = document.createElement("button");
     chatSendButton.type = "button";
     chatSendButton.className = "qb-support-chat-send";
-    chatSendButton.textContent = "送信";
+    chatSendButton.textContent = "\u9001\u4FE1";
     applyButtonVariant(chatSendButton, "primary");
     inputWrap.appendChild(chatInput);
     inputWrap.appendChild(chatSendButton);
@@ -2503,6 +2466,7 @@
     ensureChatResizer();
     ensureChatOverlayHandle();
     ensureChatTemplates();
+    ensureChatScrollHandler();
     attachChatSettingsHandlers();
     populateChatSettingsPanel();
   }
@@ -2530,7 +2494,7 @@
     chatOverlayHandle.id = CHAT_OVERLAY_HANDLE_ID;
     chatOverlayHandle.type = "button";
     chatOverlayHandle.className = "qb-support-chat-overlay-handle";
-    chatOverlayHandle.setAttribute("aria-label", "チャットを開閉");
+    chatOverlayHandle.setAttribute("aria-label", "\u30C1\u30E3\u30C3\u30C8\u3092\u958B\u9589");
     chatOverlayHandle.addEventListener("click", () => {
       void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
     });
@@ -2547,7 +2511,7 @@
     chatToggle.type = "button";
     chatToggle.className = "qb-support-chat-toggle";
     chatToggle.textContent = "<";
-    chatToggle.setAttribute("aria-label", "チャットを開く");
+    chatToggle.setAttribute("aria-label", "\u30C1\u30E3\u30C3\u30C8\u3092\u958B\u304F");
     chatToggle.dataset.shortcut = CHAT_TOGGLE_SHORTCUT;
     chatToggle.addEventListener("click", () => {
       void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
@@ -2568,14 +2532,12 @@
     applyChatDockLayout();
     ensureChatLayoutHandler();
     if (!settings.chatOpen && chatSettingsOpen) {
-      setSettingsToggleSource("chat-close", { reason: "chatOpen=false" });
-      logDebug("chat-close", { chatOpen: settings.chatOpen, settingsOpen: chatSettingsOpen });
       toggleChatSettings(false);
     }
     if (chatApiInput && document.activeElement !== chatApiInput) {
       const apiKeySaved = Boolean(settings.chatApiKey);
       chatApiInput.value = apiKeySaved ? settings.chatApiKey : "";
-      chatApiInput.placeholder = apiKeySaved ? "保存済み (編集可)" : "sk-...";
+      chatApiInput.placeholder = apiKeySaved ? "\u4FDD\u5B58\u6E08\u307F (\u7DE8\u96C6\u53EF)" : "sk-...";
     }
     updateChatApiKeyStatus();
     if (chatApiKeyToggle) {
@@ -2587,7 +2549,7 @@
       if (chatApiInput) {
         chatApiInput.type = chatApiKeyVisible ? "text" : "password";
       }
-      chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "非表示" : "表示";
+      chatApiKeyVisibilityButton.textContent = chatApiKeyVisible ? "\u975E\u8868\u793A" : "\u8868\u793A";
       chatApiKeyVisibilityButton.disabled = !hasKey;
     }
     const backendMode = isBackendMode();
@@ -2605,14 +2567,14 @@
     const savedValue = settings.chatApiKey?.trim() ?? "";
     const valid = savedValue ? isValidApiKey(savedValue) : false;
     const currentValue = chatApiInput?.value.trim() ?? "";
-    let status = "未入力";
+    let status = "\u672A\u5165\u529B";
     if (saved) {
-      status = valid ? "入力済み" : "無効";
+      status = valid ? "\u5165\u529B\u6E08\u307F" : "\u7121\u52B9";
     } else if (currentValue) {
-      status = "入力中";
+      status = "\u5165\u529B\u4E2D";
     }
-    const suffix = saved && !settings.chatApiKeyEnabled ? " (使用オフ)" : "";
-    chatApiKeyStatus.textContent = `APIキー: ${status}${suffix}`;
+    const suffix = saved && !settings.chatApiKeyEnabled ? " (\u4F7F\u7528\u30AA\u30D5)" : "";
+    chatApiKeyStatus.textContent = `API\u30AD\u30FC: ${status}${suffix}`;
   }
   function ensureThemeListener() {
     if (themeQuery) return;
@@ -2633,6 +2595,114 @@
     const docEl = document.documentElement;
     docEl.dataset.qbTheme = resolveTheme();
     docEl.dataset.qbAccent = settings.pageAccentEnabled ? "on" : "off";
+    scheduleContentThemeRepair();
+  }
+  var CONTENT_CONTRAST_ROOT_SELECTOR = [
+    ".html_renderer",
+    ".resultcontent",
+    ".resultContent",
+    ".result-content",
+    "#resultcontent",
+    "#answerSection"
+  ].join(",");
+  var PROTECTED_EXAM_IMAGE_SELECTOR = 'img[src*="/exam_images_kokushi/"]';
+  function parseComputedRgb(value) {
+    const match = value.match(
+      /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/i
+    );
+    if (!match) return null;
+    return {
+      r: Number(match[1]),
+      g: Number(match[2]),
+      b: Number(match[3]),
+      a: match[4] === void 0 ? 1 : Number(match[4])
+    };
+  }
+  function compositeCssColor(foreground, background) {
+    const alpha = Math.max(0, Math.min(1, foreground.a));
+    return {
+      r: foreground.r * alpha + background.r * (1 - alpha),
+      g: foreground.g * alpha + background.g * (1 - alpha),
+      b: foreground.b * alpha + background.b * (1 - alpha),
+      a: 1
+    };
+  }
+  function getEffectiveElementBackground(element) {
+    const layers = [];
+    for (let current = element; current; current = current.parentElement) {
+      const color = parseComputedRgb(getComputedStyle(current).backgroundColor);
+      if (color && color.a > 0.01) layers.push(color);
+      if (color?.a && color.a >= 0.995) break;
+    }
+    let result = { r: 255, g: 255, b: 255, a: 1 };
+    for (let index = layers.length - 1; index >= 0; index -= 1) {
+      result = compositeCssColor(layers[index], result);
+    }
+    return result;
+  }
+  function relativeLuminance(color) {
+    const channels = [color.r, color.g, color.b].map((value) => {
+      const normalized = Math.max(0, Math.min(255, value)) / 255;
+      return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  }
+  function isProtectedContentImageSurface(element) {
+    if (element.matches(PROTECTED_EXAM_IMAGE_SELECTOR)) return true;
+    const figure = element.closest("figure");
+    if (figure?.querySelector(PROTECTED_EXAM_IMAGE_SELECTOR)) return true;
+    const paragraph = element.closest("p");
+    return Boolean(
+      paragraph && Array.from(paragraph.children).some(
+        (child) => child.tagName === "FIGURE" && Boolean(child.querySelector(PROTECTED_EXAM_IMAGE_SELECTOR))
+      )
+    );
+  }
+  function normalizeDarkContentSurfaces() {
+    const roots = Array.from(document.querySelectorAll(CONTENT_CONTRAST_ROOT_SELECTOR));
+    const elements = /* @__PURE__ */ new Set();
+    roots.forEach((root2) => {
+      elements.add(root2);
+      root2.querySelectorAll("*").forEach((element) => elements.add(element));
+    });
+    elements.forEach((element) => {
+      element.removeAttribute("data-qb-support-dark-surface");
+      element.removeAttribute("data-qb-support-dark-content");
+    });
+    if (resolveTheme() !== "dark") return;
+    let surfaces = 0;
+    elements.forEach((element) => {
+      if (element.closest("[id^='qb-support-'], [class*='qb-support-']")) return;
+      if (isProtectedContentImageSurface(element)) return;
+      const computed = getComputedStyle(element);
+      if (computed.visibility === "hidden" || computed.display === "none" || Number(computed.opacity) < 0.2) return;
+      const ownBackground = parseComputedRgb(computed.backgroundColor);
+      if (!ownBackground || ownBackground.a < 0.05) return;
+      const background = getEffectiveElementBackground(element);
+      const channels = [background.r, background.g, background.b];
+      const neutralSpread = Math.max(...channels) - Math.min(...channels);
+      if (neutralSpread > 48 || relativeLuminance(background) < 0.45) return;
+      element.setAttribute("data-qb-support-dark-surface", "");
+      surfaces += 1;
+    });
+    elements.forEach((element) => {
+      if (!element.closest("[data-qb-support-dark-surface]")) return;
+      const hasDirectText = Array.from(element.childNodes).some(
+        (node) => node.nodeType === Node.TEXT_NODE && Boolean(node.textContent?.trim())
+      );
+      if (!hasDirectText) return;
+      element.setAttribute("data-qb-support-dark-content", "");
+    });
+    if (surfaces && settings.debugEnabled) {
+      console.debug("[QB_SUPPORT][theme] normalized light explanation surfaces", { surfaces });
+    }
+  }
+  function scheduleContentThemeRepair() {
+    if (contentThemeRepairFrame !== null) return;
+    contentThemeRepairFrame = window.requestAnimationFrame(() => {
+      contentThemeRepairFrame = null;
+      normalizeDarkContentSurfaces();
+    });
   }
   function ensureChatLayoutHandler() {
     if (chatLayoutBound) return;
@@ -2682,7 +2752,7 @@
   }
   function updateTemplateControls() {
     if (templateCountLabel) {
-      templateCountLabel.textContent = `テンプレ数: ${getTemplateCount()}`;
+      templateCountLabel.textContent = `\u30C6\u30F3\u30D7\u30EC\u6570: ${getTemplateCount()}`;
     }
     if (templateAddButton) {
       templateAddButton.disabled = getTemplateCount() >= CHAT_TEMPLATE_MAX;
@@ -2704,16 +2774,15 @@
       chatTemplates: nextTemplates
     });
   }
-  function isHintTemplate(template) {
-    if (!template) return false;
-    const hintPhrase = "絶妙なヒント";
+  var HINT_PHRASE = "\u7D76\u5999\u306A\u30D2\u30F3\u30C8";
+  function isHintTemplateSetting(template) {
     const label = template.label ?? "";
     const prompt = template.prompt ?? "";
-    return label.includes("ヒント") || label.includes(hintPhrase) || prompt.includes(hintPhrase);
+    return label.includes("\u30D2\u30F3\u30C8") || label.includes(HINT_PHRASE) || prompt.includes(HINT_PHRASE);
   }
   function getHintTemplate() {
     for (const entry of getEnabledChatTemplatesWithIndex()) {
-      if (isHintTemplate(entry.template)) {
+      if (isHintTemplateSetting(entry.template)) {
         return entry;
       }
     }
@@ -2733,10 +2802,6 @@
       ensureChatUI();
     }
     const openPanel = () => {
-      if (!lastSettingsToggleSource) {
-        setSettingsToggleSource("template-editor", { index });
-        logDebug("template-editor-open", { index });
-      }
       toggleChatSettings(true);
       setSectionCollapsed(templateSectionEl, false);
       const row = chatTemplateRows[index];
@@ -2751,7 +2816,6 @@
     }
   }
   function attachTemplateEditJump(button, index) {
-    if (!settings.debugEnabled) return;
     if (button.dataset.editJump === "true") return;
     button.dataset.editJump = "true";
     let hoverTimer = null;
@@ -2768,8 +2832,6 @@
     button.addEventListener("mouseenter", () => {
       clearHover();
       hoverTimer = window.setTimeout(() => {
-        setSettingsToggleSource("template-hover", { index });
-        logDebug("template-hover", { index });
         openTemplateEditor(index);
       }, 900);
     });
@@ -2780,8 +2842,6 @@
       clearPress();
       pressTimer = window.setTimeout(() => {
         longPressTriggered = true;
-        setSettingsToggleSource("template-longpress", { index });
-        logDebug("template-longpress", { index });
         openTemplateEditor(index);
       }, 650);
     });
@@ -2802,25 +2862,15 @@
       true
     );
   }
-  function buildHintQuickMessage(draft) {
-    const base = "絶妙なヒント（答えありきでなく、所見や症状から推論する視点で思考力を養う答えに迫りすぎないもの）をどうぞ。";
+  function appendHintDraft(message, draft) {
+    const base = message.trim();
     if (!draft) return base;
-    return `${base}今の考察は以下です.\"${draft}\"`;
+    if (base.includes("\u4ECA\u306E\u8003\u5BDF\u306F\u4EE5\u4E0B\u3067\u3059")) return base;
+    return `${base}\u4ECA\u306E\u8003\u5BDF\u306F\u4EE5\u4E0B\u3067\u3059."${draft}"`;
   }
-  function logInfo(...args) {
-    if (!settings.debugEnabled) return;
-    globalThis.console.log(...args);
-  }
-  function logVerbose(...args) {
-    if (!settings.debugEnabled) return;
-    globalThis.console.debug(...args);
-  }
-  function logDebug(event, meta) {
-    logInfo("[QB_SUPPORT][debug]", { event, ...(meta ?? {}) });
-  }
-  function setSettingsToggleSource(source, meta) {
-    lastSettingsToggleSource = source;
-    lastSettingsToggleMeta = meta ?? null;
+  function buildHintQuickMessage(draft) {
+    const base = "\u7D76\u5999\u306A\u30D2\u30F3\u30C8\uFF08\u7B54\u3048\u3042\u308A\u304D\u3067\u306A\u304F\u3001\u6240\u898B\u3084\u75C7\u72B6\u304B\u3089\u63A8\u8AD6\u3059\u308B\u8996\u70B9\u3067\u601D\u8003\u529B\u3092\u990A\u3046\u7B54\u3048\u306B\u8FEB\u308A\u3059\u304E\u306A\u3044\u3082\u306E\uFF09\u3092\u3069\u3046\u305E\u3002";
+    return appendHintDraft(base, draft);
   }
   function isEligibleHintDraftSource(target) {
     if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return false;
@@ -2833,77 +2883,26 @@
     if (target.classList.contains("qb-support-chat-api-key")) return false;
     return true;
   }
-  function getHintDraftPreview(value) {
-    if (!value) return "";
-    return value.length > 60 ? `${value.slice(0, 60)}...` : value;
-  }
-  function getHintAnswerPreview(value) {
-    if (!value) return "";
-    const normalized = normalizeSpace(value);
-    return normalized.length > 120 ? `${normalized.slice(0, 120)}...` : normalized;
-  }
-  function isSupportUiElement(element) {
-    if (!(element instanceof HTMLElement)) return false;
-    return Boolean(element.closest("[id^='qb-support-'], [class*='qb-support']"));
-  }
-  function stripSupportUi(root) {
-    if (!root) return;
-    root.querySelectorAll("[id^='qb-support-'], [class*='qb-support']").forEach((node) => node.remove());
-  }
-  function summarizeHintDraftSource(target, value) {
-    return {
-      tag: target.tagName,
-      type: target instanceof HTMLInputElement ? (target.type || "text").toLowerCase() : null,
-      id: target.id || null,
-      name: target.name || null,
-      className: target.className || null,
-      valueLength: value.length,
-      valuePreview: getHintDraftPreview(value),
-      frame: window === window.top ? "top" : "iframe",
-      url: location.href
-    };
-  }
   function resolveHintDraft() {
     const chatDraft = chatInput?.value?.trim() ?? "";
-    if (chatDraft) {
-      logDebug("hint-draft-resolve", {
-        used: "chat-input",
-        valueLength: chatDraft.length,
-        valuePreview: getHintDraftPreview(chatDraft)
-      });
-      return chatDraft;
-    }
+    if (chatDraft) return chatDraft;
     const chatTextarea = document.querySelector(
       ".qb-support-chat-textarea"
     );
     const fallbackDraft = chatTextarea?.value?.trim() ?? "";
-    if (fallbackDraft) {
-      logDebug("hint-draft-resolve", {
-        used: "chat-textarea",
-        valueLength: fallbackDraft.length,
-        valuePreview: getHintDraftPreview(fallbackDraft)
-      });
-      return fallbackDraft;
-    }
+    if (fallbackDraft) return fallbackDraft;
     if (lastHintDraftSource && document.contains(lastHintDraftSource)) {
       const value = lastHintDraftSource.value?.trim() ?? "";
-      if (value) {
-        logDebug("hint-draft-resolve", {
-          used: "last-source",
-          ...summarizeHintDraftSource(lastHintDraftSource, value)
-        });
-        return value;
-      }
-      logDebug("hint-draft-resolve", {
-        used: "last-source-empty",
-        ...summarizeHintDraftSource(lastHintDraftSource, value)
-      });
-      return "";
+      if (value) return value;
     }
-    logDebug("hint-draft-resolve", { used: "none" });
     return "";
   }
   function updateHintQuickButton() {
+    if (!CHAT_ENABLED) {
+      hintQuickButton?.remove();
+      hintQuickButton = null;
+      return;
+    }
     if (window !== window.top) return;
     const hintEntry = getHintTemplate();
     if (!hintEntry) {
@@ -2927,7 +2926,7 @@
       hintQuickButton.className = "qb-support-chat-template-btn qb-support-hint-quick";
       applyButtonVariant(hintQuickButton, "accent");
     }
-    hintQuickButton.textContent = "ヒント";
+    hintQuickButton.textContent = "\u30D2\u30F3\u30C8";
     if (hintEntry.template.shortcut) {
       hintQuickButton.dataset.shortcut = hintEntry.template.shortcut;
     } else {
@@ -2937,10 +2936,7 @@
       if (!chatInput) {
         ensureChatUI();
       }
-      const draft = resolveHintDraft();
-      setSettingsToggleSource("hint-click", { draftLength: draft.length });
-      logDebug("hint-click", { draftLength: draft.length, hasDraft: Boolean(draft) });
-      const message = buildHintQuickMessage(draft);
+      const message = buildHintQuickMessage(resolveHintDraft());
       void sendTemplateMessage(message);
     };
     attachTemplateEditJump(hintQuickButton, hintEntry.index);
@@ -2952,31 +2948,29 @@
   }
   function updateChatTemplatesUI() {
     if (!chatTemplateBar) return;
+    const templateBar = chatTemplateBar;
     const templates = getEnabledChatTemplatesWithIndex();
-    chatTemplateBar.innerHTML = "";
+    templateBar.innerHTML = "";
     if (templates.length === 0) {
-      chatTemplateBar.style.display = "none";
+      templateBar.style.display = "none";
       updateHintQuickButton();
       return;
     }
-    chatTemplateBar.style.display = "flex";
+    templateBar.style.display = "flex";
     templates.forEach(({ template, index }) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "qb-support-chat-template-btn";
       applyButtonVariant(button, "accent");
-      button.textContent = template.label || `テンプレ${index + 1}`;
+      button.textContent = template.label || `\u30C6\u30F3\u30D7\u30EC${index + 1}`;
       if (template.shortcut) {
         button.dataset.shortcut = template.shortcut;
       }
       button.addEventListener("click", () => {
-        const label = button.textContent ?? "";
-        setSettingsToggleSource("template-click", { index, label });
-        logDebug("template-click", { index, label });
         void sendTemplateMessage(template);
       });
       attachTemplateEditJump(button, index);
-      chatTemplateBar.appendChild(button);
+      templateBar.appendChild(button);
     });
     updateHintQuickButton();
   }
@@ -2999,7 +2993,7 @@
         const nextModel = select.value ?? "";
         if (!nextModel) return;
         void saveSettings({ ...settings, chatModel: nextModel });
-        setChatStatus(`モデルを ${nextModel} に設定しました`, false);
+        setChatStatus(`\u30E2\u30C7\u30EB\u3092 ${nextModel} \u306B\u8A2D\u5B9A\u3057\u307E\u3057\u305F`, false);
       });
     };
     bind(chatModelInput);
@@ -3010,29 +3004,12 @@
     if (chatSettingsButton.dataset.handlers === "true") return;
     chatSettingsButton.dataset.handlers = "true";
     chatSettingsButton.addEventListener("click", () => {
-      const label = chatSettingsButton.textContent ?? "";
-      setSettingsToggleSource("settings-button", { label });
-      logDebug("settings-button-click", { label });
       toggleChatSettings();
     });
   }
   function toggleChatSettings(force) {
     if (!chatSettingsPanel || !chatSettingsButton) return;
     const nextOpen = typeof force === "boolean" ? force : !chatSettingsOpen;
-    const meta = {
-      source: lastSettingsToggleSource ?? "unknown",
-      meta: lastSettingsToggleMeta,
-      force,
-      nextOpen,
-      prevOpen: chatSettingsOpen,
-      chatOpen: settings.chatOpen
-    };
-    if (!lastSettingsToggleSource) {
-      meta.stack = new Error("toggleChatSettings").stack;
-    }
-    logDebug("toggle-chat-settings", meta);
-    lastSettingsToggleSource = null;
-    lastSettingsToggleMeta = null;
     if (chatSettingsOpen && !nextOpen) {
       void commitSettingsFromPanel();
     }
@@ -3106,7 +3083,7 @@
     }
     if (chatTemplateRows.length) {
       const nextTemplates = chatTemplateRows.map((row, index) => {
-        const label = row.label.value.trim() || `テンプレ${index + 1}`;
+        const label = row.label.value.trim() || `\u30C6\u30F3\u30D7\u30EC${index + 1}`;
         const shortcut = normalizeShortcut(row.shortcut.value);
         const prompt = row.prompt.value.trim();
         return {
@@ -3120,7 +3097,7 @@
         (template) => template.enabled && !template.prompt
       );
       if (hasInvalidTemplate) {
-        setStatus("有効なテンプレはプロンプト必須です", true);
+        setStatus("\u6709\u52B9\u306A\u30C6\u30F3\u30D7\u30EC\u306F\u30D7\u30ED\u30F3\u30D7\u30C8\u5FC5\u9808\u3067\u3059", true);
       } else if (JSON.stringify(nextTemplates) !== JSON.stringify(settings.chatTemplates ?? [])) {
         applyUpdate("chatTemplates", nextTemplates);
       }
@@ -3246,20 +3223,20 @@
     }
     if (!authProfile) {
       if (apiKey && !apiKeyValid) {
-        throw new Error("APIキーが無効です。Googleでログインしてください");
+        throw new Error("API\u30AD\u30FC\u304C\u7121\u52B9\u3067\u3059\u3002Google\u3067\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044");
       }
       if (apiKey) {
-        throw new Error("APIキーを有効にするか、Googleでログインしてください");
+        throw new Error("API\u30AD\u30FC\u3092\u6709\u52B9\u306B\u3059\u308B\u304B\u3001Google\u3067\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044");
       }
-      throw new Error("APIキーを設定するか、Googleでログインしてください");
+      throw new Error("API\u30AD\u30FC\u3092\u8A2D\u5B9A\u3059\u308B\u304B\u3001Google\u3067\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u304F\u3060\u3055\u3044");
     }
     const backendBaseUrl = resolveBackendBaseUrl();
     if (!backendBaseUrl) {
-      throw new Error("バックエンドURLが未設定です。管理者に連絡してください");
+      throw new Error("\u30D0\u30C3\u30AF\u30A8\u30F3\u30C9URL\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002\u7BA1\u7406\u8005\u306B\u9023\u7D61\u3057\u3066\u304F\u3060\u3055\u3044");
     }
     const token = await ensureAuthAccessToken(false);
     if (!token) {
-      throw new Error("認証トークンを取得できませんでした");
+      throw new Error("\u8A8D\u8A3C\u30C8\u30FC\u30AF\u30F3\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
     }
     return { mode: "backend", backendUrl: backendBaseUrl, authToken: token };
   }
@@ -3278,17 +3255,8 @@
     }
   }
   async function sendTemplateMessage(template) {
-    let rawMessage = "";
-    if (typeof template === "string") {
-      rawMessage = template;
-    } else if (isHintTemplate(template)) {
-      const draft = resolveHintDraft();
-      setSettingsToggleSource("hint-template", { draftLength: draft.length });
-      logDebug("hint-template", { draftLength: draft.length, hasDraft: Boolean(draft) });
-      rawMessage = buildHintQuickMessage(draft);
-    } else {
-      rawMessage = template?.prompt ?? "";
-    }
+    if (!CHAT_ENABLED) return;
+    const rawMessage = typeof template === "string" ? template : template.prompt;
     if (!rawMessage.trim()) return;
     const message = applyTemplateConstraints(rawMessage, template);
     const auth = await resolveChatAuthWithStatus();
@@ -3302,6 +3270,9 @@
     void handleChatSend();
   }
   function applyTemplateConstraints(message, template) {
+    if (typeof template !== "string" && isHintTemplateSetting(template)) {
+      return appendHintDraft(message, resolveHintDraft());
+    }
     return message;
   }
   function applyButtonVariant(button, variant) {
@@ -3395,11 +3366,11 @@
     const layout = document.documentElement.dataset.qbChatLayout;
     const open = settings.chatOpen;
     if (layout === "overlay-bottom") {
-      chatToggle.textContent = open ? "▼" : "▲";
+      chatToggle.textContent = open ? "\u25BC" : "\u25B2";
     } else {
       chatToggle.textContent = open ? ">" : "<";
     }
-    chatToggle.setAttribute("aria-label", open ? "チャットを閉じる" : "チャットを開く");
+    chatToggle.setAttribute("aria-label", open ? "\u30C1\u30E3\u30C3\u30C8\u3092\u9589\u3058\u308B" : "\u30C1\u30E3\u30C3\u30C8\u3092\u958B\u304F");
   }
   function focusChatInput() {
     if (!chatInput) return;
@@ -3408,6 +3379,7 @@
     }, 0);
   }
   function toggleChatInputFocus() {
+    if (!CHAT_ENABLED) return;
     ensureChatUI();
     if (!chatInput) return;
     const isActive = document.activeElement === chatInput;
@@ -3436,6 +3408,11 @@
       chatComposing = false;
     });
     chatInput?.addEventListener("keydown", (event) => {
+      if (isShortcutMatch(event, CHAT_INPUT_TOGGLE_SHORTCUT) && !event.isComposing && !chatComposing) {
+        consumeShortcutEvent(event);
+        toggleChatInputFocus();
+        return;
+      }
       if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !chatComposing) {
         event.preventDefault();
         void handleChatSend();
@@ -3457,7 +3434,7 @@
     chatRequestPending = true;
     const requestId = createChatRequestId();
     activeChatRequestId = requestId;
-    const placeholder = appendChatMessage("assistant", "回答中...", { pending: true });
+    const placeholder = appendChatMessage("assistant", "\u56DE\u7B54\u4E2D...", { pending: true });
     const effectiveModel = auth.mode === "backend" ? resolveBackendModel(settings.chatModel) : settings.chatModel;
     const useThinking = effectiveModel.startsWith("gpt-5");
     let thinkingTimer = null;
@@ -3477,7 +3454,7 @@
           }
         }, 1200);
       }
-      logVerbose("[QB_SUPPORT][chat-send]", {
+      console.debug("[QB_SUPPORT][chat-send]", {
         hasSnapshot: Boolean(snapshot),
         history: chatHistory.length
       });
@@ -3498,16 +3475,16 @@
           }
           streamState.text += delta;
           if (placeholder) {
-            setChatMessageContent(placeholder, "assistant", streamState.text || "回答中...");
+            setChatMessageContent(placeholder, "assistant", streamState.text || "\u56DE\u7B54\u4E2D...");
             placeholder.classList.remove("is-pending");
-            chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+            scrollChatToBottom();
           }
         }
       );
       if (activeChatRequestId !== requestId) return;
       const finalText = response.text || streamState.text;
       if (placeholder) {
-        setChatMessageContent(placeholder, "assistant", finalText || "応答がありません");
+        setChatMessageContent(placeholder, "assistant", finalText || "\u5FDC\u7B54\u304C\u3042\u308A\u307E\u305B\u3093");
         placeholder.classList.remove("is-pending");
       } else if (finalText) {
         const message = appendChatMessage("assistant", finalText);
@@ -3534,11 +3511,11 @@
     } catch (error) {
       if (activeChatRequestId !== requestId) return;
       if (placeholder) {
-        placeholder.textContent = "応答に失敗しました";
+        placeholder.textContent = "\u5FDC\u7B54\u306B\u5931\u6557\u3057\u307E\u3057\u305F";
         placeholder.classList.remove("is-pending");
       }
       console.warn("[QB_SUPPORT][chat-error]", error);
-      setChatStatus(`エラー: ${String(error)}`, true);
+      setChatStatus(`\u30A8\u30E9\u30FC: ${String(error)}`, true);
     } finally {
       if (thinkingTimer) window.clearTimeout(thinkingTimer);
       if (activeChatRequestId === requestId) {
@@ -3566,7 +3543,7 @@
       applyUserMessageCollapse(message, content);
     }
     chatMessagesEl.appendChild(message);
-    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+    scrollChatToBottom();
     return message;
   }
   function setChatMessageContent(message, role, content) {
@@ -3582,6 +3559,39 @@
     } else {
       contentEl.textContent = content;
     }
+  }
+  function ensureChatScrollHandler() {
+    if (!chatMessagesEl) return;
+    if (chatMessagesEl.dataset.scrollHandlers === "true") return;
+    chatMessagesEl.dataset.scrollHandlers = "true";
+    chatAutoScrollEnabled = isChatNearBottom();
+    chatLastScrollTop = chatMessagesEl.scrollTop;
+    chatMessagesEl.addEventListener("scroll", () => {
+      const currentTop = chatMessagesEl?.scrollTop ?? 0;
+      if (chatScrollProgrammatic) {
+        chatScrollProgrammatic = false;
+        chatLastScrollTop = currentTop;
+        return;
+      }
+      if (currentTop < chatLastScrollTop) {
+        chatAutoScrollEnabled = false;
+      } else if (isChatNearBottom()) {
+        chatAutoScrollEnabled = true;
+      }
+      chatLastScrollTop = currentTop;
+    });
+  }
+  function isChatNearBottom() {
+    if (!chatMessagesEl) return true;
+    const threshold = 24;
+    const bottom = chatMessagesEl.scrollHeight - chatMessagesEl.clientHeight;
+    return bottom - chatMessagesEl.scrollTop <= threshold;
+  }
+  function scrollChatToBottom(force = false) {
+    if (!chatMessagesEl) return;
+    if (!force && !chatAutoScrollEnabled) return;
+    chatScrollProgrammatic = true;
+    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
   }
   function renderMarkdown(text) {
     const escaped = escapeHtml(text.replace(/\r\n/g, "\n"));
@@ -3646,7 +3656,7 @@
     button.type = "button";
     button.className = "qb-support-chat-copy";
     applyButtonVariant(button, "ghost");
-    button.textContent = "コピー";
+    button.textContent = "\u30B3\u30D4\u30FC";
     button.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -3654,14 +3664,14 @@
       if (!text) return;
       try {
         await navigator.clipboard.writeText(text);
-        button.textContent = "コピー済み";
+        button.textContent = "\u30B3\u30D4\u30FC\u6E08\u307F";
         window.setTimeout(() => {
-          button.textContent = "コピー";
+          button.textContent = "\u30B3\u30D4\u30FC";
         }, 1200);
       } catch {
-        button.textContent = "失敗";
+        button.textContent = "\u5931\u6557";
         window.setTimeout(() => {
-          button.textContent = "コピー";
+          button.textContent = "\u30B3\u30D4\u30FC";
         }, 1200);
       }
     });
@@ -3670,7 +3680,7 @@
   function applyUserMessageCollapse(message, content) {
     const words = content.trim().split(/\s+/).filter(Boolean);
     if (words.length <= 400) return;
-    const preview = `${words.slice(0, 400).join(" ")} … (クリックで展開)`;
+    const preview = `${words.slice(0, 400).join(" ")} \u2026 (\u30AF\u30EA\u30C3\u30AF\u3067\u5C55\u958B)`;
     const contentEl = message.querySelector(".qb-support-chat-content");
     if (!contentEl) return;
     message.classList.add("is-collapsible", "is-collapsed");
@@ -3706,9 +3716,9 @@
     if (!totalTokens) return null;
     const pricing = MODEL_PRICING_USD_PER_1M[model];
     const cost = pricing ? (inputTokens * pricing.input + outputTokens * pricing.output) / 1e6 * USD_TO_JPY : null;
-    const costLabel = cost !== null ? `\xA5${cost.toFixed(2)} (概算)` : "\xA5-";
+    const costLabel = cost !== null ? `\xA5${cost.toFixed(2)} (\u6982\u7B97)` : "\xA5-";
     const source = mode === "backend" ? "backend" : "frontend";
-    return `source: ${source} ・ model: ${model} ・ tokens: ${totalTokens} (in ${inputTokens} / out ${outputTokens}) ・ ${costLabel}`;
+    return `source: ${source} \u30FB model: ${model} \u30FB tokens: ${totalTokens} (in ${inputTokens} / out ${outputTokens}) \u30FB ${costLabel}`;
   }
   function createChatRequestId() {
     if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -3723,179 +3733,6 @@
     const snapshot = await requestQuestionSnapshotFromFrame(900);
     return snapshot ?? null;
   }
-  function ensureAnswerFrame(questionId) {
-    if (!questionId) return;
-    if (!document.body) return;
-    if (answerFrameEl && answerFrameEl.dataset.qid === questionId) return;
-    if (answerFrameEl) {
-      answerFrameEl.remove();
-      answerFrameEl = null;
-    }
-    const iframe = document.createElement("iframe");
-    iframe.src = `https://input.medilink-study.com/qbdispv2.php?id=${encodeURIComponent(questionId)}`;
-    iframe.dataset.qid = questionId;
-    iframe.dataset.loaded = "false";
-    Object.assign(iframe.style, {
-      position: "fixed",
-      width: "1px",
-      height: "1px",
-      opacity: "0",
-      pointerEvents: "none",
-      border: "0",
-      right: "0",
-      bottom: "0"
-    });
-    iframe.addEventListener("load", () => {
-      iframe.dataset.loaded = "true";
-      if (!answerContextWanted) return;
-      const watchMessage = {
-        __qb_support: true,
-        type: "QB_ANSWER_WATCH_START",
-        timeoutMs: 1500
-      };
-      postToAnswerFrame(watchMessage);
-      if (settings.debugEnabled && pendingAnswerScanId) {
-        postToAnswerFrame({
-          __qb_support: true,
-          type: "QB_ANSWER_GLOBAL_SCAN",
-          scanId: pendingAnswerScanId
-        });
-      }
-    });
-    document.body.appendChild(iframe);
-    answerFrameEl = iframe;
-  }
-  function waitForAnswerContext(timeoutMs) {
-    if (cachedAnswerContext?.text) {
-      return Promise.resolve(cachedAnswerContext);
-    }
-    return new Promise((resolve) => {
-      const resolver = (context) => {
-        resolve(context ?? { text: "", meta: null });
-      };
-      pendingAnswerResolvers.push(resolver);
-      window.setTimeout(() => {
-        const index = pendingAnswerResolvers.indexOf(resolver);
-        if (index !== -1) pendingAnswerResolvers.splice(index, 1);
-        resolve(cachedAnswerContext ?? { text: "", meta: null });
-      }, timeoutMs);
-    });
-  }
-  function startAnswerObserver(options = {}) {
-    if (answerObserverBound) return;
-    answerObserverBound = true;
-    if (!document.body) {
-      window.addEventListener("DOMContentLoaded", () => startAnswerObserver(), { once: true });
-      return;
-    }
-    const emit = () => {
-      const context = extractAnswerExplanationContext(document);
-      if (!context.text) return;
-      if (context.text === lastAnswerContextText) return;
-      lastAnswerContextText = context.text;
-      logDebug("hint-answer-push", context.meta ?? { source: "observer" });
-      sendAnswerContextPush(context);
-      if (options.once) {
-        stopAnswerObserver();
-      }
-    };
-    let observerTimer = null;
-    const observer = new MutationObserver(() => {
-      if (observerTimer) window.clearTimeout(observerTimer);
-      observerTimer = window.setTimeout(emit, 200);
-    });
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true
-    });
-    answerObserver = observer;
-    emit();
-  }
-  function stopAnswerObserver() {
-    if (answerObserver) {
-      try {
-        answerObserver.disconnect();
-      } catch {
-      }
-    }
-    answerObserver = null;
-    answerObserverBound = false;
-  }
-  async function resolveHintAnswerContext(snapshot) {
-    if (cachedAnswerContext?.text) {
-      logDebug("hint-answer-context", cachedAnswerContext.meta ?? {
-        source: "cache",
-        length: cachedAnswerContext.text.length,
-        preview: getHintAnswerPreview(cachedAnswerContext.text)
-      });
-      return cachedAnswerContext.text;
-    }
-    answerContextWanted = true;
-    pendingAnswerScanId = createChatRequestId();
-    const local = extractAnswerExplanationContext(document);
-    if (local.text) {
-      cachedAnswerContext = local;
-      logDebug("hint-answer-context", local.meta ?? {
-        source: "local",
-        length: local.text.length,
-        preview: getHintAnswerPreview(local.text)
-      });
-      answerContextWanted = false;
-      pendingAnswerScanId = null;
-      return local.text;
-    }
-    if (window !== window.top) return "";
-    const questionId = snapshot?.id ?? questionIdFromUrl(location.href);
-    if (questionId) {
-      ensureAnswerFrame(questionId);
-      const watchMessage = {
-        __qb_support: true,
-        type: "QB_ANSWER_WATCH_START",
-        timeoutMs: 1500
-      };
-      postToAnswerFrame(watchMessage);
-      postToInputFrame(watchMessage);
-      if (settings.debugEnabled && pendingAnswerScanId) {
-        const scanMessage = {
-          __qb_support: true,
-          type: "QB_ANSWER_GLOBAL_SCAN",
-          scanId: pendingAnswerScanId
-        };
-        postToAnswerFrame(scanMessage);
-        postToInputFrame(scanMessage);
-      }
-    }
-    const awaited = await waitForAnswerContext(1200);
-    if (awaited?.text) {
-      cachedAnswerContext = awaited;
-      logDebug("hint-answer-context", awaited.meta ?? {
-        source: "observer",
-        length: awaited.text.length,
-        preview: getHintAnswerPreview(awaited.text)
-      });
-      answerContextWanted = false;
-      pendingAnswerScanId = null;
-      return awaited.text;
-    }
-    const response = await requestAnswerContextFromFrame(900);
-    const resolved = response?.text ?? "";
-    if (resolved) {
-      cachedAnswerContext = response;
-    }
-    if (response?.meta) {
-      logDebug("hint-answer-context", response.meta);
-    } else {
-      logDebug("hint-answer-context", {
-        source: resolved ? "frame" : "empty",
-        length: resolved.length,
-        preview: getHintAnswerPreview(resolved)
-      });
-    }
-    answerContextWanted = false;
-    pendingAnswerScanId = null;
-    return resolved;
-  }
   async function buildChatRequest(snapshot, userMessage, includeContext) {
     const input = [];
     if (includeContext) {
@@ -3905,31 +3742,21 @@
       role: "user",
       content: [{ type: "input_text", text: userMessage }]
     });
-    const hintAnswerText = isHintMessage(userMessage) ? await resolveHintAnswerContext(snapshot) : "";
-    return { input, instructions: buildChatInstructions(hintAnswerText) };
+    return { input, instructions: buildChatInstructions() };
   }
-  function buildChatInstructions(hintAnswerText) {
+  function buildChatInstructions() {
     const levelKey = settings.explanationLevel ?? "med-junior";
     const levelLabel = EXPLANATION_LEVEL_LABELS[levelKey] ?? levelKey;
     const prompt = settings.explanationPrompts?.[levelKey] ?? "";
     const commonPrompt = settings.commonPrompt?.trim() ?? "";
-    const lines = [
-      "あなたはQB問題集の学習支援アシスタントです。",
-      "与えられた問題文・選択肢・添付画像に基づいて、日本語で簡潔に答えてください。",
-      "情報が不足している場合は、その旨を伝えてください。",
+    return [
+      "\u3042\u306A\u305F\u306FQB\u554F\u984C\u96C6\u306E\u5B66\u7FD2\u652F\u63F4\u30A2\u30B7\u30B9\u30BF\u30F3\u30C8\u3067\u3059\u3002",
+      "\u4E0E\u3048\u3089\u308C\u305F\u554F\u984C\u6587\u30FB\u9078\u629E\u80A2\u30FB\u6DFB\u4ED8\u753B\u50CF\u306B\u57FA\u3065\u3044\u3066\u3001\u65E5\u672C\u8A9E\u3067\u7C21\u6F54\u306B\u7B54\u3048\u3066\u304F\u3060\u3055\u3044\u3002",
+      "\u60C5\u5831\u304C\u4E0D\u8DB3\u3057\u3066\u3044\u308B\u5834\u5408\u306F\u3001\u305D\u306E\u65E8\u3092\u4F1D\u3048\u3066\u304F\u3060\u3055\u3044\u3002",
       commonPrompt,
-      `解説レベル: ${levelLabel}`,
+      `\u89E3\u8AAC\u30EC\u30D9\u30EB: ${levelLabel}`,
       prompt
-    ];
-    const hintText = hintAnswerText?.trim() ?? "";
-    if (hintText) {
-      lines.push(
-        "以下は解説本文の抽出です。この内容に完全準拠する必要はないが、矛盾しないヒントを提示してください。",
-        "この解説本文を見ていることや内容を直接引用していることは出力に現さないでください。",
-        hintText
-      );
-    }
-    return lines.join("\n");
+    ].join("\n");
   }
   async function buildContextInput(snapshot) {
     const resolvedImages = await loadSnapshotImages(snapshot);
@@ -3944,26 +3771,26 @@
     return { role: "user", content };
   }
   function buildQuestionContext(snapshot, imageCountOverride) {
-    if (!snapshot) return "問題情報: 取得できませんでした。";
-    const lines = ["問題情報:"];
+    if (!snapshot) return "\u554F\u984C\u60C5\u5831: \u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002";
+    const lines = ["\u554F\u984C\u60C5\u5831:"];
     lines.push(`URL: ${snapshot.url}`);
     if (snapshot.id) lines.push(`ID: ${snapshot.id}`);
-    if (snapshot.progressText) lines.push(`進捗: ${snapshot.progressText}`);
-    if (snapshot.pageRef) lines.push(`掲載頁: ${snapshot.pageRef}`);
-    if (snapshot.tags.length) lines.push(`タグ: ${snapshot.tags.join(", ")}`);
-    if (snapshot.questionText) lines.push(`問題文: ${snapshot.questionText}`);
+    if (snapshot.progressText) lines.push(`\u9032\u6357: ${snapshot.progressText}`);
+    if (snapshot.pageRef) lines.push(`\u63B2\u8F09\u9801: ${snapshot.pageRef}`);
+    if (snapshot.tags.length) lines.push(`\u30BF\u30B0: ${snapshot.tags.join(", ")}`);
+    if (snapshot.questionText) lines.push(`\u554F\u984C\u6587: ${snapshot.questionText}`);
     if (snapshot.optionTexts.length) {
       const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
       const options = snapshot.optionTexts.map((text, index) => {
         const label = labels[index] ?? `${index + 1}`;
         return `${label}. ${text}`;
       });
-      lines.push("選択肢:");
+      lines.push("\u9078\u629E\u80A2:");
       lines.push(...options);
     }
     const imageCount = imageCountOverride ?? snapshot.imageUrls.length;
     if (imageCount) {
-      lines.push(`画像: ${imageCount}件`);
+      lines.push(`\u753B\u50CF: ${imageCount}\u4EF6`);
     }
     return lines.join("\n");
   }
@@ -4019,18 +3846,10 @@
     const prevId = currentSnapshot?.id ?? null;
     currentSnapshot = snapshot;
     if (prevId && snapshot.id && prevId !== snapshot.id) {
-      cachedAnswerContext = null;
-      lastAnswerContextText = "";
-      pendingAnswerScanId = null;
-      if (answerFrameEl) {
-        answerFrameEl.remove();
-        answerFrameEl = null;
-      }
-      stopAnswerObserver();
-      resetChatHistory("問題が切り替わったため履歴をリセットしました");
+      resetChatHistory("\u554F\u984C\u304C\u5207\u308A\u66FF\u308F\u3063\u305F\u305F\u3081\u5C65\u6B74\u3092\u30EA\u30BB\u30C3\u30C8\u3057\u307E\u3057\u305F");
     }
   }
-  function resetChatHistory(message = "問題が切り替わったため履歴をリセットしました") {
+  function resetChatHistory(message = "\u554F\u984C\u304C\u5207\u308A\u66FF\u308F\u3063\u305F\u305F\u3081\u5C65\u6B74\u3092\u30EA\u30BB\u30C3\u30C8\u3057\u307E\u3057\u305F") {
     cancelActiveChatRequest();
     chatHistory = [];
     chatLastResponseId = null;
@@ -4056,11 +3875,11 @@
   }
   async function requestChatResponseStream(request, auth, onDelta) {
     if (!webext.runtime?.connect) {
-      throw new Error("background接続が利用できません");
+      throw new Error("background\u63A5\u7D9A\u304C\u5229\u7528\u3067\u304D\u307E\u305B\u3093");
     }
     const port = webext.runtime.connect({ name: "qb-chat" });
     activeChatPort = port;
-    logVerbose("[QB_SUPPORT][chat-stream]", {
+    console.debug("[QB_SUPPORT][chat-stream]", {
       event: "connect",
       requestId: request.requestId
     });
@@ -4091,7 +3910,7 @@
             error: error.message
           });
         } else {
-          logVerbose("[QB_SUPPORT][chat-stream]", {
+          console.debug("[QB_SUPPORT][chat-stream]", {
             event: "finish",
             requestId: request.requestId,
             responseId,
@@ -4109,7 +3928,7 @@
         if (!message || typeof message !== "object") return;
         const payload = message;
         if (payload.requestId !== request.requestId || !payload.type) return;
-        logVerbose("[QB_SUPPORT][chat-stream]", {
+        console.debug("[QB_SUPPORT][chat-stream]", {
           event: "message",
           type: payload.type,
           requestId: payload.requestId
@@ -4130,7 +3949,7 @@
           return;
         }
         if (payload.type === "QB_CHAT_STREAM_ERROR") {
-          finish(new Error(payload.error ?? "応答に失敗しました"));
+          finish(new Error(payload.error ?? "\u5FDC\u7B54\u306B\u5931\u6557\u3057\u307E\u3057\u305F"));
         }
       };
       const onDisconnect = () => {
@@ -4142,12 +3961,12 @@
         });
         finish(
           new Error(
-            lastError ? `backgroundとの接続が切れました: ${lastError}` : "backgroundとの接続が切れました"
+            lastError ? `background\u3068\u306E\u63A5\u7D9A\u304C\u5207\u308C\u307E\u3057\u305F: ${lastError}` : "background\u3068\u306E\u63A5\u7D9A\u304C\u5207\u308C\u307E\u3057\u305F"
           )
         );
       };
       const timeoutId = window.setTimeout(() => {
-        finish(new Error("応答がタイムアウトしました"));
+        finish(new Error("\u5FDC\u7B54\u304C\u30BF\u30A4\u30E0\u30A2\u30A6\u30C8\u3057\u307E\u3057\u305F"));
       }, 12e4);
       port.onMessage.addListener(onMessage);
       port.onDisconnect.addListener(onDisconnect);
@@ -4187,7 +4006,7 @@
     }
   }
   function isAuthPromptMessage(message) {
-    return message.includes("ログイン") || message.includes("APIキーを設定") || message.includes("APIキーを有効");
+    return message.includes("\u30ED\u30B0\u30A4\u30F3") || message.includes("API\u30AD\u30FC\u3092\u8A2D\u5B9A") || message.includes("API\u30AD\u30FC\u3092\u6709\u52B9");
   }
   function showChatAuthPrompt(message) {
     if (!chatStatusField) return;
@@ -4197,13 +4016,13 @@
     chatAuthPromptActive = true;
     const text = document.createElement("div");
     text.className = "qb-support-chat-status-text";
-    text.textContent = message || "ログインして利用を開始してください。";
+    text.textContent = message || "\u30ED\u30B0\u30A4\u30F3\u3057\u3066\u5229\u7528\u3092\u958B\u59CB\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
     const actions = document.createElement("div");
     actions.className = "qb-support-chat-status-actions";
     const loginButton = document.createElement("button");
     loginButton.type = "button";
     loginButton.className = "qb-support-chat-auth-button";
-    loginButton.textContent = "Googleでログイン";
+    loginButton.textContent = "Google\u3067\u30ED\u30B0\u30A4\u30F3";
     applyButtonVariant(loginButton, "primary");
     loginButton.addEventListener("click", () => {
       void handleAuthSignIn();
@@ -4267,7 +4086,7 @@
     chatTemplateRows.forEach((row, index) => {
       const template = templates[index];
       row.enabled.checked = template?.enabled ?? false;
-      row.label.value = template?.label ?? `テンプレ${index + 1}`;
+      row.label.value = template?.label ?? `\u30C6\u30F3\u30D7\u30EC${index + 1}`;
       row.shortcut.value = template?.shortcut ?? "";
       row.prompt.value = template?.prompt ?? "";
       row.container.style.display = index < count ? "block" : "none";
@@ -4290,8 +4109,10 @@
     }
     if (window === window.top) {
       captureQuestionImageBaseSizes();
+      void syncReflectionPanel("refresh");
     }
     updateHintQuickButton();
+    scheduleContentThemeRepair();
   }
   function captureQuestionImageBaseSizes() {
     const container = document.querySelector(".question-container");
@@ -4326,6 +4147,8 @@
         const target = mutation.target;
         if (rootEl && rootEl.contains(target)) return true;
         if (chatEl && chatEl.contains(target)) return true;
+        const reflectionEl = document.getElementById(REFLECTION_CONTAINER_ID);
+        if (reflectionEl && reflectionEl.contains(target)) return true;
         return false;
       })) {
         return;
@@ -4345,28 +4168,1448 @@
       }
     }, 500);
   }
+  function getReflectionContext() {
+    const moshi = extractMoshiReflectionData(document, location.href);
+    if (moshi) {
+      return {
+        questionId: moshi.questionId,
+        legacyQuestionId: moshi.legacyQuestionId,
+        url: location.href,
+        info: moshi.info,
+        snapshot: moshi.snapshot
+      };
+    }
+    const info = extractQuestionInfo(document, location.href);
+    const snapshot = extractQuestionSnapshot(document, location.href);
+    const questionId = getReflectionQuestionId(
+      location.href,
+      info?.id ?? snapshot?.id ?? currentInfo?.id
+    );
+    if (!questionId) return null;
+    return {
+      questionId,
+      url: location.href,
+      info: info ?? currentInfo,
+      snapshot: snapshot ?? currentSnapshot
+    };
+  }
+  function findPageTextElement(matches) {
+    if (!document.body) return null;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node) {
+      const text = (node.nodeValue ?? "").trim().replace(/\s+/g, " ");
+      if (text && matches(text)) {
+        const element = node.parentElement;
+        if (element && !element.closest(
+          `#${ROOT_ID}, #${REFLECTION_CONTAINER_ID}, [data-testid^="side-"]`
+        ) && !element.closest("script, style, template")) {
+          return element;
+        }
+      }
+      node = walker.nextNode();
+    }
+    return null;
+  }
+  function getReflectionPlacement() {
+    const moshiPlacement = getMoshiReflectionPlacement(document);
+    if (moshiPlacement) return moshiPlacement;
+    const legacyExplanation = document.querySelector(
+      "#resultcontent, .resultcontent, .resultContent, .result-content"
+    );
+    if (legacyExplanation?.parentNode && (legacyExplanation.textContent ?? "").trim()) {
+      return {
+        parent: legacyExplanation.parentNode,
+        before: legacyExplanation.nextSibling
+      };
+    }
+    const explanationHeading = findPageTextElement((text) => text === "\u89E3\u8AAC");
+    if (!explanationHeading) return null;
+    const pageReference = findPageTextElement((text) => text.startsWith("[\u63B2\u8F09\u9801\uFF1A"));
+    const footer = pageReference?.closest(".pb-32.pt-3");
+    if (!footer?.parentNode) return null;
+    return { parent: footer.parentNode, before: footer };
+  }
+  function normalizeReflectionStore(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const store = {};
+    for (const [key, record] of Object.entries(value)) {
+      if (!record || typeof record !== "object") continue;
+      const candidate = record;
+      if (typeof candidate.questionId !== "string") continue;
+      if (typeof candidate.reflection !== "string") continue;
+      store[key] = candidate;
+    }
+    return store;
+  }
+  async function loadReflectionStore() {
+    const area = webext.storage?.local ?? getStorageArea(false);
+    if (!area) return {};
+    const stored = await storageGet(area, QB_REFLECTION_STORAGE_KEY);
+    return normalizeReflectionStore(stored?.[QB_REFLECTION_STORAGE_KEY]);
+  }
+  async function loadReflectionRecord(questionId) {
+    const store = await loadReflectionStore();
+    return store[questionId] ?? null;
+  }
+  async function loadReflectionDataForContext(context) {
+    const [saved, savedImages] = await Promise.all([
+      loadReflectionRecord(context.questionId),
+      loadReflectionImageStore(context.questionId)
+    ]);
+    const liveQuestionCode = context.info?.id ?? context.snapshot?.id ?? null;
+    const legacyQuestionId = context.legacyQuestionId;
+    const verifiedLegacyRecord = legacyQuestionId ? VERIFIED_MOSHI_LEGACY_RECORDS[legacyQuestionId] : void 0;
+    const isVerifiedLegacyOwner = Boolean(
+      legacyQuestionId && legacyQuestionId !== context.questionId && verifiedLegacyRecord?.ownerQuestionId === context.questionId
+    );
+    const canonicalHasContent = Boolean(saved?.reflection.trim()) || Object.keys(savedImages).length > 0;
+    if (canonicalHasContent) {
+      if (legacyQuestionId && !isVerifiedLegacyOwner && saved) {
+        const legacyImagePrefix = getLegacyMoshiReflectionImagePrefix(
+          legacyQuestionId
+        );
+        const legacySaved = await loadReflectionRecord(legacyQuestionId);
+        const contamination = detectMoshiLegacyContamination({
+          reflection: saved.reflection,
+          savedImageNames: Object.keys(savedImages),
+          legacyReflection: legacySaved?.reflection,
+          legacyImagePrefix,
+          verifiedReflectionFragments: verifiedLegacyRecord?.reflectionFragments
+        });
+        if (contamination.shouldSuppress) {
+          console.warn(
+            "[QB_SUPPORT][reflection] suppressed misassigned legacy moshi data",
+            {
+              legacyQuestionId,
+              questionId: context.questionId,
+              questionCode: liveQuestionCode,
+              ...contamination
+            }
+          );
+          return [null, {}];
+        }
+      }
+      return [saved, savedImages];
+    }
+    return [saved, savedImages];
+  }
+  function saveReflectionRecord(context, reflection) {
+    const operation = reflectionSaveChain.catch(() => void 0).then(async () => {
+      const area = webext.storage?.local ?? getStorageArea(false);
+      if (!area) throw new Error("storage.local is unavailable");
+      const store = await loadReflectionStore();
+      const existing = store[context.questionId];
+      store[context.questionId] = buildReflectionRecord({
+        questionId: context.questionId,
+        url: context.url,
+        reflection,
+        info: context.info,
+        snapshot: context.snapshot,
+        existing
+      });
+      await storageSet(area, {
+        [QB_REFLECTION_STORAGE_KEY]: pruneReflectionStore(store)
+      });
+      console.log("[QB_SUPPORT][reflection] saved", {
+        questionId: context.questionId,
+        questionCode: context.info?.id ?? context.snapshot?.id ?? null,
+        length: reflection.length,
+        pdfId: QB_REFLECTION_PDF_ID
+      });
+    });
+    reflectionSaveChain = operation.catch(() => void 0);
+    return operation;
+  }
+  function normalizeReflectionImageStore(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const store = {};
+    for (const [key, record] of Object.entries(value)) {
+      if (!record || typeof record !== "object") continue;
+      const candidate = record;
+      if (typeof candidate.questionId !== "string" || typeof candidate.imageName !== "string" || typeof candidate.imageDataUrl !== "string" || !candidate.imageDataUrl.startsWith("data:image/png;base64,")) {
+        continue;
+      }
+      store[key] = candidate;
+    }
+    return store;
+  }
+  async function loadReflectionImageStore(questionId) {
+    const area = webext.storage?.local ?? getStorageArea(false);
+    if (!area) return {};
+    const storageKey = getReflectionImageStorageKey(questionId);
+    const stored = await storageGet(area, storageKey);
+    return normalizeReflectionImageStore(stored?.[storageKey]);
+  }
+  function getReflectionImageName(marker) {
+    const match = String(marker || "").match(
+      /!\[\[(QB_[A-Za-z0-9_-]+_reflection_\d+\.png)(?:\|[^\]]*)?\]\]/
+    );
+    return match?.[1] ?? "";
+  }
+  function normalizeReflectionImageMarker(markerOrName) {
+    const value = String(markerOrName || "").trim();
+    const name = getReflectionImageName(value) || value.match(/^QB_[A-Za-z0-9_-]+_reflection_\d+\.png$/)?.[0] || "";
+    return name ? `![[${name}]]` : "";
+  }
+  function getReflectionImageMap(images) {
+    return new Map(
+      Object.values(images).map((image) => [image.imageName, image])
+    );
+  }
+  function openReflectionImageLightbox(dataUrl, filename) {
+    if (!dataUrl.startsWith("data:image/")) return;
+    const current = document.getElementById(
+      REFLECTION_LIGHTBOX_ID
+    );
+    current?.__qbSupportReflectionClose?.();
+    const overlay = document.createElement("div");
+    overlay.id = REFLECTION_LIGHTBOX_ID;
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", `${filename} \u306E\u62E1\u5927\u8868\u793A`);
+    const inner = document.createElement("div");
+    inner.className = "qb-support-reflection-lightbox-inner";
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.className = "qb-support-reflection-lightbox-close";
+    closeButton.textContent = "\xD7";
+    closeButton.setAttribute("aria-label", "\u753B\u50CF\u30D7\u30EC\u30D3\u30E5\u30FC\u3092\u9589\u3058\u308B");
+    const image = document.createElement("img");
+    image.src = dataUrl;
+    image.alt = filename;
+    const caption = document.createElement("div");
+    caption.className = "qb-support-reflection-lightbox-caption";
+    caption.textContent = filename;
+    const close = () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      overlay.remove();
+    };
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    };
+    overlay.__qbSupportReflectionClose = close;
+    overlay.addEventListener("click", close);
+    inner.addEventListener("click", (event) => event.stopPropagation());
+    closeButton.addEventListener("click", close);
+    document.addEventListener("keydown", onKeyDown, true);
+    inner.appendChild(closeButton);
+    inner.appendChild(image);
+    inner.appendChild(caption);
+    overlay.appendChild(inner);
+    (document.body || document.documentElement).appendChild(overlay);
+  }
+  function setReflectionInlineImageSource(node, image) {
+    const dataUrl = String(image.imageDataUrl || "");
+    const filename = String(
+      image.imageName || node.dataset.imageName || "reflection-image.png"
+    );
+    node.dataset.imageName = filename;
+    node.title = filename;
+    node.textContent = "";
+    if (dataUrl.startsWith("data:image/")) {
+      const preview = document.createElement("img");
+      preview.src = dataUrl;
+      preview.alt = filename;
+      preview.title = filename;
+      preview.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openReflectionImageLightbox(dataUrl, filename);
+      });
+      node.appendChild(preview);
+    } else {
+      const placeholder = document.createElement("span");
+      placeholder.className = "qb-support-reflection-inline-image-placeholder";
+      placeholder.textContent = filename;
+      node.appendChild(placeholder);
+    }
+    const caption = document.createElement("span");
+    caption.className = "qb-support-reflection-inline-image-caption";
+    caption.textContent = filename;
+    node.appendChild(caption);
+  }
+  function createReflectionInlineImageNode(marker, image) {
+    const imageName = image?.imageName || getReflectionImageName(marker) || "reflection-image.png";
+    const node = document.createElement("span");
+    node.className = "qb-support-reflection-inline-image";
+    node.contentEditable = "false";
+    node.dataset.marker = normalizeReflectionImageMarker(marker || imageName);
+    node.dataset.imageName = imageName;
+    setReflectionInlineImageSource(node, {
+      ...image,
+      imageName
+    });
+    return node;
+  }
+  var REFLECTION_INLINE_FORMATS = [
+    { open: "<u>", close: "</u>", tagName: "u" },
+    { open: "**", close: "**", tagName: "strong" },
+    { open: "~~", close: "~~", tagName: "s" },
+    { open: "*", close: "*", tagName: "em" }
+  ];
+  function isReflectionFormatOpening(source, index, format) {
+    if (format.open === "<u>") return true;
+    const next = source[index + format.open.length];
+    return Boolean(next && !/\s/.test(next));
+  }
+  function isReflectionFormatClosing(source, index, format) {
+    if (format.close === "</u>") return true;
+    const previous = source[index - 1];
+    return Boolean(previous && !/\s/.test(previous));
+  }
+  function appendReflectionEditorInline(parent, source, createImageNode) {
+    const parse = (start2, closingFormat) => {
+      const fragment = document.createDocumentFragment();
+      let index = start2;
+      let textStart = start2;
+      const appendTextThrough = (end) => {
+        if (end > textStart) {
+          fragment.appendChild(
+            document.createTextNode(source.slice(textStart, end))
+          );
+        }
+      };
+      while (index < source.length) {
+        if (closingFormat && source.startsWith(closingFormat.close, index) && isReflectionFormatClosing(source, index, closingFormat)) {
+          appendTextThrough(index);
+          return {
+            fragment,
+            index: index + closingFormat.close.length,
+            closed: true
+          };
+        }
+        const imageMatch = createImageNode ? source.slice(index).match(
+          /^!\[\[(QB_[A-Za-z0-9_-]+_reflection_\d+\.png)(?:\|[^\]]*)?\]\]/
+        ) : null;
+        if (imageMatch) {
+          appendTextThrough(index);
+          const imageName = imageMatch[1];
+          fragment.appendChild(
+            createImageNode(`![[${imageName}]]`, imageName)
+          );
+          index += imageMatch[0].length;
+          textStart = index;
+          continue;
+        }
+        const openingFormat = REFLECTION_INLINE_FORMATS.find(
+          (format) => source.startsWith(format.open, index) && isReflectionFormatOpening(source, index, format)
+        );
+        if (!openingFormat) {
+          index += 1;
+          continue;
+        }
+        const nested = parse(index + openingFormat.open.length, openingFormat);
+        if (!nested.closed || !nested.fragment.hasChildNodes()) {
+          appendTextThrough(index);
+          fragment.appendChild(document.createTextNode(openingFormat.open));
+          index += openingFormat.open.length;
+          textStart = index;
+          continue;
+        }
+        appendTextThrough(index);
+        const element = document.createElement(openingFormat.tagName);
+        element.appendChild(nested.fragment);
+        fragment.appendChild(element);
+        index = nested.index;
+        textStart = index;
+      }
+      appendTextThrough(source.length);
+      return { fragment, index: source.length, closed: closingFormat === null };
+    };
+    parent.appendChild(parse(0, null).fragment);
+  }
+  function parseReflectionMarkdownListLine(line) {
+    const match = line.match(/^([ \t]*)([-+*]|\d+\.)[ \t]+(.*)$/);
+    if (!match) return null;
+    const indentColumns = Array.from(match[1]).reduce(
+      (total, character) => total + (character === "	" ? 2 : 1),
+      0
+    );
+    return {
+      level: Math.floor(indentColumns / 2),
+      listTag: /^\d+\.$/.test(match[2]) ? "OL" : "UL",
+      content: match[3]
+    };
+  }
+  function appendReflectionEditorMarkdown(editor, text, createImageNode) {
+    const lines = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    const listStack = [];
+    for (const line of lines) {
+      const parsed = parseReflectionMarkdownListLine(line);
+      if (!parsed) {
+        listStack.length = 0;
+        const block = document.createElement("div");
+        if (line) {
+          appendReflectionEditorInline(block, line, createImageNode);
+        } else {
+          block.appendChild(document.createElement("br"));
+        }
+        editor.appendChild(block);
+        continue;
+      }
+      const level = Math.min(parsed.level, listStack.length);
+      while (listStack.length > level + 1) listStack.pop();
+      if (listStack[level] && listStack[level].listTag !== parsed.listTag) {
+        listStack.length = level;
+      }
+      if (!listStack[level]) {
+        const list = document.createElement(
+          parsed.listTag.toLowerCase()
+        );
+        const parent = level === 0 ? editor : listStack[level - 1]?.lastItem ?? editor;
+        parent.appendChild(list);
+        listStack[level] = {
+          list,
+          listTag: parsed.listTag,
+          lastItem: null
+        };
+      }
+      const item = document.createElement("li");
+      if (parsed.content) {
+        appendReflectionEditorInline(item, parsed.content, createImageNode);
+      } else {
+        item.appendChild(document.createElement("br"));
+      }
+      listStack[level].list.appendChild(item);
+      listStack[level].lastItem = item;
+      listStack.length = level + 1;
+    }
+  }
+  function setReflectionEditorMarkdown(editor, markdown, images = {}) {
+    editor.textContent = "";
+    const source = String(markdown || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    const imageMap = getReflectionImageMap(images);
+    appendReflectionEditorMarkdown(
+      editor,
+      source,
+      (marker, imageName) => createReflectionInlineImageNode(marker, imageMap.get(imageName))
+    );
+  }
+  function serializeReflectionInlineNode(node, activeFormats = /* @__PURE__ */ new Set()) {
+    if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
+    if (!(node instanceof Element)) return "";
+    if (node.classList.contains("qb-support-reflection-inline-image")) {
+      return normalizeReflectionImageMarker(
+        node.dataset.marker || node.dataset.imageName || ""
+      );
+    }
+    if (node.tagName === "BR") return "\n";
+    const format = (() => {
+      switch (node.tagName) {
+        case "B":
+        case "STRONG":
+          return { key: "bold", open: "**", close: "**" };
+        case "I":
+        case "EM":
+          return { key: "italic", open: "*", close: "*" };
+        case "U":
+          return { key: "underline", open: "<u>", close: "</u>" };
+        case "S":
+        case "STRIKE":
+        case "DEL":
+          return { key: "strike", open: "~~", close: "~~" };
+        default:
+          return null;
+      }
+    })();
+    if (!format || activeFormats.has(format.key)) {
+      return Array.from(node.childNodes).map((child) => serializeReflectionInlineNode(child, activeFormats)).join("");
+    }
+    const nextFormats = new Set(activeFormats);
+    nextFormats.add(format.key);
+    const inner = Array.from(node.childNodes).map((child) => serializeReflectionInlineNode(child, nextFormats)).join("");
+    return inner.trim() ? `${format.open}${inner}${format.close}` : inner;
+  }
+  function serializeReflectionList(list, depth) {
+    const ordered = list.tagName === "OL";
+    const items = Array.from(list.children).filter(
+      (child) => child.tagName === "LI"
+    );
+    return items.map((item, index) => {
+      const nestedLists = [];
+      let content = "";
+      for (const child of Array.from(item.childNodes)) {
+        if (child instanceof HTMLElement && (child.tagName === "UL" || child.tagName === "OL")) {
+          nestedLists.push(child);
+        } else {
+          content += serializeReflectionInlineNode(child);
+        }
+      }
+      const indent = "  ".repeat(depth);
+      const prefix = ordered ? `${index + 1}. ` : "- ";
+      const contentLines = content.replace(/\n+$/g, "").split("\n");
+      let output = `${indent}${prefix}${contentLines[0] ?? ""}`;
+      for (const continuation of contentLines.slice(1)) {
+        output += `
+${indent}  ${continuation}`;
+      }
+      for (const nested of nestedLists) {
+        output += `
+${serializeReflectionList(nested, depth + 1)}`;
+      }
+      return output;
+    }).join("\n");
+  }
+  function serializeReflectionBlock(element) {
+    let output = "";
+    const appendBlock = (value) => {
+      if (output && !output.endsWith("\n")) output += "\n";
+      output += value;
+      if (!output.endsWith("\n")) output += "\n";
+    };
+    for (const child of Array.from(element.childNodes)) {
+      if (child instanceof HTMLElement && (child.tagName === "UL" || child.tagName === "OL")) {
+        appendBlock(
+          serializeReflectionList(child, 0)
+        );
+      } else if (child instanceof HTMLElement && (child.tagName === "DIV" || child.tagName === "P")) {
+        appendBlock(serializeReflectionBlock(child));
+      } else {
+        output += serializeReflectionInlineNode(child);
+      }
+    }
+    return output;
+  }
+  function getReflectionEditorText(editor) {
+    return serializeReflectionBlock(editor).replace(/\u00a0/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{4,}/g, "\n\n\n").trim();
+  }
+  function handleReflectionFormattingShortcut(editor, event) {
+    if (!event.metaKey && !event.ctrlKey || event.altKey) return false;
+    const key = event.key.toLowerCase();
+    const command = key === "s" && event.shiftKey ? "strikeThrough" : !event.shiftKey ? {
+      b: "bold",
+      i: "italic",
+      u: "underline"
+    }[key] : void 0;
+    if (!command) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    applyReflectionFormattingCommand(editor, command);
+    return true;
+  }
+  var REFLECTION_FORMAT_CONTROLS = [
+    { command: "bold", label: "B", shortcut: "\u2318B", description: "\u592A\u5B57" },
+    { command: "italic", label: "I", shortcut: "\u2318I", description: "\u659C\u4F53" },
+    { command: "underline", label: "U", shortcut: "\u2318U", description: "\u4E0B\u7DDA" },
+    {
+      command: "strikeThrough",
+      label: "S",
+      shortcut: "\u2318\u21E7S",
+      description: "\u53D6\u308A\u6D88\u3057\u7DDA"
+    },
+    {
+      command: "insertUnorderedList",
+      label: "\u2022",
+      shortcut: "- + Space",
+      description: "\u7B87\u6761\u66F8\u304D"
+    },
+    {
+      command: "insertOrderedList",
+      label: "1.",
+      shortcut: "1. + Space",
+      description: "\u756A\u53F7\u4ED8\u304D\u30EA\u30B9\u30C8"
+    }
+  ];
+  function applyReflectionFormattingCommand(editor, command) {
+    editor.focus({ preventScroll: true });
+    if (command === "insertUnorderedList" || command === "insertOrderedList") {
+      const targetTag = command === "insertOrderedList" ? "OL" : "UL";
+      const item = getReflectionSelectionListItem(editor);
+      if (item) {
+        const list = item.parentElement;
+        if (list?.tagName === targetTag) {
+          outdentReflectionListItem(item);
+        } else if (list && (list.tagName === "UL" || list.tagName === "OL")) {
+          const replacement = document.createElement(
+            targetTag.toLowerCase()
+          );
+          while (list.firstChild) replacement.appendChild(list.firstChild);
+          list.replaceWith(replacement);
+          placeCaretInReflectionListItem(item);
+        }
+      } else {
+        const range = getReflectionEditorSelectionRange(editor);
+        if (range) {
+          const startElement = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
+          const block = startElement?.closest("div, p") ?? editor;
+          if (block === editor || editor.contains(block)) {
+            convertReflectionBlockToList(editor, block, targetTag);
+          }
+        }
+      }
+      editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+      return;
+    }
+    document.execCommand(command, false);
+    editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  }
+  function getReflectionSelectionListItem(editor) {
+    const range = getReflectionEditorSelectionRange(editor);
+    if (!range) return null;
+    const startElement = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
+    const item = startElement?.closest("li");
+    return item && editor.contains(item) ? item : null;
+  }
+  function getReflectionCaretBlockPrefix(editor, range) {
+    if (!range.collapsed) return null;
+    const startElement = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
+    const block = startElement?.closest("li, div, p") ?? editor;
+    if (block instanceof HTMLLIElement || !editor.contains(block)) return null;
+    const prefixRange = document.createRange();
+    prefixRange.selectNodeContents(block);
+    try {
+      prefixRange.setEnd(range.startContainer, range.startOffset);
+    } catch {
+      return null;
+    }
+    return { text: prefixRange.toString(), range: prefixRange, block };
+  }
+  function placeCaretInReflectionListItem(item, atStart = false) {
+    const selection = window.getSelection();
+    if (!selection) return;
+    const range = document.createRange();
+    if (atStart) {
+      range.setStart(item, 0);
+    } else {
+      const firstNestedList = Array.from(item.children).find(
+        (child) => child.tagName === "UL" || child.tagName === "OL"
+      );
+      if (firstNestedList) {
+        range.setStartBefore(firstNestedList);
+      } else {
+        range.selectNodeContents(item);
+        range.collapse(false);
+      }
+    }
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  function convertReflectionBlockToList(editor, block, listTag) {
+    const list = document.createElement(
+      listTag.toLowerCase()
+    );
+    const item = document.createElement("li");
+    while (block.firstChild) item.appendChild(block.firstChild);
+    if (!item.hasChildNodes() || !item.textContent) {
+      item.textContent = "";
+      item.appendChild(document.createElement("br"));
+    }
+    list.appendChild(item);
+    if (block === editor) {
+      editor.textContent = "";
+      editor.appendChild(list);
+    } else {
+      block.replaceWith(list);
+    }
+    placeCaretInReflectionListItem(item, true);
+  }
+  function convertReflectionMarkerBlockToList(editor, prefix, listTag) {
+    prefix.range.deleteContents();
+    convertReflectionBlockToList(editor, prefix.block, listTag);
+  }
+  function indentReflectionListItem(item) {
+    const list = item.parentElement;
+    const previousItem = item.previousElementSibling;
+    if (!list || !previousItem || list.tagName === "LI") return false;
+    const listTag = list.tagName === "OL" ? "OL" : "UL";
+    let nestedList = Array.from(previousItem.children).reverse().find((child) => child.tagName === listTag);
+    if (!nestedList) {
+      nestedList = document.createElement(
+        listTag.toLowerCase()
+      );
+      previousItem.appendChild(nestedList);
+    }
+    nestedList.appendChild(item);
+    if (!list.children.length) list.remove();
+    placeCaretInReflectionListItem(item);
+    return true;
+  }
+  function outdentReflectionListItem(item) {
+    const list = item.parentElement;
+    if (!list || list.tagName !== "UL" && list.tagName !== "OL") return false;
+    const parentItem = list.parentElement;
+    if (parentItem?.tagName === "LI") {
+      const ancestorList = parentItem.parentElement;
+      if (!ancestorList) return false;
+      ancestorList.insertBefore(item, parentItem.nextSibling);
+      if (!list.children.length) list.remove();
+      placeCaretInReflectionListItem(item);
+      return true;
+    }
+    const listParent = list.parentNode;
+    if (!listParent) return false;
+    const siblings = Array.from(list.children);
+    const itemIndex = siblings.indexOf(item);
+    const beforeList = list.cloneNode(false);
+    const afterList = list.cloneNode(false);
+    siblings.slice(0, itemIndex).forEach((sibling) => beforeList.appendChild(sibling));
+    siblings.slice(itemIndex + 1).forEach((sibling) => afterList.appendChild(sibling));
+    const block = document.createElement("div");
+    while (item.firstChild) block.appendChild(item.firstChild);
+    if (!block.hasChildNodes()) block.appendChild(document.createElement("br"));
+    if (beforeList.children.length) listParent.insertBefore(beforeList, list);
+    listParent.insertBefore(block, list);
+    if (afterList.children.length) listParent.insertBefore(afterList, list);
+    list.remove();
+    const selection = window.getSelection();
+    if (selection) {
+      const range = document.createRange();
+      range.selectNodeContents(block);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    return true;
+  }
+  function handleReflectionListKeyDown(editor, event) {
+    if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) {
+      return false;
+    }
+    if (event.key === "Tab") {
+      const item = getReflectionSelectionListItem(editor);
+      if (!item) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      const changed = event.shiftKey ? outdentReflectionListItem(item) : indentReflectionListItem(item);
+      if (changed) {
+        editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+      }
+      return true;
+    }
+    if (event.key !== " " || event.shiftKey) return false;
+    const range = getReflectionEditorSelectionRange(editor);
+    if (!range || getReflectionSelectionListItem(editor)) return false;
+    const prefix = getReflectionCaretBlockPrefix(editor, range);
+    if (!prefix) return false;
+    const marker = prefix.text;
+    const command = /^[-+*]$/.test(marker) ? "insertUnorderedList" : /^\d+\.$/.test(marker) ? "insertOrderedList" : null;
+    if (!command) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    editor.focus({ preventScroll: true });
+    convertReflectionMarkerBlockToList(
+      editor,
+      prefix,
+      command === "insertOrderedList" ? "OL" : "UL"
+    );
+    editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    return true;
+  }
+  function restoreReflectionEditorSelection(editor, range) {
+    if (!range) return;
+    if (!editor.contains(range.startContainer) && range.startContainer !== editor || !editor.contains(range.endContainer) && range.endContainer !== editor) {
+      return;
+    }
+    const selection = window.getSelection();
+    if (!selection) return;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  function isReflectionFormatActive(editor, command) {
+    if (!getReflectionEditorSelectionRange(editor)) return false;
+    try {
+      return document.queryCommandState(command);
+    } catch {
+      return false;
+    }
+  }
+  function setReflectionEditorEmptyState(editor) {
+    const hasImage = Boolean(
+      editor.querySelector(".qb-support-reflection-inline-image")
+    );
+    editor.classList.toggle(
+      "is-empty",
+      !hasImage && !getReflectionEditorText(editor)
+    );
+  }
+  function getReflectionEditorSelectionRange(editor) {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!editor.contains(range.startContainer) && range.startContainer !== editor) {
+      return null;
+    }
+    if (!editor.contains(range.endContainer) && range.endContainer !== editor) {
+      return null;
+    }
+    return range.cloneRange();
+  }
+  function placeCaretAfterNode(node) {
+    const selection = window.getSelection();
+    if (!selection || !node.parentNode) return;
+    const range = document.createRange();
+    range.setStartAfter(node);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  function insertReflectionInlineImage(editor, image, range) {
+    const marker = normalizeReflectionImageMarker(image.imageName);
+    const existing = Array.from(
+      editor.querySelectorAll(
+        ".qb-support-reflection-inline-image"
+      )
+    ).find((node2) => node2.dataset.marker === marker);
+    if (existing) {
+      setReflectionInlineImageSource(existing, image);
+      placeCaretAfterNode(existing);
+      return existing;
+    }
+    const node = createReflectionInlineImageNode(marker, image);
+    const trailingSpace = document.createTextNode(" ");
+    const canUseRange = range && (editor.contains(range.startContainer) || range.startContainer === editor) && (editor.contains(range.endContainer) || range.endContainer === editor);
+    if (canUseRange) {
+      range.deleteContents();
+      range.insertNode(trailingSpace);
+      range.insertNode(node);
+    } else {
+      if (editor.textContent || editor.querySelector(".qb-support-reflection-inline-image")) {
+        editor.appendChild(document.createTextNode(" "));
+      }
+      editor.appendChild(node);
+      editor.appendChild(trailingSpace);
+    }
+    setReflectionEditorEmptyState(editor);
+    placeCaretAfterNode(trailingSpace);
+    return node;
+  }
+  function insertReflectionText(editor, text, range) {
+    const node = document.createTextNode(text);
+    if (range && (editor.contains(range.startContainer) || range.startContainer === editor) && (editor.contains(range.endContainer) || range.endContainer === editor)) {
+      range.deleteContents();
+      range.insertNode(node);
+    } else {
+      editor.appendChild(node);
+    }
+    placeCaretAfterNode(node);
+    editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  }
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(reader.error || new Error("\u753B\u50CF\u30D5\u30A1\u30A4\u30EB\u3092\u8AAD\u307F\u53D6\u308C\u307E\u305B\u3093\u3067\u3057\u305F"));
+      reader.readAsDataURL(file);
+    });
+  }
+  async function imageFileToPngDataUrl(file) {
+    if (!file.type.startsWith("image/")) {
+      throw new Error("\u753B\u50CF\u30D5\u30A1\u30A4\u30EB\u3067\u306F\u3042\u308A\u307E\u305B\u3093");
+    }
+    if (file.size > REFLECTION_IMAGE_MAX_BYTES) {
+      throw new Error("\u753B\u50CF\u304C\u5927\u304D\u3059\u304E\u307E\u3059\uFF08\u4E0A\u965012MB\uFF09");
+    }
+    if (file.type === "image/png") {
+      const dataUrl = await readFileAsDataUrl(file);
+      if (dataUrl.startsWith("data:image/png;base64,")) return dataUrl;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const image = await new Promise((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error("\u753B\u50CF\u3092\u30C7\u30B3\u30FC\u30C9\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F"));
+        element.src = objectUrl;
+      });
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      if (!width || !height) throw new Error("\u753B\u50CF\u306E\u30B5\u30A4\u30BA\u304C\u4E0D\u6B63\u3067\u3059");
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("PNG\u5909\u63DB\u3092\u5229\u7528\u3067\u304D\u307E\u305B\u3093");
+      context.drawImage(image, 0, 0);
+      const dataUrl = canvas.toDataURL("image/png");
+      const byteLength = pngDataUrlToBytes(dataUrl).byteLength;
+      if (byteLength > REFLECTION_IMAGE_MAX_BYTES) {
+        throw new Error("PNG\u5909\u63DB\u5F8C\u306E\u753B\u50CF\u304C\u5927\u304D\u3059\u304E\u307E\u3059\uFF08\u4E0A\u965012MB\uFF09");
+      }
+      return dataUrl;
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+  function pngDataUrlToBytes(dataUrl) {
+    const prefix = "data:image/png;base64,";
+    if (!dataUrl.startsWith(prefix)) {
+      throw new Error("PNG data URL\u3067\u306F\u3042\u308A\u307E\u305B\u3093");
+    }
+    const binary = atob(dataUrl.slice(prefix.length));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+  async function sha256Hex(bytes) {
+    const data = bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength
+    );
+    const digest = await crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(digest)).map((value) => value.toString(16).padStart(2, "0")).join("");
+  }
+  function getReflectionImageBaseName(context) {
+    const source = context.info?.id ?? context.snapshot?.id ?? context.questionId;
+    const safe = String(source).replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 96);
+    return `QB_${safe || "question"}`;
+  }
+  async function saveReflectionImage(context, imageDataUrl) {
+    const area = webext.storage?.local ?? getStorageArea(false);
+    if (!area) throw new Error("storage.local\u3092\u5229\u7528\u3067\u304D\u307E\u305B\u3093");
+    const bytes = pngDataUrlToBytes(imageDataUrl);
+    if (bytes.byteLength > REFLECTION_IMAGE_MAX_BYTES) {
+      throw new Error("\u753B\u50CF\u304C\u5927\u304D\u3059\u304E\u307E\u3059\uFF08\u4E0A\u965012MB\uFF09");
+    }
+    const sha256 = await sha256Hex(bytes);
+    const storageKey = getReflectionImageStorageKey(context.questionId);
+    const store = await loadReflectionImageStore(context.questionId);
+    const duplicate = Object.values(store).find(
+      (image) => image.sha256 === sha256
+    );
+    if (duplicate) return duplicate;
+    const baseName = getReflectionImageBaseName(context);
+    const indexes = Object.values(store).map(
+      (image) => Number(
+        image.imageName.match(
+          new RegExp(`^${baseName}_reflection_(\\d+)\\.png$`)
+        )?.[1] ?? 0
+      )
+    ).filter((value) => Number.isFinite(value));
+    const index = (indexes.length ? Math.max(...indexes) : 0) + 1;
+    const imageName = `${baseName}_reflection_${index}.png`;
+    const record = {
+      schemaVersion: 1,
+      source: "QB_support",
+      questionId: context.questionId,
+      questionCode: context.info?.id ?? context.snapshot?.id ?? null,
+      imageName,
+      mimeType: "image/png",
+      imageDataUrl,
+      byteLength: bytes.byteLength,
+      sha256,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    await storageSet(area, {
+      [storageKey]: {
+        ...store,
+        [imageName]: record
+      }
+    });
+    const verified = await loadReflectionImageStore(context.questionId);
+    if (verified[imageName]?.sha256 !== sha256 || verified[imageName]?.imageDataUrl !== imageDataUrl) {
+      throw new Error("\u753B\u50CF\u306E\u4FDD\u5B58\u78BA\u8A8D\u306B\u5931\u6557\u3057\u307E\u3057\u305F");
+    }
+    return verified[imageName];
+  }
+  function imageFilesFromDataTransfer(dataTransfer) {
+    const files = [];
+    for (const item of Array.from(dataTransfer?.items ?? [])) {
+      if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+    if (files.length) return files;
+    return Array.from(dataTransfer?.files ?? []).filter(
+      (file) => file.type.startsWith("image/")
+    );
+  }
+  async function imageFilesFromClipboardRead() {
+    if (!navigator.clipboard?.read) return [];
+    const items = await navigator.clipboard.read();
+    const files = [];
+    for (const item of items) {
+      const imageType = item.types.find((type) => type.startsWith("image/"));
+      if (!imageType) continue;
+      const blob = await item.getType(imageType);
+      const extension = imageType.split("/")[1] || "png";
+      files.push(
+        new File([blob], `pasted-reflection-image.${extension}`, {
+          type: imageType
+        })
+      );
+    }
+    return files;
+  }
+  function getImageSourcesFromHtml(html) {
+    if (!html) return [];
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const sources = Array.from(parsed.querySelectorAll("img")).map((image) => image.getAttribute("src")?.trim() ?? "").map((source) => {
+      if (/^(data:image\/|blob:)/i.test(source)) return source;
+      try {
+        const resolved = new URL(source, location.href).href;
+        return /^https?:\/\//i.test(resolved) ? resolved : "";
+      } catch {
+        return "";
+      }
+    }).filter(Boolean);
+    return Array.from(new Set(sources));
+  }
+  async function imageFileFromSource(source, filename) {
+    const response = await fetch(source);
+    if (!response.ok) {
+      throw new Error(`\u753B\u50CF\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F\uFF08HTTP ${response.status}\uFF09`);
+    }
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/")) {
+      throw new Error("\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u5185\u306EURL\u306F\u753B\u50CF\u3067\u306F\u3042\u308A\u307E\u305B\u3093");
+    }
+    return new File([blob], filename, { type: blob.type });
+  }
+  async function imageFilesFromHtml(html) {
+    const sources = getImageSourcesFromHtml(html);
+    if (!sources.length) return [];
+    const results = await Promise.allSettled(
+      sources.map(
+        (source, index) => imageFileFromSource(source, `pasted-html-image-${index + 1}`)
+      )
+    );
+    const files = results.flatMap(
+      (result) => result.status === "fulfilled" ? [result.value] : []
+    );
+    if (files.length) return files;
+    const failure = results.find(
+      (result) => result.status === "rejected"
+    );
+    throw failure?.reason instanceof Error ? failure.reason : new Error("\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u5185\u306E\u753B\u50CFURL\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+  }
+  function dataTransferMayContainImage(dataTransfer) {
+    const types = Array.from(dataTransfer?.types ?? []);
+    return types.includes("Files") || types.includes("text/uri-list") || types.includes("text/html") || Array.from(dataTransfer?.items ?? []).some(
+      (item) => item.kind === "file" && item.type.startsWith("image/")
+    );
+  }
+  async function imageFileFromDroppedUrl(dataTransfer) {
+    let source = dataTransfer?.getData("text/uri-list").split("\n")[0].trim() ?? "";
+    if (!source) {
+      const html = dataTransfer?.getData("text/html") ?? "";
+      if (html) {
+        source = new DOMParser().parseFromString(html, "text/html").querySelector("img")?.src ?? "";
+      }
+    }
+    if (!/^(data:image\/|https?:\/\/)/i.test(source)) return null;
+    return imageFileFromSource(source, "dropped-reflection-image");
+  }
+  function showReflectionNotice(message, error = false) {
+    document.getElementById("qb-support-reflection-notice")?.remove();
+    const notice = document.createElement("div");
+    notice.id = "qb-support-reflection-notice";
+    notice.classList.toggle("is-error", error);
+    notice.setAttribute("role", error ? "alert" : "status");
+    notice.textContent = message;
+    (document.body || document.documentElement).appendChild(notice);
+    window.setTimeout(() => notice.remove(), error ? 8e3 : 3e3);
+  }
+  function buildReflectionPanel(context, saved, savedImages) {
+    const container = document.createElement("div");
+    container.id = REFLECTION_CONTAINER_ID;
+    container.dataset.questionId = context.questionId;
+    const head = document.createElement("div");
+    head.className = "qb-support-reflection-head";
+    const title = document.createElement("div");
+    title.className = "qb-support-reflection-title";
+    title.textContent = "\u632F\u308A\u8FD4\u308A";
+    const meta = document.createElement("div");
+    meta.className = "qb-support-reflection-meta";
+    const pdfBadge = document.createElement("span");
+    pdfBadge.className = "qb-support-reflection-pdf";
+    pdfBadge.textContent = "PDF: Vital2CK";
+    pdfBadge.title = `Anki\u751F\u6210\u6642\u306E\u65E2\u5B9APDF: ${QB_REFLECTION_PDF_ID}`;
+    const status = document.createElement("span");
+    status.className = "qb-support-reflection-status";
+    status.textContent = saved?.reflection ? "\u4FDD\u5B58\u6E08\u307F" : "";
+    meta.appendChild(pdfBadge);
+    meta.appendChild(status);
+    head.appendChild(title);
+    head.appendChild(meta);
+    const editor = document.createElement("div");
+    editor.className = "qb-support-reflection-editor";
+    editor.contentEditable = "true";
+    editor.dataset.placeholder = "\u3053\u306E\u554F\u984C\u306E\u6559\u8A13\u30FB\u9593\u9055\u3048\u305F\u7406\u7531\u3092\u30E1\u30E2\uFF08\u81EA\u52D5\u4FDD\u5B58\uFF09";
+    editor.setAttribute("role", "textbox");
+    editor.setAttribute("aria-label", "\u632F\u308A\u8FD4\u308A");
+    editor.setAttribute("aria-multiline", "true");
+    editor.setAttribute("spellcheck", "false");
+    setReflectionEditorMarkdown(editor, saved?.reflection ?? "", savedImages);
+    setReflectionEditorEmptyState(editor);
+    const formatBar = document.createElement("div");
+    formatBar.className = "qb-support-reflection-formatbar";
+    formatBar.setAttribute("role", "toolbar");
+    formatBar.setAttribute("aria-label", "\u6587\u5B57\u66F8\u5F0F");
+    const formatButtons = /* @__PURE__ */ new Map();
+    const updateFormatButtons = () => {
+      for (const [command, button] of formatButtons) {
+        button.setAttribute(
+          "aria-pressed",
+          String(isReflectionFormatActive(editor, command))
+        );
+      }
+    };
+    for (const control of REFLECTION_FORMAT_CONTROLS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "qb-support-reflection-format";
+      button.dataset.command = control.command;
+      button.textContent = control.label;
+      button.title = `${control.shortcut}\uFF1A${control.description}`;
+      button.setAttribute("aria-label", button.title);
+      button.setAttribute("aria-pressed", "false");
+      let preservedRange = null;
+      button.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        preservedRange = getReflectionEditorSelectionRange(editor);
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        restoreReflectionEditorSelection(editor, preservedRange);
+        applyReflectionFormattingCommand(editor, control.command);
+        updateFormatButtons();
+      });
+      formatButtons.set(control.command, button);
+      formatBar.appendChild(button);
+    }
+    const actions = document.createElement("div");
+    actions.className = "qb-support-reflection-actions";
+    const attachInput = document.createElement("input");
+    attachInput.type = "file";
+    attachInput.accept = "image/*";
+    attachInput.multiple = true;
+    attachInput.hidden = true;
+    const attachButton = document.createElement("button");
+    attachButton.type = "button";
+    attachButton.className = "qb-support-reflection-attach";
+    attachButton.textContent = "\u753B\u50CF\u3092\u6DFB\u4ED8";
+    actions.appendChild(attachInput);
+    actions.appendChild(attachButton);
+    const footer = document.createElement("div");
+    footer.className = "qb-support-reflection-footer";
+    footer.textContent = "\u554F\u984CID\u30FB\u554F\u984C\u6587\u30FB\u9078\u629E\u80A2\u30FB\u6DFB\u4ED8\u753B\u50CF\u3068\u3068\u3082\u306BAnki\u751F\u6210\u7528\u30C7\u30FC\u30BF\u3068\u3057\u3066\u4FDD\u5B58\u3057\u307E\u3059";
+    let saveTimer = null;
+    let lastSavedText = saved?.reflection ?? "";
+    let attachmentChain = Promise.resolve();
+    let pendingAttachmentCount = 0;
+    const setStatus2 = (message, error = false) => {
+      if (!container.isConnected && message !== "\u4FDD\u5B58\u4E2D...") return;
+      status.textContent = message;
+      status.classList.toggle("is-error", error);
+    };
+    const persist = async (value) => {
+      if (value === lastSavedText) {
+        setStatus2(value ? "\u4FDD\u5B58\u6E08\u307F" : "");
+        return;
+      }
+      try {
+        await saveReflectionRecord(context, value);
+        lastSavedText = value;
+        setStatus2("\u4FDD\u5B58\u6E08\u307F");
+      } catch (error) {
+        console.warn("[QB_SUPPORT][reflection] save failed", {
+          questionId: context.questionId,
+          message: error instanceof Error ? error.message : String(error)
+        });
+        setStatus2("\u4FDD\u5B58\u5931\u6557", true);
+        throw error;
+      }
+    };
+    const flushNow = async () => {
+      if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
+      }
+      setReflectionEditorEmptyState(editor);
+      await persist(getReflectionEditorText(editor));
+    };
+    const removeUnsupportedImages = () => {
+      const unsupported = Array.from(editor.querySelectorAll("img")).filter(
+        (image) => !image.closest(".qb-support-reflection-inline-image")
+      );
+      if (!unsupported.length) return false;
+      unsupported.forEach((image) => image.remove());
+      setStatus2("\u753B\u50CF\u6DFB\u4ED8\u5931\u6557", true);
+      showReflectionNotice(
+        "\u753B\u50CF\u3092\u4FDD\u5B58\u3067\u304D\u306A\u304B\u3063\u305F\u305F\u3081\u633F\u5165\u3092\u53D6\u308A\u6D88\u3057\u307E\u3057\u305F\u3002\u3082\u3046\u4E00\u5EA6\u300C\u753B\u50CF\u3092\u6DFB\u4ED8\u300D\u304B\u3089\u304A\u8A66\u3057\u304F\u3060\u3055\u3044\u3002",
+        true
+      );
+      return true;
+    };
+    const scheduleSave = () => {
+      if (removeUnsupportedImages()) return;
+      setReflectionEditorEmptyState(editor);
+      setStatus2("\u4FDD\u5B58\u4E2D...");
+      if (saveTimer !== null) window.clearTimeout(saveTimer);
+      saveTimer = window.setTimeout(() => {
+        saveTimer = null;
+        void persist(getReflectionEditorText(editor)).catch(() => void 0);
+      }, REFLECTION_SAVE_DEBOUNCE_MS);
+    };
+    const runAttachFiles = async (imageFiles, initialRange) => {
+      let insertionRange = initialRange;
+      const insertedNodes = [];
+      setStatus2("\u753B\u50CF\u4FDD\u5B58\u4E2D...");
+      try {
+        await flushNow();
+        for (const file of imageFiles) {
+          const liveBeforeSave = getReflectionContext();
+          if (!container.isConnected || !liveBeforeSave || liveBeforeSave.questionId !== context.questionId) {
+            throw new Error("\u753B\u50CF\u4FDD\u5B58\u524D\u306B\u554F\u984C\u304C\u5207\u308A\u66FF\u308F\u308A\u307E\u3057\u305F");
+          }
+          const imageDataUrl = await imageFileToPngDataUrl(file);
+          const image = await saveReflectionImage(context, imageDataUrl);
+          const liveBeforeInsert = getReflectionContext();
+          if (!container.isConnected || !liveBeforeInsert || liveBeforeInsert.questionId !== context.questionId) {
+            const marker2 = normalizeReflectionImageMarker(image.imageName);
+            const latest = getReflectionEditorText(editor);
+            const nextValue = latest.includes(marker2) ? latest : `${latest}${latest ? "\n\n" : ""}${marker2}`;
+            await saveReflectionRecord(context, nextValue);
+            lastSavedText = nextValue;
+            showReflectionNotice(
+              "\u554F\u984C\u5207\u66FF\u524D\u306E\u632F\u308A\u8FD4\u308A\u3078\u753B\u50CF\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F\u3002",
+              false
+            );
+            return;
+          }
+          const marker = normalizeReflectionImageMarker(image.imageName);
+          const alreadyPresent = Array.from(
+            editor.querySelectorAll(
+              ".qb-support-reflection-inline-image"
+            )
+          ).some((node2) => node2.dataset.marker === marker);
+          const node = insertReflectionInlineImage(
+            editor,
+            image,
+            insertionRange
+          );
+          if (!alreadyPresent) insertedNodes.push(node);
+          insertionRange = getReflectionEditorSelectionRange(editor);
+          console.log("[QB_SUPPORT][reflection] image stored", {
+            questionId: context.questionId,
+            imageName: image.imageName,
+            byteLength: image.byteLength,
+            sha256: image.sha256
+          });
+        }
+        await flushNow();
+        setStatus2("\u753B\u50CF\u3092\u6DFB\u4ED8\u3057\u307E\u3057\u305F");
+      } catch (error) {
+        insertedNodes.forEach((node) => node.remove());
+        setReflectionEditorEmptyState(editor);
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn("[QB_SUPPORT][reflection] image attach failed", {
+          questionId: context.questionId,
+          message
+        });
+        setStatus2("\u753B\u50CF\u6DFB\u4ED8\u5931\u6557", true);
+        showReflectionNotice(`\u753B\u50CF\u6DFB\u4ED8\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${message}`, true);
+        throw error;
+      }
+    };
+    const attachFiles = (files, range = getReflectionEditorSelectionRange(editor)) => {
+      const imageFiles = Array.from(files ?? []).filter(
+        (file) => file.type.startsWith("image/")
+      );
+      if (!imageFiles.length) return Promise.resolve();
+      pendingAttachmentCount += 1;
+      attachButton.disabled = true;
+      attachmentChain = attachmentChain.catch(() => void 0).then(() => runAttachFiles(imageFiles, range)).finally(() => {
+        pendingAttachmentCount -= 1;
+        attachButton.disabled = pendingAttachmentCount > 0;
+        attachInput.value = "";
+      });
+      return attachmentChain;
+    };
+    const handlePaste = (event) => {
+      const eventFiles = imageFilesFromDataTransfer(event.clipboardData);
+      if (eventFiles.length) {
+        event.preventDefault();
+        event.stopPropagation();
+        void attachFiles(eventFiles).catch(() => void 0);
+        return;
+      }
+      const types = Array.from(event.clipboardData?.types ?? []);
+      const html = event.clipboardData?.getData("text/html") ?? "";
+      const plainText = event.clipboardData?.getData("text/plain") ?? "";
+      const htmlImageSources = getImageSourcesFromHtml(html);
+      const mayContainAsyncImage = types.includes("Files") || htmlImageSources.length > 0;
+      if (!mayContainAsyncImage) return;
+      const range = getReflectionEditorSelectionRange(editor);
+      event.preventDefault();
+      event.stopPropagation();
+      void (async () => {
+        let htmlFailure = null;
+        if (htmlImageSources.length) {
+          try {
+            const htmlFiles = await imageFilesFromHtml(html);
+            if (htmlFiles.length) return attachFiles(htmlFiles, range);
+          } catch (error) {
+            htmlFailure = error;
+          }
+        }
+        try {
+          const files = await imageFilesFromClipboardRead();
+          if (files.length) return attachFiles(files, range);
+        } catch (error) {
+          if (!htmlFailure) htmlFailure = error;
+        }
+        if (plainText) {
+          insertReflectionText(editor, plainText, range);
+          return;
+        }
+        throw htmlFailure instanceof Error ? htmlFailure : new Error("\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u304B\u3089\u753B\u50CF\u30C7\u30FC\u30BF\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+      })().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn("[QB_SUPPORT][reflection] clipboard image read failed", {
+          questionId: context.questionId,
+          types,
+          htmlImageCount: htmlImageSources.length,
+          message
+        });
+        setStatus2("\u753B\u50CF\u6DFB\u4ED8\u5931\u6557", true);
+        showReflectionNotice(`\u753B\u50CF\u6DFB\u4ED8\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${message}`, true);
+      });
+    };
+    editor.addEventListener("input", scheduleSave);
+    editor.addEventListener("input", updateFormatButtons);
+    editor.addEventListener("focus", updateFormatButtons);
+    editor.addEventListener("mouseup", updateFormatButtons);
+    editor.addEventListener("keyup", updateFormatButtons);
+    editor.addEventListener("blur", () => {
+      void flushNow().catch(() => void 0);
+    });
+    editor.addEventListener(
+      "keydown",
+      (event) => {
+        if (handleReflectionFormattingShortcut(editor, event)) return;
+        handleReflectionListKeyDown(editor, event);
+      },
+      true
+    );
+    ["keydown", "keypress", "keyup"].forEach((type) => {
+      editor.addEventListener(type, (event) => event.stopPropagation(), true);
+    });
+    editor.addEventListener("paste", handlePaste, true);
+    attachButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      attachInput.click();
+    });
+    attachInput.addEventListener("change", () => {
+      void attachFiles(attachInput.files).catch(() => void 0);
+    });
+    container.addEventListener("dragover", (event) => {
+      if (!dataTransferMayContainImage(event.dataTransfer)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      container.classList.add("is-drag-over");
+    });
+    container.addEventListener("dragleave", () => {
+      container.classList.remove("is-drag-over");
+    });
+    container.addEventListener("drop", (event) => {
+      const files = imageFilesFromDataTransfer(event.dataTransfer);
+      if (!files.length && !dataTransferMayContainImage(event.dataTransfer)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      container.classList.remove("is-drag-over");
+      const range = getReflectionEditorSelectionRange(editor);
+      if (files.length) {
+        void attachFiles(files, range).catch(() => void 0);
+        return;
+      }
+      void imageFileFromDroppedUrl(event.dataTransfer).then((file) => {
+        if (!file) throw new Error("\u30C9\u30ED\u30C3\u30D7\u3055\u308C\u305F\u753B\u50CF\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+        return attachFiles([file], range);
+      }).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setStatus2("\u753B\u50CF\u6DFB\u4ED8\u5931\u6557", true);
+        showReflectionNotice(`\u753B\u50CF\u6DFB\u4ED8\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${message}`, true);
+      });
+    });
+    container.appendChild(head);
+    container.appendChild(formatBar);
+    container.appendChild(editor);
+    container.appendChild(actions);
+    container.appendChild(footer);
+    container.__qbSupportReflectionFlushNow = flushNow;
+    return container;
+  }
+  function removeReflectionPanel(reason) {
+    const container = document.getElementById(
+      REFLECTION_CONTAINER_ID
+    );
+    if (!container) return;
+    void container.__qbSupportReflectionFlushNow?.().catch(() => void 0);
+    const lightbox = document.getElementById(
+      REFLECTION_LIGHTBOX_ID
+    );
+    lightbox?.__qbSupportReflectionClose?.();
+    container.remove();
+    console.log("[QB_SUPPORT][reflection] removed", {
+      reason,
+      questionId: container.dataset.questionId ?? null
+    });
+  }
+  async function syncReflectionPanel(reason) {
+    if (window !== window.top || !isQbHost() && !isMoshiHost2()) return;
+    const context = getReflectionContext();
+    const placement = getReflectionPlacement();
+    const existing = document.getElementById(
+      REFLECTION_CONTAINER_ID
+    );
+    if (!context || !placement) {
+      if (existing) removeReflectionPanel("explanation-unavailable");
+      return;
+    }
+    if (existing?.isConnected && existing.dataset.questionId === context.questionId) {
+      return;
+    }
+    if (reflectionRenderQuestionId === context.questionId) return;
+    if (existing) removeReflectionPanel("question-changed");
+    reflectionRenderQuestionId = context.questionId;
+    try {
+      const [saved, savedImages] = await loadReflectionDataForContext(context);
+      const liveContext = getReflectionContext();
+      const livePlacement = getReflectionPlacement();
+      if (!liveContext || liveContext.questionId !== context.questionId || !livePlacement) {
+        return;
+      }
+      const current = document.getElementById(
+        REFLECTION_CONTAINER_ID
+      );
+      if (current?.dataset.questionId === context.questionId) return;
+      if (current) removeReflectionPanel("replace-stale-panel");
+      const container = buildReflectionPanel(liveContext, saved, savedImages);
+      livePlacement.parent.insertBefore(container, livePlacement.before);
+      console.log("[QB_SUPPORT][reflection] rendered", {
+        reason,
+        questionId: context.questionId,
+        hasSavedText: Boolean(saved?.reflection),
+        pdfId: QB_REFLECTION_PDF_ID
+      });
+    } catch (error) {
+      console.warn("[QB_SUPPORT][reflection] render failed", {
+        reason,
+        questionId: context.questionId,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      if (reflectionRenderQuestionId === context.questionId) {
+        reflectionRenderQuestionId = null;
+      }
+    }
+  }
   function attachEventHandlers() {
     const trackHintDraftSource = (event) => {
       const target = event.target;
-      if (!isEligibleHintDraftSource(target)) {
-        if (target instanceof HTMLElement && target.isContentEditable) {
-          logDebug("hint-draft-contenteditable-ignored", {
-            tag: target.tagName,
-            id: target.id || null,
-            className: target.className || null,
-            frame: window === window.top ? "top" : "iframe",
-            url: location.href
-          });
-        }
-        return;
-      }
-      const value = target.value?.trim() ?? "";
-      const shouldLog = !lastHintDraftSnapshot || lastHintDraftSnapshot.element !== target || lastHintDraftSnapshot.value !== value;
+      if (!isEligibleHintDraftSource(target)) return;
       lastHintDraftSource = target;
-      if (shouldLog) {
-        lastHintDraftSnapshot = { element: target, value };
-        logDebug("hint-draft-source", summarizeHintDraftSource(target, value));
-      }
     };
     document.addEventListener("focusin", trackHintDraftSource, true);
     document.addEventListener("input", trackHintDraftSource, true);
@@ -4374,10 +5617,12 @@
       "keydown",
       (event) => {
         const debug = settings.debugEnabled;
-        const shouldLogKey = isTargetKey(event.key);
+        const shouldLogKey = isTargetKey(event);
         if (shouldLogKey) {
-          logInfo("[QB_SUPPORT][key-capture]", {
+          console.log("[QB_SUPPORT][key-capture]", JSON.stringify({
             key: event.key,
+            code: event.code,
+            composing: event.isComposing,
             url: location.href,
             frame: window === window.top ? "top" : "iframe",
             active: document.hasFocus(),
@@ -4388,10 +5633,10 @@
               alt: event.altKey,
               shift: event.shiftKey
             }
-          });
+          }));
         }
         if (debug) {
-          logVerbose("[QB_SUPPORT][key]", {
+          console.debug("[QB_SUPPORT][key]", {
             key: event.key,
             composing: event.isComposing,
             activeTag: document.activeElement?.tagName ?? null,
@@ -4401,47 +5646,38 @@
           });
         }
         if (!settings.shortcutsEnabled) return;
-        if (event.isComposing) return;
+        const isTyping = isTypingTarget(event.target) || isTypingTarget(document.activeElement);
+        if (event.isComposing && isTyping) return;
+        const eventBaseKey = getEventBaseKey(event);
         const key = normalizeKey(event.key);
-        const navPrevMatch = isShortcutMatch(event, settings.navPrevKey);
-        const navNextMatch = isShortcutMatch(event, settings.navNextKey);
+        const navPrevMatch = isShortcutMatch(event, settings.navPrevKey) || isShortcutMatch(event, defaultSettings.navPrevKey);
+        const navNextMatch = isShortcutMatch(event, settings.navNextKey) || isShortcutMatch(event, defaultSettings.navNextKey);
         const isNavKey = navPrevMatch || navNextMatch;
-        const navShortcut = navPrevMatch ? settings.navPrevKey : navNextMatch ? settings.navNextKey : "";
-        const navBaseKey = navShortcut ? getShortcutBaseKey(navShortcut) : "";
+        const navBaseKey = isNavKey ? eventBaseKey : "";
         const optionIndex = settings.optionKeys.findIndex(
-          (shortcut) => isShortcutMatch(event, shortcut)
+          (shortcut) => isShortcutMatch(event, shortcut) || isPlainShortcutMatch(event, shortcut, eventBaseKey)
         );
         const isOptionKey = optionIndex >= 0;
         const optionBaseKey = isOptionKey && settings.optionKeys[optionIndex] ? getShortcutBaseKey(settings.optionKeys[optionIndex]) : "";
-        const isTyping = isTypingTarget(event.target);
-        if (isTyping && !event.ctrlKey) return;
         const templateShortcut = getChatTemplateShortcut(event);
         if (templateShortcut && window === window.top && (!isTyping || event.ctrlKey)) {
           consumeShortcutEvent(event);
           void sendTemplateMessage(templateShortcut);
           return;
         }
-        if (isShortcutMatch(event, CHAT_NEW_SHORTCUT) && window === window.top) {
+        if (CHAT_ENABLED && isShortcutMatch(event, CHAT_INPUT_TOGGLE_SHORTCUT) && window === window.top) {
           consumeShortcutEvent(event);
-          resetChatHistory("会話をリセットしました");
+          toggleChatInputFocus();
+          return;
+        }
+        if (isTyping) return;
+        if (CHAT_ENABLED && isShortcutMatch(event, CHAT_NEW_SHORTCUT) && window === window.top) {
+          consumeShortcutEvent(event);
+          resetChatHistory("\u4F1A\u8A71\u3092\u30EA\u30BB\u30C3\u30C8\u3057\u307E\u3057\u305F");
           void saveSettings({ ...settings, chatOpen: true });
           return;
         }
-        if (isShortcutMatch(event, "Ctrl+S") && window === window.top) {
-          setSettingsToggleSource("shortcut-ctrl-s", {
-            key: event.key,
-            target: event.target instanceof HTMLElement ? event.target.tagName : null,
-            isTyping,
-            ctrlKey: event.ctrlKey,
-            metaKey: event.metaKey,
-            altKey: event.altKey,
-            shiftKey: event.shiftKey
-          });
-          logDebug("shortcut-ctrl-s", {
-            key: event.key,
-            target: event.target instanceof HTMLElement ? event.target.tagName : null,
-            isTyping
-          });
+        if (CHAT_ENABLED && isShortcutMatch(event, "Ctrl+S") && window === window.top) {
           consumeShortcutEvent(event);
           if (!chatSettingsPanel) {
             ensureChatUI();
@@ -4455,23 +5691,19 @@
           }
           return;
         }
-        if (isShortcutMatch(event, CHAT_INPUT_TOGGLE_SHORTCUT) && window === window.top) {
-          consumeShortcutEvent(event);
-          toggleChatInputFocus();
-          return;
-        }
         if (!isQuestionPage()) {
           if (shouldLogKey) {
-            logInfo("[QB_SUPPORT][frame-skip]", {
+            console.log("[QB_SUPPORT][frame-skip]", JSON.stringify({
               key: event.key,
               url: location.href,
               frame: window === window.top ? "top" : "iframe",
-              reason: "no-question-container"
-            });
+              reason: "no-question-container",
+              diagnostics: getQuestionPageDiagnostics()
+            }));
           }
           return;
         }
-        if (isShortcutMatch(event, CHAT_TOGGLE_SHORTCUT) && window === window.top) {
+        if (CHAT_ENABLED && isShortcutMatch(event, CHAT_TOGGLE_SHORTCUT) && window === window.top) {
           consumeShortcutEvent(event);
           void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
           return;
@@ -4479,9 +5711,9 @@
         if (isShortcutMatch(event, settings.shortcut)) {
           consumeShortcutEvent(event);
           if (debug) {
-            logVerbose("[QB_SUPPORT][toggle]", {
+            console.debug("[QB_SUPPORT][toggle]", {
               prevented: true,
-              target: describeElement(event.target)
+              target: describeElement(event.target instanceof HTMLElement ? event.target : null)
             });
           }
           const next = !settings.enabled;
@@ -4492,10 +5724,10 @@
           }
           return;
         }
-        const revealMatch = isShortcutMatch(event, settings.revealKey);
+        const revealMatch = isShortcutMatch(event, settings.revealKey) || isPlainShortcutMatch(event, settings.revealKey, eventBaseKey) || isShortcutMatch(event, defaultSettings.revealKey) || isPlainShortcutMatch(event, defaultSettings.revealKey, eventBaseKey);
         if (hasModifier(event) && !isNavKey && !isOptionKey && !revealMatch) {
           if (shouldLogKey) {
-            logInfo("[QB_SUPPORT][key-skip]", {
+            console.log("[QB_SUPPORT][key-skip]", {
               key: event.key,
               reason: "modifier",
               url: location.href,
@@ -4517,7 +5749,7 @@
             navNextMatch ? "next" : "prev"
           );
           if (shouldLogKey) {
-            logInfo("[QB_SUPPORT][nav-target]", {
+            console.log("[QB_SUPPORT][nav-target]", {
               key: navBaseKey,
               target: describeElement(target),
               meta: describeElementMeta(target),
@@ -4526,7 +5758,7 @@
             });
           }
           if (debug) {
-            logVerbose("[QB_SUPPORT][nav]", {
+            console.debug("[QB_SUPPORT][nav]", {
               key: navBaseKey,
               target: describeElement(target)
             });
@@ -4538,7 +5770,7 @@
           clickWithFallback(target, { tag: "nav", logAlways: shouldLogKey });
           if (shouldLogKey) {
             window.setTimeout(() => {
-              logInfo("[QB_SUPPORT][nav-effect]", {
+              console.log("[QB_SUPPORT][nav-effect]", {
                 key: navBaseKey,
                 beforeUrl,
                 afterUrl: location.href,
@@ -4566,7 +5798,7 @@
           if (options.length <= index) return;
           const clickable = getClickableOptionElement(options[index]);
           if (shouldLogKey) {
-            logInfo("[QB_SUPPORT][option-target]", {
+            console.log("[QB_SUPPORT][option-target]", {
               key: optionBaseKey,
               index,
               optionCount: options.length,
@@ -4577,7 +5809,7 @@
             });
           }
           if (debug) {
-            logVerbose("[QB_SUPPORT][option]", {
+            console.debug("[QB_SUPPORT][option]", {
               key: optionBaseKey,
               index,
               optionCount: options.length,
@@ -4592,7 +5824,7 @@
           if (shouldLogKey) {
             window.setTimeout(() => {
               const afterState = getOptionState(options[index]);
-              logInfo("[QB_SUPPORT][option-effect]", {
+              console.log("[QB_SUPPORT][option-effect]", {
                 key: optionBaseKey,
                 before: beforeState,
                 after: afterState,
@@ -4608,7 +5840,7 @@
             sendAction(
               {
                 action: "reveal",
-                key: getShortcutBaseKey(settings.revealKey).toLowerCase()
+                key: eventBaseKey.toLowerCase()
               },
               event
             );
@@ -4616,7 +5848,7 @@
           }
           const revealButton = getAnswerRevealButton(document);
           if (shouldLogKey) {
-            logInfo("[QB_SUPPORT][reveal-target]", {
+            console.log("[QB_SUPPORT][reveal-target]", {
               key: getShortcutBaseKey(settings.revealKey),
               target: describeElement(revealButton),
               meta: describeElementMeta(revealButton),
@@ -4626,7 +5858,7 @@
           }
           if (revealButton) {
             if (debug) {
-              logVerbose("[QB_SUPPORT][reveal]", {
+              console.debug("[QB_SUPPORT][reveal]", {
                 target: describeElement(revealButton)
               });
             }
@@ -4637,7 +5869,7 @@
             if (shouldLogKey) {
               window.setTimeout(() => {
                 const afterState = getRevealState();
-                logInfo("[QB_SUPPORT][reveal-effect]", {
+                console.log("[QB_SUPPORT][reveal-effect]", {
                   key: getShortcutBaseKey(settings.revealKey),
                   before: beforeState,
                   after: afterState,
@@ -4650,7 +5882,7 @@
           }
           const submitButton = getSubmitButton(document);
           if (shouldLogKey) {
-            logInfo("[QB_SUPPORT][submit-target]", {
+            console.log("[QB_SUPPORT][submit-target]", {
               key,
               target: describeElement(submitButton),
               meta: describeElementMeta(submitButton),
@@ -4659,7 +5891,7 @@
             });
           }
           if (debug) {
-            logVerbose("[QB_SUPPORT][submit]", {
+            console.debug("[QB_SUPPORT][submit]", {
               target: describeElement(submitButton)
             });
           }
@@ -4671,7 +5903,7 @@
             if (shouldLogKey) {
               window.setTimeout(() => {
                 const afterState = getRevealState();
-                logInfo("[QB_SUPPORT][submit-effect]", {
+                console.log("[QB_SUPPORT][submit-effect]", {
                   key,
                   before: beforeState,
                   after: afterState,
@@ -4691,7 +5923,7 @@
       (event) => {
         const target = event.target instanceof HTMLElement ? event.target : null;
         if (!target || !isInteractiveTarget(target)) return;
-        logInfo("[QB_SUPPORT][click-capture]", {
+        console.log("[QB_SUPPORT][click-capture]", {
           type: event.type,
           trusted: event.isTrusted,
           target: describeElement(target),
@@ -4717,20 +5949,6 @@
   function removeHeaderGearButton() {
     const legacy = document.getElementById("qb-support-gear");
     if (legacy) legacy.remove();
-  }
-  function createGearIcon() {
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("width", "18");
-    svg.setAttribute("height", "18");
-    svg.setAttribute("aria-hidden", "true");
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute(
-      "d",
-      "M19.4 13.5c.04-.5.04-1 0-1.5l2.1-1.6c.2-.2.3-.5.2-.8l-2-3.4c-.1-.3-.5-.4-.8-.3l-2.5 1a7.2 7.2 0 0 0-1.3-.7l-.4-2.7c0-.3-.3-.5-.6-.5h-4c-.3 0-.6.2-.6.5l-.4 2.7c-.5.2-.9.4-1.3.7l-2.5-1c-.3-.1-.6 0-.8.3l-2 3.4c-.1.3 0 .6.2.8l2.1 1.6c-.04.5-.04 1 0 1.5L2 15.1c-.2.2-.3.5-.2.8l2 3.4c.1.3.5.4.8.3l2.5-1c.4.3.8.5 1.3.7l.4 2.7c0 .3.3.5.6.5h4c.3 0 .6-.2.6-.5l.4-2.7c.5-.2.9-.4 1.3-.7l2.5 1c.3.1.6 0 .8-.3l2-3.4c.1-.3 0-.6-.2-.8l-2.1-1.6zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"
-    );
-    svg.appendChild(path);
-    return svg;
   }
   function updateInfoPanel(info) {
     if (!panel) return;
@@ -4836,26 +6054,53 @@
   }
   function isTypingTarget(target) {
     if (!target || !(target instanceof HTMLElement)) return false;
+    if (!isElementVisible(target)) return false;
     if (target.isContentEditable) return true;
     const tag = target.tagName;
-    if (tag === "TEXTAREA" || tag === "SELECT") return true;
     if (tag === "INPUT") {
-      const type = (target.type || "text").toLowerCase();
-      if (["checkbox", "radio", "button", "submit", "file", "hidden", "image", "range", "color", "reset", "week", "month", "date", "datetime-local", "time"].includes(type)) {
+      const input = target;
+      const type = (input.type || "text").toLowerCase();
+      if (type === "hidden" || type === "checkbox" || type === "radio" || type === "button" || type === "submit" || type === "file") {
         return false;
       }
+      if (input.disabled || input.readOnly) return false;
       return true;
     }
-    return false;
+    if (tag === "TEXTAREA") {
+      const textarea = target;
+      if (textarea.disabled || textarea.readOnly) return false;
+      return true;
+    }
+    return tag === "SELECT";
+  }
+  function isElementVisible(target) {
+    if (target.offsetParent !== null) return true;
+    const rect = target.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
   }
   function isQuestionPage() {
-    return document.querySelector(".question-container") !== null;
+    return isQuestionDocument(document, location.href);
+  }
+  function getQuestionPageDiagnostics() {
+    return {
+      readyState: document.readyState,
+      title: document.title,
+      hasLegacyContainer: document.querySelector(".question-container") !== null,
+      hasQuestionIdQuery: new URLSearchParams(location.search).has("question_id"),
+      buttonCount: document.querySelectorAll("button").length,
+      htmlRendererCount: document.querySelectorAll(".html_renderer").length,
+      iframeSources: listFrameSources(),
+      bodyText: (document.body?.innerText ?? "").replace(/\s+/g, " ").trim().slice(0, 500)
+    };
   }
   function isQbHost() {
     return location.hostname.includes("qb.medilink-study.com");
   }
   function isInputHost() {
     return location.hostname.includes("input.medilink-study.com");
+  }
+  function isMoshiHost2() {
+    return isMoshiHost(location.href);
   }
   function attachMessageHandlers() {
     window.addEventListener("message", (event) => {
@@ -4866,7 +6111,7 @@
         const action = data.action;
         const key = typeof data.key === "string" ? data.key : "";
         const index = typeof data.index === "number" ? data.index : null;
-        logInfo("[QB_SUPPORT][action-recv]", {
+        console.log("[QB_SUPPORT][action-recv]", {
           url: location.href,
           frame: window === window.top ? "top" : "iframe",
           action,
@@ -4893,106 +6138,6 @@
         }
         return;
       }
-      if (data.type === "QB_ANSWER_REQUEST") {
-        if (!isInputHost() && window === window.top) return;
-        const answerContext = extractAnswerExplanationContext(document);
-        const response = {
-          __qb_support: true,
-          type: "QB_ANSWER_CONTEXT",
-          requestId: data.requestId ?? null,
-          text: answerContext.text ?? "",
-          meta: answerContext.meta ?? null
-        };
-        const target = event.source && "postMessage" in event.source ? event.source : window.parent;
-        try {
-          target.postMessage(response, QB_TOP_ORIGIN);
-        } catch (error) {
-          console.warn("[QB_SUPPORT][answer-reply]", error);
-        }
-        return;
-      }
-      if (data.type === "QB_ANSWER_WATCH_START") {
-        if (!isInputHost() && window === window.top) return;
-        const timeoutMs = typeof data.timeoutMs === "number" ? data.timeoutMs : 1500;
-        startAnswerObserver({ once: true });
-        window.setTimeout(() => {
-          stopAnswerObserver();
-        }, timeoutMs);
-        return;
-      }
-      if (data.type === "QB_ANSWER_GLOBAL_SCAN") {
-        if (!isInputHost() && window === window.top) return;
-        runPageContextAnswerScan(data.scanId ?? createChatRequestId());
-        return;
-      }
-      if (data.type === "QB_ANSWER_GLOBAL_SCAN_RESULT") {
-        if (!isInputHost() && window === window.top) return;
-        const results = Array.isArray(data.results) ? data.results : [];
-        if (data.error) {
-          logDebug("hint-answer-global", { source: "error", message: data.error });
-          return;
-        }
-        if (!results.length) {
-          logDebug("hint-answer-global", { source: "empty" });
-          return;
-        }
-        const best = results[0];
-        const text = typeof best.text === "string" ? best.text : "";
-        if (!text) {
-          logDebug("hint-answer-global", { source: "empty" });
-          return;
-        }
-        const context = {
-          text,
-          meta: {
-            source: "global-scan",
-            scanId: data.scanId ?? null,
-            path: best.path ?? null,
-            score: best.score ?? null,
-            length: text.length,
-            preview: getHintAnswerPreview(text)
-          }
-        };
-        logDebug("hint-answer-global", context.meta);
-        sendAnswerContextPush(context);
-        return;
-      }
-      if (data.type === "QB_ANSWER_REVEAL") {
-        if (!isInputHost() && window === window.top) return;
-        const revealButton = getAnswerRevealButton(document);
-        logDebug("hint-answer-reveal", {
-          found: Boolean(revealButton),
-          target: describeElement(revealButton)
-        });
-        if (revealButton) {
-          clickWithFallback(revealButton, { tag: "hint-reveal", logAlways: true });
-        }
-        startAnswerObserver({ once: true });
-        window.setTimeout(() => {
-          const context = extractAnswerExplanationContext(document);
-          if (context.text) {
-            sendAnswerContextPush(context);
-          }
-        }, 300);
-        return;
-      }
-      if (data.type === "QB_NET_LOG") {
-        logInfo("[QB_SUPPORT][net]", data.payload ?? {});
-        return;
-      }
-      if (data.type === "QB_ANSWER_CONTEXT_PUSH") {
-        const context = data.context ?? null;
-        if (context?.text) {
-          cachedAnswerContext = context;
-          logDebug("hint-answer-push", context.meta ?? { source: "push" });
-        }
-        if (pendingAnswerResolvers.length) {
-          const pending = pendingAnswerResolvers.slice();
-          pendingAnswerResolvers = [];
-          pending.forEach((resolve) => resolve(cachedAnswerContext ?? { text: "", meta: null }));
-        }
-        return;
-      }
       if (data.type === "QB_QUESTION_SNAPSHOT") {
         if (data.snapshot) {
           updateSnapshot(data.snapshot);
@@ -5000,35 +6145,25 @@
       }
     });
   }
-  function findTargetFrames() {
+  function findTargetFrame() {
     const frames = Array.from(document.querySelectorAll("iframe"));
-    return frames.filter((frame) => {
+    for (const frame of frames) {
       const src = frame.getAttribute("src") ?? "";
-      return src.includes("input.medilink-study.com");
-    });
-  }
-  function getFrameOrigin(frame) {
-    const src = frame.getAttribute("src") ?? "";
-    if (!src) return "";
-    try {
-      return new URL(src, location.href).origin;
-    } catch {
-      return "";
+      if (src.includes("input.medilink-study.com")) {
+        return frame.contentWindow;
+      }
     }
+    return null;
   }
   function postToInputFrame(message) {
     const errors = [];
-    const frames = findTargetFrames();
-    for (let i = 0; i < frames.length; i += 1) {
-      const frame = frames[i];
-      if (!frame.contentWindow) continue;
-      const origin = getFrameOrigin(frame) || "*";
-      const targetOrigin = frame.dataset.loaded === "true" ? origin : "*";
+    const target = findTargetFrame();
+    if (target) {
       try {
-        frame.contentWindow.postMessage(message, targetOrigin);
-        return { sent: true, method: "querySelector", frameIndex: i, errors };
+        target.postMessage(message, QB_ACTION_ORIGIN);
+        return { sent: true, method: "querySelector", frameIndex: null, errors };
       } catch (error) {
-        errors.push(`querySelector[${i}]: ${String(error)}`);
+        errors.push(`querySelector: ${String(error)}`);
       }
     }
     return { sent: false, method: "none", frameIndex: null, errors };
@@ -5062,41 +6197,11 @@
       }, timeoutMs);
     });
   }
-  function requestAnswerContextFromFrame(timeoutMs) {
-    return new Promise((resolve) => {
-      const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const handler = (event) => {
-        if (event.origin !== QB_ACTION_ORIGIN) return;
-        const data = event.data;
-        if (!data || data.__qb_support !== true) return;
-        if (data.type !== "QB_ANSWER_CONTEXT") return;
-        if (data.requestId !== requestId) return;
-        window.removeEventListener("message", handler);
-        resolve({ text: data.text ?? "", meta: data.meta ?? null });
-      };
-      window.addEventListener("message", handler);
-      const message = {
-        __qb_support: true,
-        type: "QB_ANSWER_REQUEST",
-        requestId
-      };
-      const sent = postToAnswerFrame(message) || postToInputFrame(message).sent;
-      if (!sent) {
-        window.removeEventListener("message", handler);
-        resolve({ text: "", meta: null });
-        return;
-      }
-      window.setTimeout(() => {
-        window.removeEventListener("message", handler);
-        resolve({ text: "", meta: null });
-      }, timeoutMs);
-    });
-  }
   function logFramesOnce() {
     if (document.documentElement.dataset.qbSupportFrames === "true") return;
     document.documentElement.dataset.qbSupportFrames = "true";
     if (window !== window.top) return;
-    logInfo("[QB_SUPPORT][frames]", {
+    console.log("[QB_SUPPORT][frames]", {
       url: location.href,
       frameCount: document.querySelectorAll("iframe").length,
       sources: listFrameSources(),
@@ -5124,15 +6229,31 @@
     const parts = normalized.split("+");
     return parts[parts.length - 1] ?? "";
   }
-  function isTargetKey(rawKey) {
-    const key = normalizeKey(rawKey);
+  function getEventBaseKey(event) {
+    const code = event.code ?? "";
+    if (code.startsWith("Key")) return code.slice(3).toUpperCase();
+    if (code.startsWith("Digit")) return code.slice(5);
+    return normalizeKey(event.key);
+  }
+  function isPlainShortcut(shortcut) {
+    const normalized = normalizeShortcut(shortcut);
+    return Boolean(normalized && !normalized.includes("+"));
+  }
+  function isPlainShortcutMatch(event, shortcut, eventBaseKey) {
+    if (!isPlainShortcut(shortcut)) return false;
+    if (hasModifier(event)) return false;
+    return eventBaseKey === getShortcutBaseKey(shortcut);
+  }
+  function isTargetKey(event) {
+    const key = getEventBaseKey(event);
     const optionKeys = settings.optionKeys.map((shortcut) => getShortcutBaseKey(shortcut)).filter(Boolean);
-    return key === getShortcutBaseKey(settings.navPrevKey) || key === getShortcutBaseKey(settings.navNextKey) || key === getShortcutBaseKey(settings.revealKey) || key === getShortcutBaseKey(CHAT_TOGGLE_SHORTCUT) || getTemplateShortcutKeys().includes(key) || optionKeys.includes(key);
+    return key === getShortcutBaseKey(settings.navPrevKey) || key === getShortcutBaseKey(settings.navNextKey) || key === getShortcutBaseKey(settings.revealKey) || key === getShortcutBaseKey(defaultSettings.revealKey) || CHAT_ENABLED && key === getShortcutBaseKey(CHAT_TOGGLE_SHORTCUT) || CHAT_ENABLED && getTemplateShortcutKeys().includes(key) || optionKeys.includes(key);
   }
   function hasModifier(event) {
     return event.metaKey || event.ctrlKey || event.altKey;
   }
   function getChatTemplateShortcut(event) {
+    if (!CHAT_ENABLED) return null;
     for (const template of getEnabledChatTemplates()) {
       if (!template.shortcut) continue;
       if (isShortcutMatch(event, template.shortcut)) return template;
@@ -5157,30 +6278,34 @@
     if (!isQuestionPage()) return;
     const frameLabel = window === window.top ? "top" : "iframe";
     if (action === "nav") {
-      const target = getNavigationTarget(document, key === "arrowright" ? "next" : "prev");
-      logInfo("[QB_SUPPORT][nav-target]", {
+      const target = getNavigationTarget(document, getNavigationDirection(key));
+      console.log("[QB_SUPPORT][nav-target]", JSON.stringify({
         key,
         target: describeElement(target),
         meta: describeElementMeta(target),
         url: location.href,
         frame: frameLabel,
         source
-      });
+      }));
       if (!target) return;
       const beforeUrl = location.href;
-      void (async () => {
-        const ok = await clickWithCdp(target, "nav");
-        if (!ok) clickWithFallback(target, { tag: "nav", logAlways: true });
-      })();
+      if (source === "local") {
+        clickWithFallback(target, { tag: "nav", logAlways: true });
+      } else {
+        void (async () => {
+          const ok = await clickWithCdp(target, "nav");
+          if (!ok) clickWithFallback(target, { tag: "nav", logAlways: true });
+        })();
+      }
       window.setTimeout(() => {
-        logInfo("[QB_SUPPORT][nav-effect]", {
+        console.log("[QB_SUPPORT][nav-effect]", JSON.stringify({
           key,
           beforeUrl,
           afterUrl: location.href,
           changed: location.href !== beforeUrl,
           frame: frameLabel,
           source
-        });
+        }));
       }, 200);
       return;
     }
@@ -5189,7 +6314,7 @@
       const options = getOptionElements(document);
       if (options.length <= index) return;
       const clickable = getClickableOptionElement(options[index]);
-      logInfo("[QB_SUPPORT][option-target]", {
+      console.log("[QB_SUPPORT][option-target]", {
         key,
         index,
         optionCount: options.length,
@@ -5207,7 +6332,7 @@
       })();
       window.setTimeout(() => {
         const afterState = getOptionState(options[index]);
-        logInfo("[QB_SUPPORT][option-effect]", {
+        console.log("[QB_SUPPORT][option-effect]", {
           key,
           before: beforeState,
           after: afterState,
@@ -5220,23 +6345,27 @@
     }
     if (action === "reveal") {
       const revealButton = getAnswerRevealButton(document);
-      logInfo("[QB_SUPPORT][reveal-target]", {
+      console.log("[QB_SUPPORT][reveal-target]", JSON.stringify({
         key,
         target: describeElement(revealButton),
         meta: describeElementMeta(revealButton),
         url: location.href,
         frame: frameLabel,
         source
-      });
+      }));
       if (revealButton) {
         const beforeState = getRevealState();
-        void (async () => {
-          const ok = await clickWithCdp(revealButton, "reveal");
-          if (!ok) clickWithFallback(revealButton, { tag: "reveal", logAlways: true });
-        })();
+        if (source === "local") {
+          clickWithFallback(revealButton, { tag: "reveal", logAlways: true });
+        } else {
+          void (async () => {
+            const ok = await clickWithCdp(revealButton, "reveal");
+            if (!ok) clickWithFallback(revealButton, { tag: "reveal", logAlways: true });
+          })();
+        }
         window.setTimeout(() => {
           const afterState = getRevealState();
-          logInfo("[QB_SUPPORT][reveal-effect]", {
+          console.log("[QB_SUPPORT][reveal-effect]", {
             key,
             before: beforeState,
             after: afterState,
@@ -5248,23 +6377,27 @@
         return;
       }
       const submitButton = getSubmitButton(document);
-      logInfo("[QB_SUPPORT][submit-target]", {
+      console.log("[QB_SUPPORT][submit-target]", JSON.stringify({
         key,
         target: describeElement(submitButton),
         meta: describeElementMeta(submitButton),
         url: location.href,
         frame: frameLabel,
         source
-      });
+      }));
       if (submitButton) {
         const beforeState = getRevealState();
-        void (async () => {
-          const ok = await clickWithCdp(submitButton, "submit");
-          if (!ok) clickWithFallback(submitButton, { tag: "submit", logAlways: true });
-        })();
+        if (source === "local") {
+          clickWithFallback(submitButton, { tag: "submit", logAlways: true });
+        } else {
+          void (async () => {
+            const ok = await clickWithCdp(submitButton, "submit");
+            if (!ok) clickWithFallback(submitButton, { tag: "submit", logAlways: true });
+          })();
+        }
         window.setTimeout(() => {
           const afterState = getRevealState();
-          logInfo("[QB_SUPPORT][submit-effect]", {
+          console.log("[QB_SUPPORT][submit-effect]", {
             key,
             before: beforeState,
             after: afterState,
@@ -5285,10 +6418,21 @@
     );
   }
   function sendAction(payload, event) {
-    if (hasModifier(event)) return;
     event.preventDefault();
     event.stopPropagation();
     if (window !== window.top) return;
+    if (hasLocalActionTarget(payload)) {
+      console.log("[QB_SUPPORT][action-local]", {
+        url: location.href,
+        frame: "top",
+        action: payload.action,
+        key: payload.key,
+        index: payload.index ?? null,
+        reason: "target-in-top"
+      });
+      handleActionInFrame(payload.action, payload.key, payload.index ?? null, "local");
+      return;
+    }
     const message = {
       __qb_support: true,
       type: "QB_ACTION",
@@ -5298,7 +6442,7 @@
     };
     const result = postToInputFrame(message);
     if (!result.sent) {
-      logInfo("[QB_SUPPORT][action-sent]", {
+      console.log("[QB_SUPPORT][action-sent]", {
         url: location.href,
         frame: "top",
         action: payload.action,
@@ -5309,7 +6453,7 @@
         frameCount: window.frames.length,
         errors: result.errors
       });
-      logInfo("[QB_SUPPORT][action-local]", {
+      console.log("[QB_SUPPORT][action-local]", {
         url: location.href,
         frame: "top",
         action: payload.action,
@@ -5320,7 +6464,7 @@
       handleActionInFrame(payload.action, payload.key, payload.index ?? null, "local");
       return;
     }
-    logInfo("[QB_SUPPORT][action-sent]", {
+    console.log("[QB_SUPPORT][action-sent]", {
       url: location.href,
       frame: "top",
       action: payload.action,
@@ -5331,6 +6475,23 @@
       frameIndex: result.frameIndex
     });
   }
+  function getNavigationDirection(key) {
+    const normalizedKey = normalizeKey(key).toLowerCase();
+    const nextKey = getShortcutBaseKey(settings.navNextKey).toLowerCase();
+    if (normalizedKey === nextKey || normalizedKey === "arrowright") return "next";
+    return "prev";
+  }
+  function hasLocalActionTarget(payload) {
+    if (!isQuestionDocument(document, location.href)) return false;
+    if (payload.action === "nav") {
+      return Boolean(getNavigationTarget(document, getNavigationDirection(payload.key)));
+    }
+    if (payload.action === "option") {
+      const index = payload.index ?? -1;
+      return index >= 0 && Boolean(getOptionElements(document)[index]);
+    }
+    return Boolean(getAnswerRevealButton(document) ?? getSubmitButton(document));
+  }
   function getOptionState(option) {
     if (!option) return null;
     const ans = option.querySelector(".ans") ?? option;
@@ -5338,6 +6499,11 @@
     return {
       active: ans.classList.contains("active"),
       checked: input ? input.checked : null,
+      className: option.className.toString(),
+      labelClassName: option.firstElementChild?.className?.toString() ?? null,
+      ariaPressed: option.getAttribute("aria-pressed"),
+      ariaChecked: option.getAttribute("aria-checked"),
+      style: option.getAttribute("style"),
       text: (ans.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 80)
     };
   }
@@ -5361,191 +6527,12 @@
     document.documentElement.dataset.qbSupportInjected = "true";
     const manifest = getManifest();
     const version = manifest?.version ?? "unknown";
-    logInfo("[QB_SUPPORT][inject]", {
+    console.log("[QB_SUPPORT][inject]", {
       url: location.href,
       frame: window === window.top ? "top" : "iframe",
       ts: Date.now(),
       version
     });
-  }
-  function shouldLogNetwork(url) {
-    try {
-      const parsed = new URL(url, location.href);
-      return parsed.hostname.includes("medilink-study.com");
-    } catch {
-      return false;
-    }
-  }
-  function shouldInspectNetworkBody(url) {
-    return /operation|qbdispv2\.php/i.test(url);
-  }
-  function buildNetworkPreview(text) {
-    const normalized = normalizeSpace(text);
-    return normalized.length > 200 ? `${normalized.slice(0, 200)}...` : normalized;
-  }
-  function emitNetworkLog(payload) {
-    const enriched = { frame: window === window.top ? "top" : "iframe", ...payload };
-    if (window === window.top) {
-      logInfo("[QB_SUPPORT][net]", enriched);
-      return;
-    }
-    try {
-      window.top?.postMessage({ __qb_support: true, type: "QB_NET_LOG", payload: enriched }, QB_TOP_ORIGIN);
-    } catch (error) {
-      logInfo("[QB_SUPPORT][net]", {
-        ...enriched,
-        forwardError: error instanceof Error ? error.message : String(error)
-      });
-    }
-  }
-  function sendAnswerContextPush(context) {
-    if (!context?.text) return;
-    const payload = {
-      __qb_support: true,
-      type: "QB_ANSWER_CONTEXT_PUSH",
-      context
-    };
-    try {
-      window.top?.postMessage(payload, QB_TOP_ORIGIN);
-    } catch (error) {
-      console.warn("[QB_SUPPORT][answer-push]", error);
-    }
-  }
-  function postToAnswerFrame(message) {
-    if (!answerFrameEl || !answerFrameEl.contentWindow) return false;
-    const origin = getFrameOrigin(answerFrameEl) || "*";
-    const targetOrigin = answerFrameEl.dataset.loaded === "true" ? origin : "*";
-    try {
-      answerFrameEl.contentWindow.postMessage(message, targetOrigin);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  function initNetworkLogger() {
-    if (window.__qbSupportNetworkHooked) return;
-    window.__qbSupportNetworkHooked = true;
-    logInfo("[QB_SUPPORT][net-hook]", {
-      url: location.href,
-      frame: window === window.top ? "top" : "iframe"
-    });
-    const netSeen = window.__qbSupportNetSeen ?? /* @__PURE__ */ new Set();
-    window.__qbSupportNetSeen = netSeen;
-    const markSeen = (url) => {
-      if (!url) return false;
-      if (netSeen.has(url)) return false;
-      netSeen.add(url);
-      return true;
-    };
-    if ("PerformanceObserver" in window) {
-      try {
-        const observer = new PerformanceObserver((list) => {
-          list.getEntries().forEach((entry) => {
-            const name = entry?.name ?? "";
-            if (!shouldInspectNetworkBody(name)) return;
-            if (!markSeen(name)) return;
-            emitNetworkLog({
-              type: "resource",
-              url: name,
-              initiatorType: entry.initiatorType ?? null,
-              durationMs: Math.round(entry.duration ?? 0),
-              transferSize: "transferSize" in entry ? entry.transferSize : null,
-              encodedBodySize: "encodedBodySize" in entry ? entry.encodedBodySize : null,
-              decodedBodySize: "decodedBodySize" in entry ? entry.decodedBodySize : null
-            });
-          });
-        });
-        observer.observe({ entryTypes: ["resource"] });
-      } catch (error) {
-        console.warn("[QB_SUPPORT][net-hook]", "performance-observer-failed", error);
-      }
-    }
-    const originalFetch = window.fetch;
-    if (typeof originalFetch === "function") {
-      window.fetch = async (...args) => {
-        const request = args[0];
-        const url = typeof request === "string" ? request : request?.url ?? "";
-        const method = typeof request === "string" ? (args[1]?.method ?? "GET") : request?.method ?? "GET";
-        const startedAt = Date.now();
-        const response = await originalFetch(...args);
-        if (!shouldLogNetwork(url)) return response;
-        const durationMs = Date.now() - startedAt;
-        const cloned = response.clone();
-        const contentType = cloned.headers.get("content-type") ?? "";
-        const contentLength = Number(cloned.headers.get("content-length") ?? 0);
-        let preview = "";
-        let hasAnswerKeywords = false;
-        try {
-          const shouldRead = !contentLength || contentLength < 200000 || shouldInspectNetworkBody(url);
-          if (shouldRead) {
-            if (contentType.includes("application/json") || contentType.includes("text") || contentType.includes("html") || shouldInspectNetworkBody(url)) {
-              const text = await cloned.text();
-              preview = buildNetworkPreview(text);
-              hasAnswerKeywords = hasHintAnswerKeywords(text);
-            }
-          }
-        } catch (error) {
-          preview = `preview-failed:${error instanceof Error ? error.message : String(error)}`;
-        }
-        emitNetworkLog({
-          type: "fetch",
-          url,
-          method,
-          status: response.status,
-          durationMs,
-          contentType,
-          contentLength,
-          hasAnswerKeywords,
-          preview
-        });
-        return response;
-      };
-    }
-    const originalXhrOpen = XMLHttpRequest.prototype.open;
-    const originalXhrSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-      this.__qbSupportUrl = url;
-      this.__qbSupportMethod = method;
-      return originalXhrOpen.call(this, method, url, ...rest);
-    };
-    XMLHttpRequest.prototype.send = function(...args) {
-      const startAt = Date.now();
-      const url = this.__qbSupportUrl ?? "";
-      const method = this.__qbSupportMethod ?? "";
-      const done = () => {
-        if (!shouldLogNetwork(url)) return;
-        const durationMs = Date.now() - startAt;
-        const contentType = this.getResponseHeader("content-type") ?? "";
-        const contentLength = Number(this.getResponseHeader("content-length") ?? 0);
-        let preview = "";
-        let hasAnswerKeywords = false;
-        try {
-          const shouldRead = !contentLength || contentLength < 200000 || shouldInspectNetworkBody(url);
-          if (shouldRead) {
-            if (contentType.includes("application/json") || contentType.includes("text") || contentType.includes("html") || shouldInspectNetworkBody(url)) {
-              const text = typeof this.responseText === "string" ? this.responseText : "";
-              preview = buildNetworkPreview(text);
-              hasAnswerKeywords = hasHintAnswerKeywords(text);
-            }
-          }
-        } catch (error) {
-          preview = `preview-failed:${error instanceof Error ? error.message : String(error)}`;
-        }
-        emitNetworkLog({
-          type: "xhr",
-          url,
-          method,
-          status: this.status,
-          durationMs,
-          contentType,
-          contentLength,
-          hasAnswerKeywords,
-          preview
-        });
-      };
-      this.addEventListener("loadend", done);
-      return originalXhrSend.apply(this, args);
-    };
   }
   function ensureMarker() {
     if (document.getElementById(MARKER_ID)) return;
@@ -5597,8 +6584,16 @@
     } else if (style) {
       style.remove();
     }
-    toggleWidgetVisibility("qb-support-search-style", ".widget-search", searchVisible);
-    toggleWidgetVisibility("qb-support-note-style", ".widget-note", noteVisible);
+    toggleWidgetVisibility(
+      "qb-support-search-style",
+      ".widget-search, [data-testid='side-search-header'], [data-testid='side-search-body']",
+      searchVisible
+    );
+    toggleWidgetVisibility(
+      "qb-support-note-style",
+      ".widget-note, [data-testid='side-note-header'], [data-testid='side-note-body'], #fab-note",
+      noteVisible
+    );
   }
   function toggleWidgetVisibility(styleId, selector, visible) {
     let style = document.getElementById(styleId);
@@ -5606,11 +6601,11 @@
       if (!style) {
         style = document.createElement("style");
         style.id = styleId;
-        style.textContent = `
-        ${selector} { display: none !important; }
-      `;
         document.head.appendChild(style);
       }
+      style.textContent = `
+      ${selector} { display: none !important; }
+    `;
       return;
     }
     if (style) style.remove();
@@ -5618,7 +6613,7 @@
   async function clickRevealWhenReady() {
     const revealButton = await waitForRevealButton(2e3);
     if (settings.debugEnabled) {
-      logVerbose("[QB_SUPPORT][reveal-wait]", {
+      console.debug("[QB_SUPPORT][reveal-wait]", {
         found: !!revealButton,
         target: describeElement(revealButton)
       });
@@ -5634,7 +6629,7 @@
       const initial = getAnswerRevealButton(document);
       if (initial) {
         if (settings.debugEnabled) {
-          logVerbose("[QB_SUPPORT][reveal-check]", {
+          console.debug("[QB_SUPPORT][reveal-check]", {
             phase: "initial",
             target: describeElement(initial)
           });
@@ -5647,7 +6642,7 @@
         if (found) {
           observer.disconnect();
           if (settings.debugEnabled) {
-            logVerbose("[QB_SUPPORT][reveal-check]", {
+            console.debug("[QB_SUPPORT][reveal-check]", {
               phase: "mutation",
               target: describeElement(found)
             });
@@ -5659,7 +6654,7 @@
       window.setTimeout(() => {
         observer.disconnect();
         if (settings.debugEnabled) {
-          logVerbose("[QB_SUPPORT][reveal-check]", {
+          console.debug("[QB_SUPPORT][reveal-check]", {
             phase: "timeout"
           });
         }
@@ -5670,14 +6665,14 @@
   function clickWithFallback(target, options) {
     const tag = options?.tag;
     const logAlways = options?.logAlways ?? false;
-    target.click();
-    logClick(tag, "element.click", target, logAlways);
-    const events = ["pointerdown", "pointerup", "mousedown", "mouseup", "click"];
+    const events = ["pointerdown", "mousedown", "pointerup", "mouseup"];
     for (const type of events) {
       const event = createPointerLikeEvent(type);
       const result = target.dispatchEvent(event);
       logClick(tag, `dispatch:${type}`, target, logAlways, result);
     }
+    target.click();
+    logClick(tag, "element.click", target, logAlways);
   }
   function describeElement(element) {
     if (!element) return null;
@@ -5698,15 +6693,15 @@
         y
       });
       if (response?.ok) {
-        logInfo("[QB_SUPPORT][cdp-click]", { tag, ok: true, x, y });
+        console.log("[QB_SUPPORT][cdp-click]", { tag, ok: true, x, y });
         return true;
       }
       const error = response?.error ?? "Unknown error";
       console.warn("[QB_SUPPORT][cdp-click]", { tag, ok: false, error, x, y });
-      setStatus(`CDP click失敗: ${error}`, true);
+      setStatus(`CDP click\u5931\u6557: ${error}`, true);
     } catch (error) {
       console.warn("[QB_SUPPORT][cdp-click]", { tag, ok: false, error });
-      setStatus("CDP click失敗", true);
+      setStatus("CDP click\u5931\u6557", true);
     }
     return false;
   }
@@ -5744,7 +6739,7 @@
       target: describeElement(target)
     };
     if (typeof result === "boolean") payload.result = result;
-    logInfo("[QB_SUPPORT][click]", payload);
+    console.log("[QB_SUPPORT][click]", payload);
   }
   start();
 })();

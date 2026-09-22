@@ -203,10 +203,11 @@
     if (!identity.launchWebAuthFlow) {
       throw new Error("chrome.identity.launchWebAuthFlow is not available.");
     }
+    const launchWebAuthFlow = identity.launchWebAuthFlow;
     const url = buildOAuthUrl(identity);
     console.log(AUTH_LOG_PREFIX, "launchWebAuthFlow:start", { url });
     return new Promise((resolve, reject) => {
-      identity.launchWebAuthFlow({ url, interactive }, (redirectUrl) => {
+      launchWebAuthFlow({ url, interactive }, (redirectUrl) => {
         const err = webext.runtime?.lastError;
         console.log(AUTH_LOG_PREFIX, "launchWebAuthFlow:callback", {
           redirectUrl: redirectUrl ?? null,
@@ -252,11 +253,12 @@
     });
     const methodTimeout = getAuthTimeout(interactive);
     if (identity.getAuthToken) {
+      const getAuthToken = identity.getAuthToken;
       try {
         console.log(AUTH_LOG_PREFIX, "getAuthToken:start");
         const token = await withAuthTimeout(
           new Promise((resolve, reject) => {
-            identity.getAuthToken({ interactive }, (token2) => {
+            getAuthToken({ interactive }, (token2) => {
               const err = webext.runtime?.lastError;
               console.log(AUTH_LOG_PREFIX, "getAuthToken:callback", {
                 tokenPresent: Boolean(token2),
@@ -302,8 +304,9 @@
     const identity = webext.identity;
     if (!identity?.removeCachedAuthToken) return;
     if (!token) return;
+    const removeCachedAuthToken = identity.removeCachedAuthToken;
     await new Promise((resolve, reject) => {
-      identity.removeCachedAuthToken({ token }, () => {
+      removeCachedAuthToken({ token }, () => {
         const err = webext.runtime?.lastError;
         if (err?.message) {
           reject(new Error(err.message));

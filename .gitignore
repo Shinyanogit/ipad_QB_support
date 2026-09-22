@@ -1,3 +1,8 @@
 参考にしたいページ
 .env.local
 QB Support
+node_modules/
+backend/node_modules/
+FOR*.md
+.env
+.env.*

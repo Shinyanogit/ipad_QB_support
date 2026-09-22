@@ -630,6 +630,17 @@ body.qb-support-chat-dock .answer-item {
 html[data-qb-theme="dark"] .service-header,
 html[data-qb-theme="dark"] .service-header__wrapper {
   background: #abb81fff;
+  color: #1a237e !important;
+}
+
+html[data-qb-theme="dark"] .service-header__menu-button,
+html[data-qb-theme="dark"] .service-header__menu-button *,
+html[data-qb-theme="dark"] .service-header__menu-icon,
+html[data-qb-theme="dark"] .service-header__menu-icon *,
+html[data-qb-theme="dark"] .service-header__custom-icon,
+html[data-qb-theme="dark"] .service-header__icon-text {
+  color: #1a237e !important;
+  text-shadow: none !important;
 }
 
 html[data-qb-theme="dark"] .service-footer,
@@ -1447,6 +1458,195 @@ html[data-qb-theme="dark"] .question-container {
   color: #f5fbff;
 }
 
+/* QB Next UI (2026): the quiz now renders directly under body with Tailwind utilities. */
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col {
+  background-color: #05090d !important;
+  color: #f5fbff !important;
+  color-scheme: dark;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="bg-white"]:not([style*="background"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="bg-slate-50"]:not([style*="background"]) {
+  background-color: #0b1218 !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="bg-gray-100"]:not([style*="background"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="bg-slate-100"]:not([style*="background"]) {
+  background-color: #101820 !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="bg-gray-200"]:not([style*="background"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="bg-gray-200/50"]:not([style*="background"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="bg-slate-200"]:not([style*="background"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="bg-slate-200/20"]:not([style*="background"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="bg-slate-200/80"]:not([style*="background"]) {
+  background-color: #18232d !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="bg-gray-300"]:not([style*="background"]) {
+  background-color: #24313b !important;
+}
+
+/* QB sets the persistent navigation background inline, so override it explicitly. */
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [data-testid="sidebar-menu"] {
+  background-color: #0b1218 !important;
+  color: #dce7ef !important;
+  border-color: #34414d !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-gray-900"],
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-gray-800"],
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-slate-900"],
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-slate-800"] {
+  color: #f5fbff !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-gray-700"],
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-slate-700"] {
+  color: #dce7ef !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-gray-600"],
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-slate-600"] {
+  color: #c4d0da !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-gray-500"],
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-slate-500"],
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-slate-500/70"] {
+  color: #a9b7c2 !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-gray-400"],
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="text-slate-400"] {
+  color: #8797a3 !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="border-gray-200"]:not([style*="border"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="border-gray-300"]:not([style*="border"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="border-slate-200"]:not([style*="border"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="border-slate-300"]:not([style*="border"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="border"]:not([style*="border"]):not([class*="border-qb-"]):not([class*="border-red-"]):not([class*="border-green-"]):not([class*="border-blue-"]):not([class*="border-yellow-"]):not([class*="border-orange-"]):not([class~="border-white"]):not([class~="border-black"]):not([class~="border-transparent"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="border-2"]:not([style*="border"]):not([class*="border-qb-"]):not([class*="border-red-"]):not([class*="border-green-"]):not([class*="border-blue-"]):not([class*="border-yellow-"]):not([class*="border-orange-"]):not([class~="border-white"]):not([class~="border-black"]):not([class~="border-transparent"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="border-b"]:not([style*="border"]):not([class*="border-qb-"]):not([class*="border-red-"]):not([class*="border-green-"]):not([class*="border-blue-"]):not([class*="border-yellow-"]):not([class*="border-orange-"]):not([class~="border-white"]):not([class~="border-black"]):not([class~="border-transparent"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="border-b-2"]:not([style*="border"]):not([class*="border-qb-"]):not([class*="border-red-"]):not([class*="border-green-"]):not([class*="border-blue-"]):not([class*="border-yellow-"]):not([class*="border-orange-"]):not([class~="border-white"]):not([class~="border-black"]):not([class~="border-transparent"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="border-t"]:not([style*="border"]):not([class*="border-qb-"]):not([class*="border-red-"]):not([class*="border-green-"]):not([class*="border-blue-"]):not([class*="border-yellow-"]):not([class*="border-orange-"]):not([class~="border-white"]):not([class~="border-black"]):not([class~="border-transparent"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="border-r"]:not([style*="border"]):not([class*="border-qb-"]):not([class*="border-red-"]):not([class*="border-green-"]):not([class*="border-blue-"]):not([class*="border-yellow-"]):not([class*="border-orange-"]):not([class~="border-white"]):not([class~="border-black"]):not([class~="border-transparent"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="border-l"]:not([style*="border"]):not([class*="border-qb-"]):not([class*="border-red-"]):not([class*="border-green-"]):not([class*="border-blue-"]):not([class*="border-yellow-"]):not([class*="border-orange-"]):not([class~="border-white"]):not([class~="border-black"]):not([class~="border-transparent"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="border-x"]:not([style*="border"]):not([class*="border-qb-"]):not([class*="border-red-"]):not([class*="border-green-"]):not([class*="border-blue-"]):not([class*="border-yellow-"]):not([class*="border-orange-"]):not([class~="border-white"]):not([class~="border-black"]):not([class~="border-transparent"]) {
+  border-color: #34414d !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col input,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col select,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col textarea {
+  background-color: #0b1218 !important;
+  color: #f5fbff !important;
+  border-color: #34414d !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col input::placeholder,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col textarea::placeholder {
+  color: #8797a3 !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col .html_renderer,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col .html_renderer p,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col .html_renderer li,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col .html_renderer span {
+  color: inherit;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col .html_renderer h1,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col .html_renderer h2,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col .html_renderer h3,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col .html_renderer h4,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col .html_renderer h5,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col .html_renderer h6 {
+  color: #dce7ef !important;
+}
+
+:is(#qb-support-dark-surface-override, [data-qb-support-dark-surface]) {
+  background-color: #05090d !important;
+  color: #f8fafc !important;
+  border-color: rgba(248, 250, 252, 0.78) !important;
+}
+
+:is(#qb-support-dark-content-override, [data-qb-support-dark-content]) {
+  color: #f8fafc !important;
+  text-shadow: none !important;
+  border-color: rgba(248, 250, 252, 0.78) !important;
+}
+
+:is(#qb-support-dark-surface-descendants, [data-qb-support-dark-surface]) * {
+  border-color: rgba(248, 250, 252, 0.78) !important;
+  outline-color: rgba(248, 250, 252, 0.78) !important;
+}
+
+html[data-qb-theme="dark"] :is(
+  .html_renderer,
+  .resultcontent,
+  .resultContent,
+  .result-content,
+  #resultcontent,
+  #answerSection
+) p:has(> figure img[src*="/exam_images_kokushi/"]),
+html[data-qb-theme="dark"] :is(
+  .html_renderer,
+  .resultcontent,
+  .resultContent,
+  .result-content,
+  #resultcontent,
+  #answerSection
+) figure:has(img[src*="/exam_images_kokushi/"]),
+html[data-qb-theme="dark"] img[src*="/exam_images_kokushi/"] {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
+
+html[data-qb-theme="dark"] :is(
+  [style*="background-color:#efefef" i],
+  [style*="background-color: #efefef" i],
+  [style*="background-color:rgb(239, 239, 239)" i],
+  [style*="background-color: rgb(239, 239, 239)" i]
+),
+html[data-qb-theme="dark"] :is(
+  [style*="background-color:#efefef" i],
+  [style*="background-color: #efefef" i],
+  [style*="background-color:rgb(239, 239, 239)" i],
+  [style*="background-color: rgb(239, 239, 239)" i]
+) * {
+  background-color: #18232d !important;
+  color: #f8fafc !important;
+  text-shadow: none !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col .html_renderer hr {
+  border-color: #34414d !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="hover:bg-white"]:hover:not([style*="background"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="hover:bg-gray-100"]:hover:not([style*="background"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="hover:bg-slate-50"]:hover:not([style*="background"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="hover:bg-slate-100"]:hover:not([style*="background"]) {
+  background-color: #18232d !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="hover:bg-gray-300"]:hover:not([style*="background"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="hover:bg-slate-200"]:hover:not([style*="background"]),
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="active:bg-slate-200/80"]:active:not([style*="background"]) {
+  background-color: #24313b !important;
+}
+
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="hover:text-gray-900"]:hover,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="hover:text-gray-800"]:hover,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="hover:text-gray-700"]:hover,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="hover:text-gray-500"]:hover,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="hover:text-slate-500"]:hover,
+html[data-qb-theme="dark"] body > .no-scrollbar.h-full.flex-col [class~="active:text-gray-900"]:active {
+  color: #ffffff !important;
+}
+
 html[data-qb-theme="dark"] .common-header,
 html[data-qb-theme="dark"] .header,
 html[data-qb-theme="dark"] div.header,
@@ -1773,6 +1973,498 @@ html[data-qb-theme="light"] #qb-support-chat-toggle {
 html[data-qb-theme="light"] #qb-support-chat-toggle[data-open="true"] {
   background: #006057;
   color: #ffffff;
+}
+
+#qb-support-reflection {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 18px 0 12px;
+  padding: 12px 14px;
+  border: 1px solid #cbd5e1;
+  border-left: 4px solid #2f73d9;
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #1f2937;
+  font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+#qb-support-reflection .qb-support-reflection-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+#qb-support-reflection .qb-support-reflection-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+#qb-support-reflection .qb-support-reflection-meta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+#qb-support-reflection .qb-support-reflection-pdf {
+  padding: 2px 7px;
+  border: 1px solid #b8c8db;
+  border-radius: 999px;
+  color: #52657a;
+  background: #eef4fb;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+#qb-support-reflection .qb-support-reflection-status {
+  min-width: 42px;
+  color: #64748b;
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+#qb-support-reflection .qb-support-reflection-status.is-error {
+  color: #dc2626;
+}
+
+#qb-support-reflection .qb-support-reflection-formatbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+#qb-support-reflection .qb-support-reflection-format {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: #52657a;
+  font: 600 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+#qb-support-reflection .qb-support-reflection-format:hover {
+  border-color: #cbd5e1;
+  background: #e8eef5;
+  color: #1f2937;
+}
+
+#qb-support-reflection .qb-support-reflection-format[aria-pressed="true"] {
+  border-color: #8ab4ee;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+#qb-support-reflection .qb-support-reflection-format[data-command="bold"] {
+  font-weight: 800 !important;
+}
+
+#qb-support-reflection .qb-support-reflection-format[data-command="italic"] {
+  font-style: italic !important;
+}
+
+#qb-support-reflection .qb-support-reflection-format[data-command="underline"] {
+  text-decoration: underline !important;
+}
+
+#qb-support-reflection .qb-support-reflection-format[data-command="strikeThrough"] {
+  text-decoration: line-through !important;
+}
+
+#qb-support-reflection .qb-support-reflection-format[data-command="insertOrderedList"] {
+  width: 34px;
+}
+
+#qb-support-reflection .qb-support-reflection-editor {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 96px;
+  padding: 9px 10px;
+  overflow: visible;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  outline: none;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#qb-support-reflection .qb-support-reflection-editor:focus {
+  border-color: #2f73d9;
+  box-shadow: 0 0 0 2px rgba(47, 115, 217, 0.18);
+}
+
+#qb-support-reflection .qb-support-reflection-editor.is-empty::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+#qb-support-reflection .qb-support-reflection-editor b,
+#qb-support-reflection .qb-support-reflection-editor strong {
+  font-weight: 700 !important;
+}
+
+#qb-support-reflection .qb-support-reflection-editor i,
+#qb-support-reflection .qb-support-reflection-editor em {
+  font-style: italic !important;
+}
+
+#qb-support-reflection .qb-support-reflection-editor u {
+  text-decoration: underline !important;
+  text-underline-offset: 0.14em;
+}
+
+#qb-support-reflection .qb-support-reflection-editor s,
+#qb-support-reflection .qb-support-reflection-editor strike,
+#qb-support-reflection .qb-support-reflection-editor del {
+  text-decoration: line-through !important;
+}
+
+#qb-support-reflection .qb-support-reflection-editor ul,
+#qb-support-reflection .qb-support-reflection-editor ol {
+  display: block !important;
+  margin: 0.2em 0 !important;
+  padding-left: 1.7em !important;
+  list-style-position: outside !important;
+}
+
+#qb-support-reflection .qb-support-reflection-editor ul {
+  list-style-type: disc !important;
+}
+
+#qb-support-reflection .qb-support-reflection-editor ol {
+  list-style-type: decimal !important;
+}
+
+#qb-support-reflection .qb-support-reflection-editor li {
+  display: list-item !important;
+  margin: 0.08em 0 !important;
+  padding-left: 0.15em !important;
+}
+
+#qb-support-reflection .qb-support-reflection-editor li > ul,
+#qb-support-reflection .qb-support-reflection-editor li > ol {
+  margin-top: 0.08em !important;
+  margin-bottom: 0.08em !important;
+}
+
+#qb-support-reflection .qb-support-reflection-editor li > ul {
+  list-style-type: circle !important;
+}
+
+#qb-support-reflection .qb-support-reflection-editor li > ul li > ul {
+  list-style-type: square !important;
+}
+
+#qb-support-reflection .qb-support-reflection-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#qb-support-reflection .qb-support-reflection-attach {
+  appearance: none;
+  padding: 6px 10px;
+  border: 1px solid #b8c8db;
+  border-radius: 6px;
+  background: #eef4fb;
+  color: #334155;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+#qb-support-reflection .qb-support-reflection-attach:hover {
+  background: #e1ebf7;
+}
+
+#qb-support-reflection .qb-support-reflection-attach:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+#qb-support-reflection.is-drag-over {
+  border-color: #2f73d9;
+  box-shadow: 0 0 0 2px rgba(47, 115, 217, 0.18);
+}
+
+#qb-support-reflection .qb-support-reflection-inline-image {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  box-sizing: border-box;
+  max-width: min(320px, 96%);
+  margin: 4px 5px;
+  padding: 4px;
+  vertical-align: middle;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+  cursor: default;
+}
+
+#qb-support-reflection .qb-support-reflection-inline-image img {
+  display: block;
+  box-sizing: border-box;
+  width: auto;
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  border-radius: 4px;
+  cursor: zoom-in;
+}
+
+#qb-support-reflection .qb-support-reflection-inline-image-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 130px;
+  height: 72px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 11px;
+}
+
+#qb-support-reflection .qb-support-reflection-inline-image-caption {
+  max-width: 100%;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#qb-support-reflection .qb-support-reflection-footer {
+  margin-top: 7px;
+  color: #64748b;
+  font-size: 10px;
+}
+
+#qb-support-reflection-lightbox {
+  position: fixed;
+  z-index: 2147483647;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+
+#qb-support-reflection-lightbox .qb-support-reflection-lightbox-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 96vw;
+  max-height: 94vh;
+  cursor: default;
+}
+
+#qb-support-reflection-lightbox img {
+  display: block;
+  max-width: 96vw;
+  max-height: calc(94vh - 42px);
+  object-fit: contain;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.45);
+}
+
+#qb-support-reflection-lightbox .qb-support-reflection-lightbox-caption {
+  width: 100%;
+  margin-top: 8px;
+  overflow: hidden;
+  color: #f8fafc;
+  font: 12px/1.4 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#qb-support-reflection-lightbox .qb-support-reflection-lightbox-close {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(20, 20, 20, 0.92);
+  color: #ffffff;
+  font: 22px/28px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+#qb-support-reflection-notice {
+  position: fixed;
+  z-index: 2147483647;
+  right: 20px;
+  bottom: 20px;
+  max-width: min(420px, calc(100vw - 40px));
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font: 13px/1.45 "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.2);
+}
+
+#qb-support-reflection-notice.is-error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection {
+  border-color: #34414d;
+  border-left-color: #5ba0ff;
+  background: #0b1218;
+  color: #edf5fb;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-pdf {
+  border-color: #40566b;
+  background: #142331;
+  color: #b9d6f3;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-status,
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-footer {
+  color: #9fb0be;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-status.is-error {
+  color: #ff9ea0;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-format {
+  color: #a9bdce;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-format:hover {
+  border-color: #40566b;
+  background: #142331;
+  color: #f5fbff;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-format[aria-pressed="true"] {
+  border-color: #5ba0ff;
+  background: #173b61;
+  color: #dbeafe;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-editor {
+  border-color: #40505e;
+  background: #070d12;
+  color: #f5fbff;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-attach {
+  border-color: #40566b;
+  background: #142331;
+  color: #d7e9f8;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-attach:hover {
+  background: #1c3143;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-inline-image {
+  border-color: #40505e;
+  background: #0d1821;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-inline-image-placeholder {
+  background: #1b2a36;
+  color: #b8c9d8;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-inline-image-caption {
+  color: #9fb0be;
+}
+
+html[data-qb-theme="dark"] #qb-support-reflection .qb-support-reflection-editor.is-empty::before {
+  color: #718493;
+}
+
+/* Medic Media mock exam: its explanation card keeps a white surface in dark mode. */
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg {
+  background: #000000 !important;
+  color: #f5fbff !important;
+}
+
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .answer,
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .commentary,
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .commentary-section,
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .accordion,
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .accBody {
+  color: #f5fbff !important;
+}
+
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .commentary,
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .accBody {
+  background: #0b1218 !important;
+  border-color: #34414d !important;
+}
+
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .yourAnswer {
+  background: #0b1218 !important;
+  color: #f5fbff !important;
+  border-color: #34414d !important;
+}
+
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .yourAnswer .judge,
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .yourAnswer .correct {
+  color: #f5fbff !important;
+}
+
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .historyTable,
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .historyTable th,
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .historyTable td {
+  background: #0b1218 !important;
+  color: #f5fbff !important;
+  border-color: #40505e !important;
+}
+
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .commentary h2,
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .commentary h3,
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .commentary h4 {
+  color: #5ba0ff !important;
+}
+
+html[data-qb-theme="dark"][data-qb-site="moshi"] #vue-container .bg .commentary a {
+  color: #79b8ff !important;
 }
 
 @media (max-width: 640px) {

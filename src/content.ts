@@ -6,10 +6,12 @@ import {
   getNavigationTarget,
   getOptionElements,
   getSubmitButton,
+  isQuestionDocument,
 } from "./core/qbDom";
 import {
   defaultSettings,
   CHAT_MODEL_OPTIONS,
+  DEFAULT_OPTION_KEYS,
   isShortcutMatch,
   normalizeSettings,
   normalizeShortcut,
@@ -21,6 +23,28 @@ import type {
   QuestionSnapshot,
   Settings,
 } from "./core/types";
+import {
+  buildReflectionRecord,
+  getReflectionImageStorageKey,
+  getReflectionQuestionId,
+  pruneReflectionStore,
+  QB_REFLECTION_PDF_ID,
+  QB_REFLECTION_STORAGE_KEY,
+} from "./core/reflection";
+import {
+  detectMoshiLegacyContamination,
+  extractMoshiReflectionData,
+  getLegacyMoshiReflectionImagePrefix,
+  getMoshiReflectionPlacement,
+  isMoshiHost as isMoshiUrl,
+  isMoshiReviewPage,
+} from "./core/moshiDom";
+import type {
+  QBReflectionImageRecord,
+  QBReflectionImageStore,
+  QBReflectionRecord,
+  QBReflectionStore,
+} from "./core/reflection";
 type AuthProfile = {
   uid: string;
   email: string;
@@ -51,8 +75,25 @@ import {
 } from "./lib/webext";
 
 const STORAGE_KEY = "qb_support_settings_v1";
+// Temporarily disable QB Chat while keeping the implementation available for restoration.
+const CHAT_ENABLED = false;
 const ROOT_ID = "qb-support-root";
 const MARKER_ID = "qb-support-marker";
+const REFLECTION_CONTAINER_ID = "qb-support-reflection";
+const REFLECTION_LIGHTBOX_ID = "qb-support-reflection-lightbox";
+const REFLECTION_SAVE_DEBOUNCE_MS = 500;
+const REFLECTION_IMAGE_MAX_BYTES = 12_000_000;
+const VERIFIED_MOSHI_LEGACY_RECORDS: Record<
+  string,
+  { ownerQuestionId: string; reflectionFragments: string[] }
+> = {
+  "moshi:kokushi-mm1:14": {
+    ownerQuestionId: "moshi:kokushi-mm1:A-14",
+    reflectionFragments: [
+      "偽膜性腸炎は抗菌薬を経口投与以外でも生じうる",
+    ],
+  },
+};
 const CHAT_ROOT_ID = "qb-support-chat-root";
 const CHAT_TOGGLE_ID = "qb-support-chat-toggle";
 const CHAT_DOCK_CLASS = "qb-support-chat-dock";
@@ -88,6 +129,14 @@ type ChatTemplateRow = {
   label: HTMLInputElement;
   shortcut: HTMLInputElement;
   prompt: HTMLTextAreaElement;
+};
+
+type ReflectionPanelElement = HTMLDivElement & {
+  __qbSupportReflectionFlushNow?: () => Promise<void>;
+};
+
+type ReflectionLightboxElement = HTMLDivElement & {
+  __qbSupportReflectionClose?: () => void;
 };
 
 type ChatRole = "user" | "assistant" | "system";
@@ -162,6 +211,8 @@ let chatRequestPending = false;
 let chatComposing = false;
 let chatLayoutBound = false;
 let chatAutoScrollEnabled = true;
+let chatScrollProgrammatic = false;
+let chatLastScrollTop = 0;
 let chatDockWidth = 0;
 let chatResizeActive = false;
 let lastChatOpen = false;
@@ -205,6 +256,9 @@ let templateSectionEl: HTMLDivElement | null = null;
 let explanationSectionEl: HTMLDivElement | null = null;
 let authSectionEl: HTMLDivElement | null = null;
 let themeQuery: MediaQueryList | null = null;
+let contentThemeRepairFrame: number | null = null;
+let reflectionRenderQuestionId: string | null = null;
+let reflectionSaveChain: Promise<void> = Promise.resolve();
 
 const start = () => {
   logInjectionOnce();
@@ -212,6 +266,12 @@ const start = () => {
   logFramesOnce();
   attachMessageHandlers();
   removeHeaderGearButton();
+  if (isMoshiHost()) {
+    if (window === window.top && isMoshiReviewPage(location.href)) {
+      initMoshi().catch((error) => console.warn("[QB_SUPPORT] moshi init failed", error));
+    }
+    return;
+  }
   if (isQbHost()) {
     init().catch((error) => console.warn("[QB_SUPPORT] init failed", error));
     return;
@@ -221,17 +281,144 @@ const start = () => {
   }
 };
 
+async function initMoshi() {
+  document.documentElement.dataset.qbSite = "moshi";
+  await loadSettings();
+  ensureThemeListener();
+  applyTheme();
+  toggleMarker(settings.debugEnabled);
+  refreshQuestionInfo();
+  startObservers();
+  attachMoshiShortcutHandlers();
+}
+
+function attachMoshiShortcutHandlers() {
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (!settings.shortcutsEnabled) return;
+      const isTyping =
+        isTypingTarget(event.target) || isTypingTarget(document.activeElement);
+      if (isTyping || event.isComposing) return;
+
+      const eventBaseKey = getEventBaseKey(event);
+      const navPrevMatch =
+        isShortcutMatch(event, settings.navPrevKey) ||
+        isShortcutMatch(event, defaultSettings.navPrevKey);
+      const navNextMatch =
+        isShortcutMatch(event, settings.navNextKey) ||
+        isShortcutMatch(event, defaultSettings.navNextKey);
+      const optionIndex = settings.optionKeys.findIndex(
+        (shortcut) =>
+          isShortcutMatch(event, shortcut) ||
+          isPlainShortcutMatch(event, shortcut, eventBaseKey)
+      );
+      const revealMatch =
+        isShortcutMatch(event, settings.revealKey) ||
+        isPlainShortcutMatch(event, settings.revealKey, eventBaseKey) ||
+        isShortcutMatch(event, defaultSettings.revealKey) ||
+        isPlainShortcutMatch(event, defaultSettings.revealKey, eventBaseKey);
+
+      let action: "option" | "prev" | "next" | "reveal" | null = null;
+      let target: HTMLElement | null = null;
+      if (optionIndex >= 0) {
+        action = "option";
+        target = getMoshiOptionTargets()[optionIndex] ?? null;
+      } else if (navPrevMatch) {
+        action = "prev";
+        target = getMoshiControl("prev");
+      } else if (navNextMatch) {
+        action = "next";
+        target = getMoshiControl("next");
+      } else if (revealMatch) {
+        action = "reveal";
+        target = getMoshiControl("reveal");
+      }
+      if (!action) return;
+
+      consumeShortcutEvent(event);
+      console.log("[QB_SUPPORT][moshi-shortcut]", {
+        action,
+        key: eventBaseKey,
+        optionIndex: optionIndex >= 0 ? optionIndex : null,
+        target: describeElement(target),
+        url: location.href,
+      });
+      if (target) {
+        clickWithFallback(target, { tag: `moshi-${action}`, logAlways: true });
+      }
+    },
+    { capture: true }
+  );
+}
+
+function getMoshiOptionTargets(): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>(
+      "#vue-container .choiceAns .choice-table .choice-cell"
+    )
+  ).filter(isMoshiShortcutTargetAvailable);
+}
+
+function getMoshiControl(
+  action: "prev" | "next" | "reveal"
+): HTMLElement | null {
+  const selector =
+    action === "prev"
+      ? "#vue-container .btn-group .btn-prev:not(.hidden) a"
+      : action === "next"
+        ? "#vue-container .btn-group .btn-next:not(.hidden) a"
+        : "#vue-container .btn-group a, #vue-container .btn-group button";
+  const candidates = Array.from(
+    document.querySelectorAll<HTMLElement>(selector)
+  ).filter(isMoshiShortcutTargetAvailable);
+  if (action !== "reveal") return candidates[0] ?? null;
+  const revealLabels = [
+    "解答を確認する",
+    "解答を確認",
+    "解答する",
+    "解説を見る",
+    "リトライ",
+  ];
+  return (
+    candidates.find((element) => {
+      const text = (element.textContent ?? "").replace(/\s+/g, " ").trim();
+      return revealLabels.some((label) => text.includes(label));
+    }) ?? null
+  );
+}
+
+function isMoshiShortcutTargetAvailable(element: HTMLElement): boolean {
+  if (element.closest(".hidden")) return false;
+  if (element.getAttribute("aria-disabled") === "true") return false;
+  if ("disabled" in element && (element as HTMLButtonElement).disabled) return false;
+  return window.getComputedStyle(element).visibility !== "hidden";
+}
+
 async function init() {
   await loadSettings();
   ensureUI();
-  ensureChatUI();
-  initAuth();
+  if (CHAT_ENABLED) {
+    ensureChatUI();
+    initAuth();
+  } else {
+    removeDisabledChatUI();
+  }
   ensureThemeListener();
   applySettings();
   refreshQuestionInfo();
   startObservers();
   attachEventHandlers();
-  attachChatHandlers();
+  if (CHAT_ENABLED) attachChatHandlers();
+}
+
+function removeDisabledChatUI() {
+  document.getElementById(CHAT_ROOT_ID)?.remove();
+  document.getElementById(CHAT_TOGGLE_ID)?.remove();
+  document.getElementById(CHAT_TEMPLATE_ID)?.remove();
+  document.body?.classList.remove(CHAT_DOCK_CLASS);
+  document.body?.style.removeProperty("--qb-support-chat-dock-width");
+  delete document.documentElement.dataset.qbChatLayout;
 }
 
 async function initFrame() {
@@ -962,7 +1149,7 @@ function ensureUI() {
   const optionsWrap = document.createElement("div");
   optionsWrap.className = "qb-support-options";
   optionInputs = [];
-  ["A", "B", "C", "D", "E"].forEach((label) => {
+  DEFAULT_OPTION_KEYS.forEach((label) => {
     const field = buildKeyField(label);
     optionInputs.push(field.input);
     optionsWrap.appendChild(field.label);
@@ -1224,6 +1411,7 @@ function ensureUI() {
 }
 
 function ensureChatUI() {
+  if (!CHAT_ENABLED) return;
   if (document.getElementById(CHAT_ROOT_ID)) {
     chatRoot = document.getElementById(CHAT_ROOT_ID) as HTMLDivElement;
     chatPanel = chatRoot.querySelector(".qb-support-chat-panel") as HTMLDivElement | null;
@@ -1766,6 +1954,128 @@ function applyTheme() {
   const docEl = document.documentElement;
   docEl.dataset.qbTheme = resolveTheme();
   docEl.dataset.qbAccent = settings.pageAccentEnabled ? "on" : "off";
+  scheduleContentThemeRepair();
+}
+
+const CONTENT_CONTRAST_ROOT_SELECTOR = [
+  ".html_renderer",
+  ".resultcontent",
+  ".resultContent",
+  ".result-content",
+  "#resultcontent",
+  "#answerSection",
+].join(",");
+const PROTECTED_EXAM_IMAGE_SELECTOR =
+  'img[src*="/exam_images_kokushi/"]';
+
+type RgbColor = { r: number; g: number; b: number; a: number };
+
+function parseComputedRgb(value: string): RgbColor | null {
+  const match = value.match(
+    /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/i
+  );
+  if (!match) return null;
+  return {
+    r: Number(match[1]),
+    g: Number(match[2]),
+    b: Number(match[3]),
+    a: match[4] === undefined ? 1 : Number(match[4]),
+  };
+}
+
+function compositeCssColor(foreground: RgbColor, background: RgbColor): RgbColor {
+  const alpha = Math.max(0, Math.min(1, foreground.a));
+  return {
+    r: foreground.r * alpha + background.r * (1 - alpha),
+    g: foreground.g * alpha + background.g * (1 - alpha),
+    b: foreground.b * alpha + background.b * (1 - alpha),
+    a: 1,
+  };
+}
+
+function getEffectiveElementBackground(element: HTMLElement): RgbColor {
+  const layers: RgbColor[] = [];
+  for (let current: Element | null = element; current; current = current.parentElement) {
+    const color = parseComputedRgb(getComputedStyle(current).backgroundColor);
+    if (color && color.a > 0.01) layers.push(color);
+    if (color?.a && color.a >= 0.995) break;
+  }
+  let result: RgbColor = { r: 255, g: 255, b: 255, a: 1 };
+  for (let index = layers.length - 1; index >= 0; index -= 1) {
+    result = compositeCssColor(layers[index], result);
+  }
+  return result;
+}
+
+function relativeLuminance(color: RgbColor): number {
+  const channels = [color.r, color.g, color.b].map((value) => {
+    const normalized = Math.max(0, Math.min(255, value)) / 255;
+    return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+export function isProtectedContentImageSurface(element: HTMLElement): boolean {
+  if (element.matches(PROTECTED_EXAM_IMAGE_SELECTOR)) return true;
+  const figure = element.closest("figure");
+  if (figure?.querySelector(PROTECTED_EXAM_IMAGE_SELECTOR)) return true;
+  const paragraph = element.closest("p");
+  return Boolean(
+    paragraph &&
+      Array.from(paragraph.children).some(
+        (child) =>
+          child.tagName === "FIGURE" &&
+          Boolean(child.querySelector(PROTECTED_EXAM_IMAGE_SELECTOR))
+      )
+  );
+}
+
+function normalizeDarkContentSurfaces() {
+  const roots = Array.from(document.querySelectorAll<HTMLElement>(CONTENT_CONTRAST_ROOT_SELECTOR));
+  const elements = new Set<HTMLElement>();
+  roots.forEach((root) => {
+    elements.add(root);
+    root.querySelectorAll<HTMLElement>("*").forEach((element) => elements.add(element));
+  });
+  elements.forEach((element) => {
+    element.removeAttribute("data-qb-support-dark-surface");
+    element.removeAttribute("data-qb-support-dark-content");
+  });
+  if (resolveTheme() !== "dark") return;
+  let surfaces = 0;
+  elements.forEach((element) => {
+    if (element.closest("[id^='qb-support-'], [class*='qb-support-']")) return;
+    if (isProtectedContentImageSurface(element)) return;
+    const computed = getComputedStyle(element);
+    if (computed.visibility === "hidden" || computed.display === "none" || Number(computed.opacity) < 0.2) return;
+    const ownBackground = parseComputedRgb(computed.backgroundColor);
+    if (!ownBackground || ownBackground.a < 0.05) return;
+    const background = getEffectiveElementBackground(element);
+    const channels = [background.r, background.g, background.b];
+    const neutralSpread = Math.max(...channels) - Math.min(...channels);
+    if (neutralSpread > 48 || relativeLuminance(background) < 0.45) return;
+    element.setAttribute("data-qb-support-dark-surface", "");
+    surfaces += 1;
+  });
+  elements.forEach((element) => {
+    if (!element.closest("[data-qb-support-dark-surface]")) return;
+    const hasDirectText = Array.from(element.childNodes).some(
+      (node) => node.nodeType === Node.TEXT_NODE && Boolean(node.textContent?.trim())
+    );
+    if (!hasDirectText) return;
+    element.setAttribute("data-qb-support-dark-content", "");
+  });
+  if (surfaces && settings.debugEnabled) {
+    console.debug("[QB_SUPPORT][theme] normalized light explanation surfaces", { surfaces });
+  }
+}
+
+function scheduleContentThemeRepair() {
+  if (contentThemeRepairFrame !== null) return;
+  contentThemeRepairFrame = window.requestAnimationFrame(() => {
+    contentThemeRepairFrame = null;
+    normalizeDarkContentSurfaces();
+  });
 }
 
 function ensureChatLayoutHandler() {
@@ -1848,13 +2158,17 @@ function updateTemplateCount(nextCount: number) {
   });
 }
 
+const HINT_PHRASE = "絶妙なヒント";
+
+function isHintTemplateSetting(template: ChatTemplateSetting): boolean {
+  const label = template.label ?? "";
+  const prompt = template.prompt ?? "";
+  return label.includes("ヒント") || label.includes(HINT_PHRASE) || prompt.includes(HINT_PHRASE);
+}
+
 function getHintTemplate(): { template: ChatTemplateSetting; index: number } | null {
-  const hintPhrase = "絶妙なヒント";
   for (const entry of getEnabledChatTemplatesWithIndex()) {
-    const template = entry.template;
-    const label = template.label ?? "";
-    const prompt = template.prompt ?? "";
-    if (label.includes("ヒント") || label.includes(hintPhrase) || prompt.includes(hintPhrase)) {
+    if (isHintTemplateSetting(entry.template)) {
       return entry;
     }
   }
@@ -1942,11 +2256,17 @@ function attachTemplateEditJump(button: HTMLButtonElement, index: number) {
   );
 }
 
+function appendHintDraft(message: string, draft: string): string {
+  const base = message.trim();
+  if (!draft) return base;
+  if (base.includes("今の考察は以下です")) return base;
+  return `${base}今の考察は以下です."${draft}"`;
+}
+
 function buildHintQuickMessage(draft: string): string {
   const base =
     "絶妙なヒント（答えありきでなく、所見や症状から推論する視点で思考力を養う答えに迫りすぎないもの）をどうぞ。";
-  if (!draft) return base;
-  return `${base}今の考察は以下です."${draft}"`;
+  return appendHintDraft(base, draft);
 }
 
 function isEligibleHintDraftSource(
@@ -1987,6 +2307,11 @@ function resolveHintDraft(): string {
 }
 
 function updateHintQuickButton() {
+  if (!CHAT_ENABLED) {
+    hintQuickButton?.remove();
+    hintQuickButton = null;
+    return;
+  }
   if (window !== window.top) return;
   const hintEntry = getHintTemplate();
   if (!hintEntry) {
@@ -2033,14 +2358,15 @@ function updateHintQuickButton() {
 
 function updateChatTemplatesUI() {
   if (!chatTemplateBar) return;
+  const templateBar = chatTemplateBar;
   const templates = getEnabledChatTemplatesWithIndex();
-  chatTemplateBar.innerHTML = "";
+  templateBar.innerHTML = "";
   if (templates.length === 0) {
-    chatTemplateBar.style.display = "none";
+    templateBar.style.display = "none";
     updateHintQuickButton();
     return;
   }
-  chatTemplateBar.style.display = "flex";
+  templateBar.style.display = "flex";
   templates.forEach(({ template, index }) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -2054,7 +2380,7 @@ function updateChatTemplatesUI() {
       void sendTemplateMessage(template);
     });
     attachTemplateEditJump(button, index);
-    chatTemplateBar.appendChild(button);
+    templateBar.appendChild(button);
   });
   updateHintQuickButton();
 }
@@ -2383,6 +2709,7 @@ async function resolveChatAuthWithStatus(): Promise<ChatAuth | null> {
 }
 
 async function sendTemplateMessage(template: ChatTemplateSetting | string) {
+  if (!CHAT_ENABLED) return;
   const rawMessage = typeof template === "string" ? template : template.prompt;
   if (!rawMessage.trim()) return;
   const message = applyTemplateConstraints(rawMessage, template);
@@ -2401,6 +2728,9 @@ function applyTemplateConstraints(
   message: string,
   template: ChatTemplateSetting | string
 ): string {
+  if (typeof template !== "string" && isHintTemplateSetting(template)) {
+    return appendHintDraft(message, resolveHintDraft());
+  }
   return message;
 }
 
@@ -2524,6 +2854,7 @@ function focusChatInput() {
 }
 
 function toggleChatInputFocus() {
+  if (!CHAT_ENABLED) return;
   ensureChatUI();
   if (!chatInput) return;
   const isActive = document.activeElement === chatInput;
@@ -2555,6 +2886,15 @@ function attachChatHandlers() {
     chatComposing = false;
   });
   chatInput?.addEventListener("keydown", (event) => {
+    if (
+      isShortcutMatch(event, CHAT_INPUT_TOGGLE_SHORTCUT) &&
+      !event.isComposing &&
+      !chatComposing
+    ) {
+      consumeShortcutEvent(event);
+      toggleChatInputFocus();
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !chatComposing) {
       event.preventDefault();
       void handleChatSend();
@@ -2720,8 +3060,20 @@ function ensureChatScrollHandler() {
   if (chatMessagesEl.dataset.scrollHandlers === "true") return;
   chatMessagesEl.dataset.scrollHandlers = "true";
   chatAutoScrollEnabled = isChatNearBottom();
+  chatLastScrollTop = chatMessagesEl.scrollTop;
   chatMessagesEl.addEventListener("scroll", () => {
-    chatAutoScrollEnabled = isChatNearBottom();
+    const currentTop = chatMessagesEl?.scrollTop ?? 0;
+    if (chatScrollProgrammatic) {
+      chatScrollProgrammatic = false;
+      chatLastScrollTop = currentTop;
+      return;
+    }
+    if (currentTop < chatLastScrollTop) {
+      chatAutoScrollEnabled = false;
+    } else if (isChatNearBottom()) {
+      chatAutoScrollEnabled = true;
+    }
+    chatLastScrollTop = currentTop;
   });
 }
 
@@ -2735,6 +3087,7 @@ function isChatNearBottom(): boolean {
 function scrollChatToBottom(force = false) {
   if (!chatMessagesEl) return;
   if (!force && !chatAutoScrollEnabled) return;
+  chatScrollProgrammatic = true;
   chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
 }
 
@@ -3342,8 +3695,10 @@ function refreshQuestionInfo() {
   }
   if (window === window.top) {
     captureQuestionImageBaseSizes();
+    void syncReflectionPanel("refresh");
   }
   updateHintQuickButton();
+  scheduleContentThemeRepair();
 }
 
 function captureQuestionImageBaseSizes() {
@@ -3381,6 +3736,8 @@ function startObservers() {
         const target = mutation.target as Node;
         if (rootEl && rootEl.contains(target)) return true;
         if (chatEl && chatEl.contains(target)) return true;
+        const reflectionEl = document.getElementById(REFLECTION_CONTAINER_ID);
+        if (reflectionEl && reflectionEl.contains(target)) return true;
         return false;
       })
     ) {
@@ -3404,6 +3761,1885 @@ function startObservers() {
   }, 500);
 }
 
+type ReflectionContext = {
+  questionId: string;
+  legacyQuestionId?: string | null;
+  url: string;
+  info: QuestionInfo | null;
+  snapshot: QuestionSnapshot | null;
+};
+
+type ReflectionPlacement = {
+  parent: Node;
+  before: Node | null;
+};
+
+function getReflectionContext(): ReflectionContext | null {
+  const moshi = extractMoshiReflectionData(document, location.href);
+  if (moshi) {
+    return {
+      questionId: moshi.questionId,
+      legacyQuestionId: moshi.legacyQuestionId,
+      url: location.href,
+      info: moshi.info,
+      snapshot: moshi.snapshot,
+    };
+  }
+  const info = extractQuestionInfo(document, location.href);
+  const snapshot = extractQuestionSnapshot(document, location.href);
+  const questionId = getReflectionQuestionId(
+    location.href,
+    info?.id ?? snapshot?.id ?? currentInfo?.id
+  );
+  if (!questionId) return null;
+  return {
+    questionId,
+    url: location.href,
+    info: info ?? currentInfo,
+    snapshot: snapshot ?? currentSnapshot,
+  };
+}
+
+function findPageTextElement(
+  matches: (text: string) => boolean
+): HTMLElement | null {
+  if (!document.body) return null;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    const text = (node.nodeValue ?? "").trim().replace(/\s+/g, " ");
+    if (text && matches(text)) {
+      const element = node.parentElement;
+      if (
+        element &&
+        !element.closest(
+          `#${ROOT_ID}, #${REFLECTION_CONTAINER_ID}, [data-testid^="side-"]`
+        ) &&
+        !element.closest("script, style, template")
+      ) {
+        return element;
+      }
+    }
+    node = walker.nextNode();
+  }
+  return null;
+}
+
+function getReflectionPlacement(): ReflectionPlacement | null {
+  const moshiPlacement = getMoshiReflectionPlacement(document);
+  if (moshiPlacement) return moshiPlacement;
+
+  const legacyExplanation = document.querySelector<HTMLElement>(
+    "#resultcontent, .resultcontent, .resultContent, .result-content"
+  );
+  if (legacyExplanation?.parentNode && (legacyExplanation.textContent ?? "").trim()) {
+    return {
+      parent: legacyExplanation.parentNode,
+      before: legacyExplanation.nextSibling,
+    };
+  }
+
+  const explanationHeading = findPageTextElement((text) => text === "解説");
+  if (!explanationHeading) return null;
+  const pageReference = findPageTextElement((text) => text.startsWith("[掲載頁："));
+  const footer = pageReference?.closest<HTMLElement>(".pb-32.pt-3");
+  if (!footer?.parentNode) return null;
+  return { parent: footer.parentNode, before: footer };
+}
+
+function normalizeReflectionStore(value: unknown): QBReflectionStore {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const store: QBReflectionStore = {};
+  for (const [key, record] of Object.entries(value)) {
+    if (!record || typeof record !== "object") continue;
+    const candidate = record as Partial<QBReflectionRecord>;
+    if (typeof candidate.questionId !== "string") continue;
+    if (typeof candidate.reflection !== "string") continue;
+    store[key] = candidate as QBReflectionRecord;
+  }
+  return store;
+}
+
+async function loadReflectionStore(): Promise<QBReflectionStore> {
+  const area = webext.storage?.local ?? getStorageArea(false);
+  if (!area) return {};
+  const stored = await storageGet(area, QB_REFLECTION_STORAGE_KEY);
+  return normalizeReflectionStore(stored?.[QB_REFLECTION_STORAGE_KEY]);
+}
+
+async function loadReflectionRecord(
+  questionId: string
+): Promise<QBReflectionRecord | null> {
+  const store = await loadReflectionStore();
+  return store[questionId] ?? null;
+}
+
+async function loadReflectionDataForContext(
+  context: ReflectionContext
+): Promise<[QBReflectionRecord | null, QBReflectionImageStore]> {
+  const [saved, savedImages] = await Promise.all([
+    loadReflectionRecord(context.questionId),
+    loadReflectionImageStore(context.questionId),
+  ]);
+  const liveQuestionCode = context.info?.id ?? context.snapshot?.id ?? null;
+  const legacyQuestionId = context.legacyQuestionId;
+  const verifiedLegacyRecord = legacyQuestionId
+    ? VERIFIED_MOSHI_LEGACY_RECORDS[legacyQuestionId]
+    : undefined;
+  const isVerifiedLegacyOwner = Boolean(
+    legacyQuestionId &&
+      legacyQuestionId !== context.questionId &&
+      verifiedLegacyRecord?.ownerQuestionId === context.questionId
+  );
+  const canonicalHasContent =
+    Boolean(saved?.reflection.trim()) || Object.keys(savedImages).length > 0;
+  if (canonicalHasContent) {
+    if (legacyQuestionId && !isVerifiedLegacyOwner && saved) {
+      const legacyImagePrefix = getLegacyMoshiReflectionImagePrefix(
+        legacyQuestionId
+      );
+      const legacySaved = await loadReflectionRecord(legacyQuestionId);
+      const contamination = detectMoshiLegacyContamination({
+        reflection: saved.reflection,
+        savedImageNames: Object.keys(savedImages),
+        legacyReflection: legacySaved?.reflection,
+        legacyImagePrefix,
+        verifiedReflectionFragments:
+          verifiedLegacyRecord?.reflectionFragments,
+      });
+      if (contamination.shouldSuppress) {
+        console.warn(
+          "[QB_SUPPORT][reflection] suppressed misassigned legacy moshi data",
+          {
+            legacyQuestionId,
+            questionId: context.questionId,
+            questionCode: liveQuestionCode,
+            ...contamination,
+          }
+        );
+        return [null, {}];
+      }
+    }
+    return [saved, savedImages];
+  }
+  return [saved, savedImages];
+}
+
+function saveReflectionRecord(
+  context: ReflectionContext,
+  reflection: string
+): Promise<void> {
+  const operation = reflectionSaveChain
+    .catch(() => undefined)
+    .then(async () => {
+      const area = webext.storage?.local ?? getStorageArea(false);
+      if (!area) throw new Error("storage.local is unavailable");
+      const store = await loadReflectionStore();
+      const existing = store[context.questionId];
+      store[context.questionId] = buildReflectionRecord({
+        questionId: context.questionId,
+        url: context.url,
+        reflection,
+        info: context.info,
+        snapshot: context.snapshot,
+        existing,
+      });
+      await storageSet(area, {
+        [QB_REFLECTION_STORAGE_KEY]: pruneReflectionStore(store),
+      });
+      console.log("[QB_SUPPORT][reflection] saved", {
+        questionId: context.questionId,
+        questionCode: context.info?.id ?? context.snapshot?.id ?? null,
+        length: reflection.length,
+        pdfId: QB_REFLECTION_PDF_ID,
+      });
+    });
+  reflectionSaveChain = operation.catch(() => undefined);
+  return operation;
+}
+
+function normalizeReflectionImageStore(value: unknown): QBReflectionImageStore {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const store: QBReflectionImageStore = {};
+  for (const [key, record] of Object.entries(value)) {
+    if (!record || typeof record !== "object") continue;
+    const candidate = record as Partial<QBReflectionImageRecord>;
+    if (
+      typeof candidate.questionId !== "string" ||
+      typeof candidate.imageName !== "string" ||
+      typeof candidate.imageDataUrl !== "string" ||
+      !candidate.imageDataUrl.startsWith("data:image/png;base64,")
+    ) {
+      continue;
+    }
+    store[key] = candidate as QBReflectionImageRecord;
+  }
+  return store;
+}
+
+async function loadReflectionImageStore(
+  questionId: string
+): Promise<QBReflectionImageStore> {
+  const area = webext.storage?.local ?? getStorageArea(false);
+  if (!area) return {};
+  const storageKey = getReflectionImageStorageKey(questionId);
+  const stored = await storageGet(area, storageKey);
+  return normalizeReflectionImageStore(stored?.[storageKey]);
+}
+
+function getReflectionImageName(marker: string): string {
+  const match = String(marker || "").match(
+    /!\[\[(QB_[A-Za-z0-9_-]+_reflection_\d+\.png)(?:\|[^\]]*)?\]\]/
+  );
+  return match?.[1] ?? "";
+}
+
+function normalizeReflectionImageMarker(markerOrName: string): string {
+  const value = String(markerOrName || "").trim();
+  const name =
+    getReflectionImageName(value) ||
+    value.match(/^QB_[A-Za-z0-9_-]+_reflection_\d+\.png$/)?.[0] ||
+    "";
+  return name ? `![[${name}]]` : "";
+}
+
+function getReflectionImageMap(
+  images: QBReflectionImageStore
+): Map<string, QBReflectionImageRecord> {
+  return new Map(
+    Object.values(images).map((image) => [image.imageName, image])
+  );
+}
+
+function openReflectionImageLightbox(dataUrl: string, filename: string) {
+  if (!dataUrl.startsWith("data:image/")) return;
+  const current = document.getElementById(
+    REFLECTION_LIGHTBOX_ID
+  ) as ReflectionLightboxElement | null;
+  current?.__qbSupportReflectionClose?.();
+
+  const overlay = document.createElement("div") as ReflectionLightboxElement;
+  overlay.id = REFLECTION_LIGHTBOX_ID;
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", `${filename} の拡大表示`);
+
+  const inner = document.createElement("div");
+  inner.className = "qb-support-reflection-lightbox-inner";
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "qb-support-reflection-lightbox-close";
+  closeButton.textContent = "×";
+  closeButton.setAttribute("aria-label", "画像プレビューを閉じる");
+
+  const image = document.createElement("img");
+  image.src = dataUrl;
+  image.alt = filename;
+
+  const caption = document.createElement("div");
+  caption.className = "qb-support-reflection-lightbox-caption";
+  caption.textContent = filename;
+
+  const close = () => {
+    document.removeEventListener("keydown", onKeyDown, true);
+    overlay.remove();
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+  };
+  overlay.__qbSupportReflectionClose = close;
+
+  overlay.addEventListener("click", close);
+  inner.addEventListener("click", (event) => event.stopPropagation());
+  closeButton.addEventListener("click", close);
+  document.addEventListener("keydown", onKeyDown, true);
+
+  inner.appendChild(closeButton);
+  inner.appendChild(image);
+  inner.appendChild(caption);
+  overlay.appendChild(inner);
+  (document.body || document.documentElement).appendChild(overlay);
+}
+
+function setReflectionInlineImageSource(
+  node: HTMLElement,
+  image: Partial<QBReflectionImageRecord>
+) {
+  const dataUrl = String(image.imageDataUrl || "");
+  const filename = String(
+    image.imageName || node.dataset.imageName || "reflection-image.png"
+  );
+  node.dataset.imageName = filename;
+  node.title = filename;
+  node.textContent = "";
+
+  if (dataUrl.startsWith("data:image/")) {
+    const preview = document.createElement("img");
+    preview.src = dataUrl;
+    preview.alt = filename;
+    preview.title = filename;
+    preview.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openReflectionImageLightbox(dataUrl, filename);
+    });
+    node.appendChild(preview);
+  } else {
+    const placeholder = document.createElement("span");
+    placeholder.className = "qb-support-reflection-inline-image-placeholder";
+    placeholder.textContent = filename;
+    node.appendChild(placeholder);
+  }
+
+  const caption = document.createElement("span");
+  caption.className = "qb-support-reflection-inline-image-caption";
+  caption.textContent = filename;
+  node.appendChild(caption);
+}
+
+function createReflectionInlineImageNode(
+  marker: string,
+  image?: Partial<QBReflectionImageRecord>
+): HTMLSpanElement {
+  const imageName =
+    image?.imageName ||
+    getReflectionImageName(marker) ||
+    "reflection-image.png";
+  const node = document.createElement("span");
+  node.className = "qb-support-reflection-inline-image";
+  node.contentEditable = "false";
+  node.dataset.marker = normalizeReflectionImageMarker(marker || imageName);
+  node.dataset.imageName = imageName;
+  setReflectionInlineImageSource(node, {
+    ...image,
+    imageName,
+  });
+  return node;
+}
+
+type ReflectionInlineFormat = {
+  open: string;
+  close: string;
+  tagName: "strong" | "em" | "u" | "s";
+};
+
+const REFLECTION_INLINE_FORMATS: ReflectionInlineFormat[] = [
+  { open: "<u>", close: "</u>", tagName: "u" },
+  { open: "**", close: "**", tagName: "strong" },
+  { open: "~~", close: "~~", tagName: "s" },
+  { open: "*", close: "*", tagName: "em" },
+];
+
+function isReflectionFormatOpening(
+  source: string,
+  index: number,
+  format: ReflectionInlineFormat
+): boolean {
+  if (format.open === "<u>") return true;
+  const next = source[index + format.open.length];
+  return Boolean(next && !/\s/.test(next));
+}
+
+function isReflectionFormatClosing(
+  source: string,
+  index: number,
+  format: ReflectionInlineFormat
+): boolean {
+  if (format.close === "</u>") return true;
+  const previous = source[index - 1];
+  return Boolean(previous && !/\s/.test(previous));
+}
+
+function appendReflectionEditorInline(
+  parent: Node,
+  source: string,
+  createImageNode?: (marker: string, imageName: string) => HTMLElement
+) {
+  const parse = (
+    start: number,
+    closingFormat: ReflectionInlineFormat | null
+  ): { fragment: DocumentFragment; index: number; closed: boolean } => {
+    const fragment = document.createDocumentFragment();
+    let index = start;
+    let textStart = start;
+    const appendTextThrough = (end: number) => {
+      if (end > textStart) {
+        fragment.appendChild(
+          document.createTextNode(source.slice(textStart, end))
+        );
+      }
+    };
+
+    while (index < source.length) {
+      if (
+        closingFormat &&
+        source.startsWith(closingFormat.close, index) &&
+        isReflectionFormatClosing(source, index, closingFormat)
+      ) {
+        appendTextThrough(index);
+        return {
+          fragment,
+          index: index + closingFormat.close.length,
+          closed: true,
+        };
+      }
+
+      const imageMatch = createImageNode
+        ? source
+            .slice(index)
+            .match(
+              /^!\[\[(QB_[A-Za-z0-9_-]+_reflection_\d+\.png)(?:\|[^\]]*)?\]\]/
+            )
+        : null;
+      if (imageMatch) {
+        appendTextThrough(index);
+        const imageName = imageMatch[1];
+        fragment.appendChild(
+          createImageNode!(`![[${imageName}]]`, imageName)
+        );
+        index += imageMatch[0].length;
+        textStart = index;
+        continue;
+      }
+
+      const openingFormat = REFLECTION_INLINE_FORMATS.find(
+        (format) =>
+          source.startsWith(format.open, index) &&
+          isReflectionFormatOpening(source, index, format)
+      );
+      if (!openingFormat) {
+        index += 1;
+        continue;
+      }
+
+      const nested = parse(index + openingFormat.open.length, openingFormat);
+      if (!nested.closed || !nested.fragment.hasChildNodes()) {
+        appendTextThrough(index);
+        fragment.appendChild(document.createTextNode(openingFormat.open));
+        index += openingFormat.open.length;
+        textStart = index;
+        continue;
+      }
+
+      appendTextThrough(index);
+      const element = document.createElement(openingFormat.tagName);
+      element.appendChild(nested.fragment);
+      fragment.appendChild(element);
+      index = nested.index;
+      textStart = index;
+    }
+
+    appendTextThrough(source.length);
+    return { fragment, index: source.length, closed: closingFormat === null };
+  };
+
+  parent.appendChild(parse(0, null).fragment);
+}
+
+type ReflectionMarkdownListLine = {
+  level: number;
+  listTag: "UL" | "OL";
+  content: string;
+};
+
+function parseReflectionMarkdownListLine(
+  line: string
+): ReflectionMarkdownListLine | null {
+  const match = line.match(/^([ \t]*)([-+*]|\d+\.)[ \t]+(.*)$/);
+  if (!match) return null;
+  const indentColumns = Array.from(match[1]).reduce(
+    (total, character) => total + (character === "\t" ? 2 : 1),
+    0
+  );
+  return {
+    level: Math.floor(indentColumns / 2),
+    listTag: /^\d+\.$/.test(match[2]) ? "OL" : "UL",
+    content: match[3],
+  };
+}
+
+function appendReflectionEditorMarkdown(
+  editor: HTMLElement,
+  text: string,
+  createImageNode?: (marker: string, imageName: string) => HTMLElement
+) {
+  const lines = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n");
+  const listStack: Array<{
+    list: HTMLUListElement | HTMLOListElement;
+    listTag: "UL" | "OL";
+    lastItem: HTMLLIElement | null;
+  }> = [];
+
+  for (const line of lines) {
+    const parsed = parseReflectionMarkdownListLine(line);
+    if (!parsed) {
+      listStack.length = 0;
+      const block = document.createElement("div");
+      if (line) {
+        appendReflectionEditorInline(block, line, createImageNode);
+      } else {
+        block.appendChild(document.createElement("br"));
+      }
+      editor.appendChild(block);
+      continue;
+    }
+
+    const level = Math.min(parsed.level, listStack.length);
+    while (listStack.length > level + 1) listStack.pop();
+    if (
+      listStack[level] &&
+      listStack[level].listTag !== parsed.listTag
+    ) {
+      listStack.length = level;
+    }
+    if (!listStack[level]) {
+      const list = document.createElement(
+        parsed.listTag.toLowerCase()
+      ) as HTMLUListElement | HTMLOListElement;
+      const parent =
+        level === 0
+          ? editor
+          : listStack[level - 1]?.lastItem ?? editor;
+      parent.appendChild(list);
+      listStack[level] = {
+        list,
+        listTag: parsed.listTag,
+        lastItem: null,
+      };
+    }
+
+    const item = document.createElement("li");
+    if (parsed.content) {
+      appendReflectionEditorInline(item, parsed.content, createImageNode);
+    } else {
+      item.appendChild(document.createElement("br"));
+    }
+    listStack[level].list.appendChild(item);
+    listStack[level].lastItem = item;
+    listStack.length = level + 1;
+  }
+}
+
+export function setReflectionEditorMarkdown(
+  editor: HTMLElement,
+  markdown: string,
+  images: QBReflectionImageStore = {}
+) {
+  editor.textContent = "";
+  const source = String(markdown || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+  const imageMap = getReflectionImageMap(images);
+  appendReflectionEditorMarkdown(editor, source, (marker, imageName) =>
+    createReflectionInlineImageNode(marker, imageMap.get(imageName))
+  );
+}
+
+function serializeReflectionInlineNode(
+  node: Node,
+  activeFormats = new Set<string>()
+): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || "";
+  if (!(node instanceof Element)) return "";
+  if (node.classList.contains("qb-support-reflection-inline-image")) {
+    return normalizeReflectionImageMarker(
+      (node as HTMLElement).dataset.marker ||
+        (node as HTMLElement).dataset.imageName ||
+        ""
+    );
+  }
+  if (node.tagName === "BR") return "\n";
+
+  const format = (() => {
+    switch (node.tagName) {
+      case "B":
+      case "STRONG":
+        return { key: "bold", open: "**", close: "**" };
+      case "I":
+      case "EM":
+        return { key: "italic", open: "*", close: "*" };
+      case "U":
+        return { key: "underline", open: "<u>", close: "</u>" };
+      case "S":
+      case "STRIKE":
+      case "DEL":
+        return { key: "strike", open: "~~", close: "~~" };
+      default:
+        return null;
+    }
+  })();
+  if (!format || activeFormats.has(format.key)) {
+    return Array.from(node.childNodes)
+      .map((child) => serializeReflectionInlineNode(child, activeFormats))
+      .join("");
+  }
+
+  const nextFormats = new Set(activeFormats);
+  nextFormats.add(format.key);
+  const inner = Array.from(node.childNodes)
+    .map((child) => serializeReflectionInlineNode(child, nextFormats))
+    .join("");
+  return inner.trim() ? `${format.open}${inner}${format.close}` : inner;
+}
+
+function serializeReflectionList(
+  list: HTMLUListElement | HTMLOListElement,
+  depth: number
+): string {
+  const ordered = list.tagName === "OL";
+  const items = Array.from(list.children).filter(
+    (child): child is HTMLLIElement => child.tagName === "LI"
+  );
+  return items
+    .map((item, index) => {
+      const nestedLists: Array<HTMLUListElement | HTMLOListElement> = [];
+      let content = "";
+      for (const child of Array.from(item.childNodes)) {
+        if (
+          child instanceof HTMLElement &&
+          (child.tagName === "UL" || child.tagName === "OL")
+        ) {
+          nestedLists.push(child as HTMLUListElement | HTMLOListElement);
+        } else {
+          content += serializeReflectionInlineNode(child);
+        }
+      }
+      const indent = "  ".repeat(depth);
+      const prefix = ordered ? `${index + 1}. ` : "- ";
+      const contentLines = content.replace(/\n+$/g, "").split("\n");
+      let output = `${indent}${prefix}${contentLines[0] ?? ""}`;
+      for (const continuation of contentLines.slice(1)) {
+        output += `\n${indent}  ${continuation}`;
+      }
+      for (const nested of nestedLists) {
+        output += `\n${serializeReflectionList(nested, depth + 1)}`;
+      }
+      return output;
+    })
+    .join("\n");
+}
+
+function serializeReflectionBlock(element: Element): string {
+  let output = "";
+  const appendBlock = (value: string) => {
+    if (output && !output.endsWith("\n")) output += "\n";
+    output += value;
+    if (!output.endsWith("\n")) output += "\n";
+  };
+  for (const child of Array.from(element.childNodes)) {
+    if (
+      child instanceof HTMLElement &&
+      (child.tagName === "UL" || child.tagName === "OL")
+    ) {
+      appendBlock(
+        serializeReflectionList(child as HTMLUListElement | HTMLOListElement, 0)
+      );
+    } else if (
+      child instanceof HTMLElement &&
+      (child.tagName === "DIV" || child.tagName === "P")
+    ) {
+      appendBlock(serializeReflectionBlock(child));
+    } else {
+      output += serializeReflectionInlineNode(child);
+    }
+  }
+  return output;
+}
+
+export function getReflectionEditorText(editor: HTMLElement): string {
+  return serializeReflectionBlock(editor)
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{4,}/g, "\n\n\n")
+    .trim();
+}
+
+function handleReflectionFormattingShortcut(
+  editor: HTMLElement,
+  event: KeyboardEvent
+): boolean {
+  if ((!event.metaKey && !event.ctrlKey) || event.altKey) return false;
+  const key = event.key.toLowerCase();
+  const command =
+    key === "s" && event.shiftKey
+      ? "strikeThrough"
+      : !event.shiftKey
+        ? ({
+            b: "bold",
+            i: "italic",
+            u: "underline",
+          } as const)[key as "b" | "i" | "u"]
+        : undefined;
+  if (!command) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  applyReflectionFormattingCommand(editor, command);
+  return true;
+}
+
+type ReflectionFormatCommand =
+  | "bold"
+  | "italic"
+  | "underline"
+  | "strikeThrough"
+  | "insertUnorderedList"
+  | "insertOrderedList";
+
+const REFLECTION_FORMAT_CONTROLS: Array<{
+  command: ReflectionFormatCommand;
+  label: string;
+  shortcut: string;
+  description: string;
+}> = [
+  { command: "bold", label: "B", shortcut: "⌘B", description: "太字" },
+  { command: "italic", label: "I", shortcut: "⌘I", description: "斜体" },
+  { command: "underline", label: "U", shortcut: "⌘U", description: "下線" },
+  {
+    command: "strikeThrough",
+    label: "S",
+    shortcut: "⌘⇧S",
+    description: "取り消し線",
+  },
+  {
+    command: "insertUnorderedList",
+    label: "•",
+    shortcut: "- + Space",
+    description: "箇条書き",
+  },
+  {
+    command: "insertOrderedList",
+    label: "1.",
+    shortcut: "1. + Space",
+    description: "番号付きリスト",
+  },
+];
+
+export function applyReflectionFormattingCommand(
+  editor: HTMLElement,
+  command: ReflectionFormatCommand
+) {
+  editor.focus({ preventScroll: true });
+  if (
+    command === "insertUnorderedList" ||
+    command === "insertOrderedList"
+  ) {
+    const targetTag = command === "insertOrderedList" ? "OL" : "UL";
+    const item = getReflectionSelectionListItem(editor);
+    if (item) {
+      const list = item.parentElement;
+      if (list?.tagName === targetTag) {
+        outdentReflectionListItem(item);
+      } else if (list && (list.tagName === "UL" || list.tagName === "OL")) {
+        const replacement = document.createElement(
+          targetTag.toLowerCase()
+        ) as HTMLUListElement | HTMLOListElement;
+        while (list.firstChild) replacement.appendChild(list.firstChild);
+        list.replaceWith(replacement);
+        placeCaretInReflectionListItem(item);
+      }
+    } else {
+      const range = getReflectionEditorSelectionRange(editor);
+      if (range) {
+        const startElement =
+          range.startContainer instanceof Element
+            ? range.startContainer
+            : range.startContainer.parentElement;
+        const block = startElement?.closest("div, p") ?? editor;
+        if (block === editor || editor.contains(block)) {
+          convertReflectionBlockToList(editor, block, targetTag);
+        }
+      }
+    }
+    editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    return;
+  }
+  document.execCommand(command, false);
+  editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+}
+
+function getReflectionSelectionListItem(
+  editor: HTMLElement
+): HTMLLIElement | null {
+  const range = getReflectionEditorSelectionRange(editor);
+  if (!range) return null;
+  const startElement =
+    range.startContainer instanceof Element
+      ? range.startContainer
+      : range.startContainer.parentElement;
+  const item = startElement?.closest("li") as HTMLLIElement | null;
+  return item && editor.contains(item) ? item : null;
+}
+
+function getReflectionCaretBlockPrefix(
+  editor: HTMLElement,
+  range: Range
+): { text: string; range: Range; block: Element } | null {
+  if (!range.collapsed) return null;
+  const startElement =
+    range.startContainer instanceof Element
+      ? range.startContainer
+      : range.startContainer.parentElement;
+  const block = startElement?.closest("li, div, p") ?? editor;
+  if (block instanceof HTMLLIElement || !editor.contains(block)) return null;
+  const prefixRange = document.createRange();
+  prefixRange.selectNodeContents(block);
+  try {
+    prefixRange.setEnd(range.startContainer, range.startOffset);
+  } catch {
+    return null;
+  }
+  return { text: prefixRange.toString(), range: prefixRange, block };
+}
+
+function placeCaretInReflectionListItem(
+  item: HTMLLIElement,
+  atStart = false
+) {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  if (atStart) {
+    range.setStart(item, 0);
+  } else {
+    const firstNestedList = Array.from(item.children).find(
+      (child) => child.tagName === "UL" || child.tagName === "OL"
+    );
+    if (firstNestedList) {
+      range.setStartBefore(firstNestedList);
+    } else {
+      range.selectNodeContents(item);
+      range.collapse(false);
+    }
+  }
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function convertReflectionBlockToList(
+  editor: HTMLElement,
+  block: Element,
+  listTag: "UL" | "OL"
+) {
+  const list = document.createElement(
+    listTag.toLowerCase()
+  ) as HTMLUListElement | HTMLOListElement;
+  const item = document.createElement("li");
+  while (block.firstChild) item.appendChild(block.firstChild);
+  if (!item.hasChildNodes() || !item.textContent) {
+    item.textContent = "";
+    item.appendChild(document.createElement("br"));
+  }
+  list.appendChild(item);
+  if (block === editor) {
+    editor.textContent = "";
+    editor.appendChild(list);
+  } else {
+    block.replaceWith(list);
+  }
+  placeCaretInReflectionListItem(item, true);
+}
+
+function convertReflectionMarkerBlockToList(
+  editor: HTMLElement,
+  prefix: { range: Range; block: Element },
+  listTag: "UL" | "OL"
+) {
+  prefix.range.deleteContents();
+  convertReflectionBlockToList(editor, prefix.block, listTag);
+}
+
+function indentReflectionListItem(item: HTMLLIElement): boolean {
+  const list = item.parentElement;
+  const previousItem = item.previousElementSibling as HTMLLIElement | null;
+  if (!list || !previousItem || list.tagName === "LI") return false;
+  const listTag = list.tagName === "OL" ? "OL" : "UL";
+  let nestedList = Array.from(previousItem.children)
+    .reverse()
+    .find((child) => child.tagName === listTag) as
+    | HTMLUListElement
+    | HTMLOListElement
+    | undefined;
+  if (!nestedList) {
+    nestedList = document.createElement(
+      listTag.toLowerCase()
+    ) as HTMLUListElement | HTMLOListElement;
+    previousItem.appendChild(nestedList);
+  }
+  nestedList.appendChild(item);
+  if (!list.children.length) list.remove();
+  placeCaretInReflectionListItem(item);
+  return true;
+}
+
+function outdentReflectionListItem(item: HTMLLIElement): boolean {
+  const list = item.parentElement;
+  if (!list || (list.tagName !== "UL" && list.tagName !== "OL")) return false;
+  const parentItem = list.parentElement;
+  if (parentItem?.tagName === "LI") {
+    const ancestorList = parentItem.parentElement;
+    if (!ancestorList) return false;
+    ancestorList.insertBefore(item, parentItem.nextSibling);
+    if (!list.children.length) list.remove();
+    placeCaretInReflectionListItem(item);
+    return true;
+  }
+
+  const listParent = list.parentNode;
+  if (!listParent) return false;
+  const siblings = Array.from(list.children);
+  const itemIndex = siblings.indexOf(item);
+  const beforeList = list.cloneNode(false) as HTMLUListElement | HTMLOListElement;
+  const afterList = list.cloneNode(false) as HTMLUListElement | HTMLOListElement;
+  siblings.slice(0, itemIndex).forEach((sibling) => beforeList.appendChild(sibling));
+  siblings.slice(itemIndex + 1).forEach((sibling) => afterList.appendChild(sibling));
+  const block = document.createElement("div");
+  while (item.firstChild) block.appendChild(item.firstChild);
+  if (!block.hasChildNodes()) block.appendChild(document.createElement("br"));
+  if (beforeList.children.length) listParent.insertBefore(beforeList, list);
+  listParent.insertBefore(block, list);
+  if (afterList.children.length) listParent.insertBefore(afterList, list);
+  list.remove();
+  const selection = window.getSelection();
+  if (selection) {
+    const range = document.createRange();
+    range.selectNodeContents(block);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  return true;
+}
+
+export function handleReflectionListKeyDown(
+  editor: HTMLElement,
+  event: KeyboardEvent
+): boolean {
+  if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) {
+    return false;
+  }
+  if (event.key === "Tab") {
+    const item = getReflectionSelectionListItem(editor);
+    if (!item) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    const changed = event.shiftKey
+      ? outdentReflectionListItem(item)
+      : indentReflectionListItem(item);
+    if (changed) {
+      editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    }
+    return true;
+  }
+  if (event.key !== " " || event.shiftKey) return false;
+
+  const range = getReflectionEditorSelectionRange(editor);
+  if (!range || getReflectionSelectionListItem(editor)) return false;
+  const prefix = getReflectionCaretBlockPrefix(editor, range);
+  if (!prefix) return false;
+  const marker = prefix.text;
+  const command = /^[-+*]$/.test(marker)
+    ? "insertUnorderedList"
+    : /^\d+\.$/.test(marker)
+      ? "insertOrderedList"
+      : null;
+  if (!command) return false;
+
+  event.preventDefault();
+  event.stopPropagation();
+  editor.focus({ preventScroll: true });
+  convertReflectionMarkerBlockToList(
+    editor,
+    prefix,
+    command === "insertOrderedList" ? "OL" : "UL"
+  );
+  editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+  return true;
+}
+
+function restoreReflectionEditorSelection(editor: HTMLElement, range: Range | null) {
+  if (!range) return;
+  if (
+    (!editor.contains(range.startContainer) && range.startContainer !== editor) ||
+    (!editor.contains(range.endContainer) && range.endContainer !== editor)
+  ) {
+    return;
+  }
+  const selection = window.getSelection();
+  if (!selection) return;
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function isReflectionFormatActive(
+  editor: HTMLElement,
+  command: ReflectionFormatCommand
+): boolean {
+  if (!getReflectionEditorSelectionRange(editor)) return false;
+  try {
+    return document.queryCommandState(command);
+  } catch {
+    return false;
+  }
+}
+
+function setReflectionEditorEmptyState(editor: HTMLElement) {
+  const hasImage = Boolean(
+    editor.querySelector(".qb-support-reflection-inline-image")
+  );
+  editor.classList.toggle(
+    "is-empty",
+    !hasImage && !getReflectionEditorText(editor)
+  );
+}
+
+function getReflectionEditorSelectionRange(
+  editor: HTMLElement
+): Range | null {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  if (
+    !editor.contains(range.startContainer) &&
+    range.startContainer !== editor
+  ) {
+    return null;
+  }
+  if (!editor.contains(range.endContainer) && range.endContainer !== editor) {
+    return null;
+  }
+  return range.cloneRange();
+}
+
+function placeCaretAfterNode(node: Node) {
+  const selection = window.getSelection();
+  if (!selection || !node.parentNode) return;
+  const range = document.createRange();
+  range.setStartAfter(node);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function insertReflectionInlineImage(
+  editor: HTMLElement,
+  image: QBReflectionImageRecord,
+  range: Range | null
+): HTMLSpanElement {
+  const marker = normalizeReflectionImageMarker(image.imageName);
+  const existing = Array.from(
+    editor.querySelectorAll<HTMLElement>(
+      ".qb-support-reflection-inline-image"
+    )
+  ).find((node) => node.dataset.marker === marker);
+  if (existing) {
+    setReflectionInlineImageSource(existing, image);
+    placeCaretAfterNode(existing);
+    return existing as HTMLSpanElement;
+  }
+
+  const node = createReflectionInlineImageNode(marker, image);
+  const trailingSpace = document.createTextNode(" ");
+  const canUseRange =
+    range &&
+    (editor.contains(range.startContainer) ||
+      range.startContainer === editor) &&
+    (editor.contains(range.endContainer) || range.endContainer === editor);
+  if (canUseRange) {
+    range.deleteContents();
+    range.insertNode(trailingSpace);
+    range.insertNode(node);
+  } else {
+    if (
+      editor.textContent ||
+      editor.querySelector(".qb-support-reflection-inline-image")
+    ) {
+      editor.appendChild(document.createTextNode(" "));
+    }
+    editor.appendChild(node);
+    editor.appendChild(trailingSpace);
+  }
+  setReflectionEditorEmptyState(editor);
+  placeCaretAfterNode(trailingSpace);
+  return node;
+}
+
+function insertReflectionText(
+  editor: HTMLElement,
+  text: string,
+  range: Range | null
+) {
+  const node = document.createTextNode(text);
+  if (
+    range &&
+    (editor.contains(range.startContainer) ||
+      range.startContainer === editor) &&
+    (editor.contains(range.endContainer) || range.endContainer === editor)
+  ) {
+    range.deleteContents();
+    range.insertNode(node);
+  } else {
+    editor.appendChild(node);
+  }
+  placeCaretAfterNode(node);
+  editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.onerror = () =>
+      reject(reader.error || new Error("画像ファイルを読み取れませんでした"));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function imageFileToPngDataUrl(file: File): Promise<string> {
+  if (!file.type.startsWith("image/")) {
+    throw new Error("画像ファイルではありません");
+  }
+  if (file.size > REFLECTION_IMAGE_MAX_BYTES) {
+    throw new Error("画像が大きすぎます（上限12MB）");
+  }
+  if (file.type === "image/png") {
+    const dataUrl = await readFileAsDataUrl(file);
+    if (dataUrl.startsWith("data:image/png;base64,")) return dataUrl;
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error("画像をデコードできませんでした"));
+      element.src = objectUrl;
+    });
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    if (!width || !height) throw new Error("画像のサイズが不正です");
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("PNG変換を利用できません");
+    context.drawImage(image, 0, 0);
+    const dataUrl = canvas.toDataURL("image/png");
+    const byteLength = pngDataUrlToBytes(dataUrl).byteLength;
+    if (byteLength > REFLECTION_IMAGE_MAX_BYTES) {
+      throw new Error("PNG変換後の画像が大きすぎます（上限12MB）");
+    }
+    return dataUrl;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function pngDataUrlToBytes(dataUrl: string): Uint8Array {
+  const prefix = "data:image/png;base64,";
+  if (!dataUrl.startsWith(prefix)) {
+    throw new Error("PNG data URLではありません");
+  }
+  const binary = atob(dataUrl.slice(prefix.length));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const data = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength
+  ) as ArrayBuffer;
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function getReflectionImageBaseName(context: ReflectionContext): string {
+  const source =
+    context.info?.id ??
+    context.snapshot?.id ??
+    context.questionId;
+  const safe = String(source)
+    .replace(/[^A-Za-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 96);
+  return `QB_${safe || "question"}`;
+}
+
+async function saveReflectionImage(
+  context: ReflectionContext,
+  imageDataUrl: string
+): Promise<QBReflectionImageRecord> {
+  const area = webext.storage?.local ?? getStorageArea(false);
+  if (!area) throw new Error("storage.localを利用できません");
+  const bytes = pngDataUrlToBytes(imageDataUrl);
+  if (bytes.byteLength > REFLECTION_IMAGE_MAX_BYTES) {
+    throw new Error("画像が大きすぎます（上限12MB）");
+  }
+  const sha256 = await sha256Hex(bytes);
+  const storageKey = getReflectionImageStorageKey(context.questionId);
+  const store = await loadReflectionImageStore(context.questionId);
+  const duplicate = Object.values(store).find(
+    (image) => image.sha256 === sha256
+  );
+  if (duplicate) return duplicate;
+
+  const baseName = getReflectionImageBaseName(context);
+  const indexes = Object.values(store)
+    .map((image) =>
+      Number(
+        image.imageName.match(
+          new RegExp(`^${baseName}_reflection_(\\d+)\\.png$`)
+        )?.[1] ?? 0
+      )
+    )
+    .filter((value) => Number.isFinite(value));
+  const index = (indexes.length ? Math.max(...indexes) : 0) + 1;
+  const imageName = `${baseName}_reflection_${index}.png`;
+  const record: QBReflectionImageRecord = {
+    schemaVersion: 1,
+    source: "QB_support",
+    questionId: context.questionId,
+    questionCode: context.info?.id ?? context.snapshot?.id ?? null,
+    imageName,
+    mimeType: "image/png",
+    imageDataUrl,
+    byteLength: bytes.byteLength,
+    sha256,
+    createdAt: new Date().toISOString(),
+  };
+  await storageSet(area, {
+    [storageKey]: {
+      ...store,
+      [imageName]: record,
+    },
+  });
+
+  const verified = await loadReflectionImageStore(context.questionId);
+  if (
+    verified[imageName]?.sha256 !== sha256 ||
+    verified[imageName]?.imageDataUrl !== imageDataUrl
+  ) {
+    throw new Error("画像の保存確認に失敗しました");
+  }
+  return verified[imageName];
+}
+
+function imageFilesFromDataTransfer(
+  dataTransfer: DataTransfer | null
+): File[] {
+  const files: File[] = [];
+  for (const item of Array.from(dataTransfer?.items ?? [])) {
+    if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+    const file = item.getAsFile();
+    if (file) files.push(file);
+  }
+  if (files.length) return files;
+  return Array.from(dataTransfer?.files ?? []).filter((file) =>
+    file.type.startsWith("image/")
+  );
+}
+
+async function imageFilesFromClipboardRead(): Promise<File[]> {
+  if (!navigator.clipboard?.read) return [];
+  const items = await navigator.clipboard.read();
+  const files: File[] = [];
+  for (const item of items) {
+    const imageType = item.types.find((type) => type.startsWith("image/"));
+    if (!imageType) continue;
+    const blob = await item.getType(imageType);
+    const extension = imageType.split("/")[1] || "png";
+    files.push(
+      new File([blob], `pasted-reflection-image.${extension}`, {
+        type: imageType,
+      })
+    );
+  }
+  return files;
+}
+
+function getImageSourcesFromHtml(html: string): string[] {
+  if (!html) return [];
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  const sources = Array.from(parsed.querySelectorAll<HTMLImageElement>("img"))
+    .map((image) => image.getAttribute("src")?.trim() ?? "")
+    .map((source) => {
+      if (/^(data:image\/|blob:)/i.test(source)) return source;
+      try {
+        const resolved = new URL(source, location.href).href;
+        return /^https?:\/\//i.test(resolved) ? resolved : "";
+      } catch {
+        return "";
+      }
+    })
+    .filter(Boolean);
+  return Array.from(new Set(sources));
+}
+
+async function imageFileFromSource(
+  source: string,
+  filename: string
+): Promise<File> {
+  const response = await fetch(source);
+  if (!response.ok) {
+    throw new Error(`画像取得に失敗しました（HTTP ${response.status}）`);
+  }
+  const blob = await response.blob();
+  if (!blob.type.startsWith("image/")) {
+    throw new Error("クリップボード内のURLは画像ではありません");
+  }
+  return new File([blob], filename, { type: blob.type });
+}
+
+async function imageFilesFromHtml(html: string): Promise<File[]> {
+  const sources = getImageSourcesFromHtml(html);
+  if (!sources.length) return [];
+  const results = await Promise.allSettled(
+    sources.map((source, index) =>
+      imageFileFromSource(source, `pasted-html-image-${index + 1}`)
+    )
+  );
+  const files = results.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : []
+  );
+  if (files.length) return files;
+  const failure = results.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected"
+  );
+  throw failure?.reason instanceof Error
+    ? failure.reason
+    : new Error("クリップボード内の画像URLを取得できませんでした");
+}
+
+function dataTransferMayContainImage(
+  dataTransfer: DataTransfer | null
+): boolean {
+  const types = Array.from(dataTransfer?.types ?? []);
+  return (
+    types.includes("Files") ||
+    types.includes("text/uri-list") ||
+    types.includes("text/html") ||
+    Array.from(dataTransfer?.items ?? []).some(
+      (item) => item.kind === "file" && item.type.startsWith("image/")
+    )
+  );
+}
+
+async function imageFileFromDroppedUrl(
+  dataTransfer: DataTransfer | null
+): Promise<File | null> {
+  let source = dataTransfer?.getData("text/uri-list").split("\n")[0].trim() ?? "";
+  if (!source) {
+    const html = dataTransfer?.getData("text/html") ?? "";
+    if (html) {
+      source =
+        new DOMParser()
+          .parseFromString(html, "text/html")
+          .querySelector<HTMLImageElement>("img")
+          ?.src ?? "";
+    }
+  }
+  if (!/^(data:image\/|https?:\/\/)/i.test(source)) return null;
+  return imageFileFromSource(source, "dropped-reflection-image");
+}
+
+function showReflectionNotice(message: string, error = false) {
+  document.getElementById("qb-support-reflection-notice")?.remove();
+  const notice = document.createElement("div");
+  notice.id = "qb-support-reflection-notice";
+  notice.classList.toggle("is-error", error);
+  notice.setAttribute("role", error ? "alert" : "status");
+  notice.textContent = message;
+  (document.body || document.documentElement).appendChild(notice);
+  window.setTimeout(() => notice.remove(), error ? 8000 : 3000);
+}
+
+function buildReflectionPanel(
+  context: ReflectionContext,
+  saved: QBReflectionRecord | null,
+  savedImages: QBReflectionImageStore
+): ReflectionPanelElement {
+  const container = document.createElement("div") as ReflectionPanelElement;
+  container.id = REFLECTION_CONTAINER_ID;
+  container.dataset.questionId = context.questionId;
+
+  const head = document.createElement("div");
+  head.className = "qb-support-reflection-head";
+
+  const title = document.createElement("div");
+  title.className = "qb-support-reflection-title";
+  title.textContent = "振り返り";
+
+  const meta = document.createElement("div");
+  meta.className = "qb-support-reflection-meta";
+
+  const pdfBadge = document.createElement("span");
+  pdfBadge.className = "qb-support-reflection-pdf";
+  pdfBadge.textContent = "PDF: Vital2CK";
+  pdfBadge.title = `Anki生成時の既定PDF: ${QB_REFLECTION_PDF_ID}`;
+
+  const status = document.createElement("span");
+  status.className = "qb-support-reflection-status";
+  status.textContent = saved?.reflection ? "保存済み" : "";
+
+  meta.appendChild(pdfBadge);
+  meta.appendChild(status);
+  head.appendChild(title);
+  head.appendChild(meta);
+
+  const editor = document.createElement("div");
+  editor.className = "qb-support-reflection-editor";
+  editor.contentEditable = "true";
+  editor.dataset.placeholder = "この問題の教訓・間違えた理由をメモ（自動保存）";
+  editor.setAttribute("role", "textbox");
+  editor.setAttribute("aria-label", "振り返り");
+  editor.setAttribute("aria-multiline", "true");
+  editor.setAttribute("spellcheck", "false");
+  setReflectionEditorMarkdown(editor, saved?.reflection ?? "", savedImages);
+  setReflectionEditorEmptyState(editor);
+
+  const formatBar = document.createElement("div");
+  formatBar.className = "qb-support-reflection-formatbar";
+  formatBar.setAttribute("role", "toolbar");
+  formatBar.setAttribute("aria-label", "文字書式");
+
+  const formatButtons = new Map<ReflectionFormatCommand, HTMLButtonElement>();
+  const updateFormatButtons = () => {
+    for (const [command, button] of formatButtons) {
+      button.setAttribute(
+        "aria-pressed",
+        String(isReflectionFormatActive(editor, command))
+      );
+    }
+  };
+  for (const control of REFLECTION_FORMAT_CONTROLS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "qb-support-reflection-format";
+    button.dataset.command = control.command;
+    button.textContent = control.label;
+    button.title = `${control.shortcut}：${control.description}`;
+    button.setAttribute("aria-label", button.title);
+    button.setAttribute("aria-pressed", "false");
+    let preservedRange: Range | null = null;
+    button.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      preservedRange = getReflectionEditorSelectionRange(editor);
+    });
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      restoreReflectionEditorSelection(editor, preservedRange);
+      applyReflectionFormattingCommand(editor, control.command);
+      updateFormatButtons();
+    });
+    formatButtons.set(control.command, button);
+    formatBar.appendChild(button);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "qb-support-reflection-actions";
+
+  const attachInput = document.createElement("input");
+  attachInput.type = "file";
+  attachInput.accept = "image/*";
+  attachInput.multiple = true;
+  attachInput.hidden = true;
+
+  const attachButton = document.createElement("button");
+  attachButton.type = "button";
+  attachButton.className = "qb-support-reflection-attach";
+  attachButton.textContent = "画像を添付";
+
+  actions.appendChild(attachInput);
+  actions.appendChild(attachButton);
+
+  const footer = document.createElement("div");
+  footer.className = "qb-support-reflection-footer";
+  footer.textContent =
+    "問題ID・問題文・選択肢・添付画像とともにAnki生成用データとして保存します";
+
+  let saveTimer: number | null = null;
+  let lastSavedText = saved?.reflection ?? "";
+  let attachmentChain: Promise<void> = Promise.resolve();
+  let pendingAttachmentCount = 0;
+
+  const setStatus = (message: string, error = false) => {
+    if (!container.isConnected && message !== "保存中...") return;
+    status.textContent = message;
+    status.classList.toggle("is-error", error);
+  };
+
+  const persist = async (value: string) => {
+    if (value === lastSavedText) {
+      setStatus(value ? "保存済み" : "");
+      return;
+    }
+    try {
+      await saveReflectionRecord(context, value);
+      lastSavedText = value;
+      setStatus("保存済み");
+    } catch (error) {
+      console.warn("[QB_SUPPORT][reflection] save failed", {
+        questionId: context.questionId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      setStatus("保存失敗", true);
+      throw error;
+    }
+  };
+
+  const flushNow = async () => {
+    if (saveTimer !== null) {
+      window.clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    setReflectionEditorEmptyState(editor);
+    await persist(getReflectionEditorText(editor));
+  };
+
+  const removeUnsupportedImages = (): boolean => {
+    const unsupported = Array.from(editor.querySelectorAll("img")).filter(
+      (image) => !image.closest(".qb-support-reflection-inline-image")
+    );
+    if (!unsupported.length) return false;
+    unsupported.forEach((image) => image.remove());
+    setStatus("画像添付失敗", true);
+    showReflectionNotice(
+      "画像を保存できなかったため挿入を取り消しました。もう一度「画像を添付」からお試しください。",
+      true
+    );
+    return true;
+  };
+
+  const scheduleSave = () => {
+    if (removeUnsupportedImages()) return;
+    setReflectionEditorEmptyState(editor);
+    setStatus("保存中...");
+    if (saveTimer !== null) window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+      saveTimer = null;
+      void persist(getReflectionEditorText(editor)).catch(() => undefined);
+    }, REFLECTION_SAVE_DEBOUNCE_MS);
+  };
+
+  const runAttachFiles = async (
+    imageFiles: File[],
+    initialRange: Range | null
+  ) => {
+    let insertionRange = initialRange;
+    const insertedNodes: HTMLElement[] = [];
+    setStatus("画像保存中...");
+    try {
+      await flushNow();
+      for (const file of imageFiles) {
+        const liveBeforeSave = getReflectionContext();
+        if (
+          !container.isConnected ||
+          !liveBeforeSave ||
+          liveBeforeSave.questionId !== context.questionId
+        ) {
+          throw new Error("画像保存前に問題が切り替わりました");
+        }
+        const imageDataUrl = await imageFileToPngDataUrl(file);
+        const image = await saveReflectionImage(context, imageDataUrl);
+
+        const liveBeforeInsert = getReflectionContext();
+        if (
+          !container.isConnected ||
+          !liveBeforeInsert ||
+          liveBeforeInsert.questionId !== context.questionId
+        ) {
+          const marker = normalizeReflectionImageMarker(image.imageName);
+          const latest = getReflectionEditorText(editor);
+          const nextValue = latest.includes(marker)
+            ? latest
+            : `${latest}${latest ? "\n\n" : ""}${marker}`;
+          await saveReflectionRecord(context, nextValue);
+          lastSavedText = nextValue;
+          showReflectionNotice(
+            "問題切替前の振り返りへ画像を保存しました。",
+            false
+          );
+          return;
+        }
+
+        const marker = normalizeReflectionImageMarker(image.imageName);
+        const alreadyPresent = Array.from(
+          editor.querySelectorAll<HTMLElement>(
+            ".qb-support-reflection-inline-image"
+          )
+        ).some((node) => node.dataset.marker === marker);
+        const node = insertReflectionInlineImage(
+          editor,
+          image,
+          insertionRange
+        );
+        if (!alreadyPresent) insertedNodes.push(node);
+        insertionRange = getReflectionEditorSelectionRange(editor);
+        console.log("[QB_SUPPORT][reflection] image stored", {
+          questionId: context.questionId,
+          imageName: image.imageName,
+          byteLength: image.byteLength,
+          sha256: image.sha256,
+        });
+      }
+      await flushNow();
+      setStatus("画像を添付しました");
+    } catch (error) {
+      insertedNodes.forEach((node) => node.remove());
+      setReflectionEditorEmptyState(editor);
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[QB_SUPPORT][reflection] image attach failed", {
+        questionId: context.questionId,
+        message,
+      });
+      setStatus("画像添付失敗", true);
+      showReflectionNotice(`画像添付に失敗しました: ${message}`, true);
+      throw error;
+    }
+  };
+
+  const attachFiles = (
+    files: File[] | FileList | null,
+    range = getReflectionEditorSelectionRange(editor)
+  ): Promise<void> => {
+    const imageFiles = Array.from(files ?? []).filter((file) =>
+      file.type.startsWith("image/")
+    );
+    if (!imageFiles.length) return Promise.resolve();
+    pendingAttachmentCount += 1;
+    attachButton.disabled = true;
+    attachmentChain = attachmentChain
+      .catch(() => undefined)
+      .then(() => runAttachFiles(imageFiles, range))
+      .finally(() => {
+        pendingAttachmentCount -= 1;
+        attachButton.disabled = pendingAttachmentCount > 0;
+        attachInput.value = "";
+      });
+    return attachmentChain;
+  };
+
+  const handlePaste = (event: ClipboardEvent) => {
+    const eventFiles = imageFilesFromDataTransfer(event.clipboardData);
+    if (eventFiles.length) {
+      event.preventDefault();
+      event.stopPropagation();
+      void attachFiles(eventFiles).catch(() => undefined);
+      return;
+    }
+
+    const types = Array.from(event.clipboardData?.types ?? []);
+    const html = event.clipboardData?.getData("text/html") ?? "";
+    const plainText = event.clipboardData?.getData("text/plain") ?? "";
+    const htmlImageSources = getImageSourcesFromHtml(html);
+    const mayContainAsyncImage =
+      types.includes("Files") ||
+      htmlImageSources.length > 0;
+    if (!mayContainAsyncImage) return;
+
+    const range = getReflectionEditorSelectionRange(editor);
+    event.preventDefault();
+    event.stopPropagation();
+    void (async () => {
+      let htmlFailure: unknown = null;
+      if (htmlImageSources.length) {
+        try {
+          const htmlFiles = await imageFilesFromHtml(html);
+          if (htmlFiles.length) return attachFiles(htmlFiles, range);
+        } catch (error) {
+          htmlFailure = error;
+        }
+      }
+
+      try {
+        const files = await imageFilesFromClipboardRead();
+        if (files.length) return attachFiles(files, range);
+      } catch (error) {
+        if (!htmlFailure) htmlFailure = error;
+      }
+
+      if (plainText) {
+        insertReflectionText(editor, plainText, range);
+        return;
+      }
+      throw htmlFailure instanceof Error
+        ? htmlFailure
+        : new Error("クリップボードから画像データを取得できませんでした");
+    })().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn("[QB_SUPPORT][reflection] clipboard image read failed", {
+        questionId: context.questionId,
+        types,
+        htmlImageCount: htmlImageSources.length,
+        message,
+      });
+      setStatus("画像添付失敗", true);
+      showReflectionNotice(`画像添付に失敗しました: ${message}`, true);
+    });
+  };
+
+  editor.addEventListener("input", scheduleSave);
+  editor.addEventListener("input", updateFormatButtons);
+  editor.addEventListener("focus", updateFormatButtons);
+  editor.addEventListener("mouseup", updateFormatButtons);
+  editor.addEventListener("keyup", updateFormatButtons);
+  editor.addEventListener("blur", () => {
+    void flushNow().catch(() => undefined);
+  });
+  editor.addEventListener(
+    "keydown",
+    (event) => {
+      if (handleReflectionFormattingShortcut(editor, event)) return;
+      handleReflectionListKeyDown(editor, event);
+    },
+    true
+  );
+  ["keydown", "keypress", "keyup"].forEach((type) => {
+    editor.addEventListener(type, (event) => event.stopPropagation(), true);
+  });
+  editor.addEventListener("paste", handlePaste, true);
+  attachButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    attachInput.click();
+  });
+  attachInput.addEventListener("change", () => {
+    void attachFiles(attachInput.files).catch(() => undefined);
+  });
+  container.addEventListener("dragover", (event) => {
+    if (!dataTransferMayContainImage(event.dataTransfer)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    container.classList.add("is-drag-over");
+  });
+  container.addEventListener("dragleave", () => {
+    container.classList.remove("is-drag-over");
+  });
+  container.addEventListener("drop", (event) => {
+    const files = imageFilesFromDataTransfer(event.dataTransfer);
+    if (!files.length && !dataTransferMayContainImage(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    container.classList.remove("is-drag-over");
+    const range = getReflectionEditorSelectionRange(editor);
+    if (files.length) {
+      void attachFiles(files, range).catch(() => undefined);
+      return;
+    }
+    void imageFileFromDroppedUrl(event.dataTransfer)
+      .then((file) => {
+        if (!file) throw new Error("ドロップされた画像を取得できませんでした");
+        return attachFiles([file], range);
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setStatus("画像添付失敗", true);
+        showReflectionNotice(`画像添付に失敗しました: ${message}`, true);
+      });
+  });
+
+  container.appendChild(head);
+  container.appendChild(formatBar);
+  container.appendChild(editor);
+  container.appendChild(actions);
+  container.appendChild(footer);
+  container.__qbSupportReflectionFlushNow = flushNow;
+  return container;
+}
+
+function removeReflectionPanel(reason: string) {
+  const container = document.getElementById(
+    REFLECTION_CONTAINER_ID
+  ) as ReflectionPanelElement | null;
+  if (!container) return;
+  void container.__qbSupportReflectionFlushNow?.().catch(() => undefined);
+  const lightbox = document.getElementById(
+    REFLECTION_LIGHTBOX_ID
+  ) as ReflectionLightboxElement | null;
+  lightbox?.__qbSupportReflectionClose?.();
+  container.remove();
+  console.log("[QB_SUPPORT][reflection] removed", {
+    reason,
+    questionId: container.dataset.questionId ?? null,
+  });
+}
+
+async function syncReflectionPanel(reason: string) {
+  if (window !== window.top || (!isQbHost() && !isMoshiHost())) return;
+  const context = getReflectionContext();
+  const placement = getReflectionPlacement();
+  const existing = document.getElementById(
+    REFLECTION_CONTAINER_ID
+  ) as ReflectionPanelElement | null;
+
+  if (!context || !placement) {
+    if (existing) removeReflectionPanel("explanation-unavailable");
+    return;
+  }
+  if (
+    existing?.isConnected &&
+    existing.dataset.questionId === context.questionId
+  ) {
+    return;
+  }
+  if (reflectionRenderQuestionId === context.questionId) return;
+
+  if (existing) removeReflectionPanel("question-changed");
+  reflectionRenderQuestionId = context.questionId;
+  try {
+    const [saved, savedImages] = await loadReflectionDataForContext(context);
+    const liveContext = getReflectionContext();
+    const livePlacement = getReflectionPlacement();
+    if (
+      !liveContext ||
+      liveContext.questionId !== context.questionId ||
+      !livePlacement
+    ) {
+      return;
+    }
+    const current = document.getElementById(
+      REFLECTION_CONTAINER_ID
+    ) as ReflectionPanelElement | null;
+    if (current?.dataset.questionId === context.questionId) return;
+    if (current) removeReflectionPanel("replace-stale-panel");
+
+    const container = buildReflectionPanel(liveContext, saved, savedImages);
+    livePlacement.parent.insertBefore(container, livePlacement.before);
+    console.log("[QB_SUPPORT][reflection] rendered", {
+      reason,
+      questionId: context.questionId,
+      hasSavedText: Boolean(saved?.reflection),
+      pdfId: QB_REFLECTION_PDF_ID,
+    });
+  } catch (error) {
+    console.warn("[QB_SUPPORT][reflection] render failed", {
+      reason,
+      questionId: context.questionId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    if (reflectionRenderQuestionId === context.questionId) {
+      reflectionRenderQuestionId = null;
+    }
+  }
+}
+
 function attachEventHandlers() {
   const trackHintDraftSource = (event: Event) => {
     const target = event.target;
@@ -3416,10 +5652,12 @@ function attachEventHandlers() {
     "keydown",
     (event) => {
       const debug = settings.debugEnabled;
-      const shouldLogKey = isTargetKey(event.key);
+      const shouldLogKey = isTargetKey(event);
       if (shouldLogKey) {
-        console.log("[QB_SUPPORT][key-capture]", {
+        console.log("[QB_SUPPORT][key-capture]", JSON.stringify({
           key: event.key,
+          code: event.code,
+          composing: event.isComposing,
           url: location.href,
           frame: window === window.top ? "top" : "iframe",
           active: document.hasFocus(),
@@ -3430,7 +5668,7 @@ function attachEventHandlers() {
             alt: event.altKey,
             shift: event.shiftKey,
           },
-        });
+        }));
       }
       if (debug) {
         console.debug("[QB_SUPPORT][key]", {
@@ -3443,18 +5681,19 @@ function attachEventHandlers() {
         });
       }
       if (!settings.shortcutsEnabled) return;
-      if (event.isComposing) return;
+      const isTyping =
+        isTypingTarget(event.target) || isTypingTarget(document.activeElement);
+      if (event.isComposing && isTyping) return;
       const eventBaseKey = getEventBaseKey(event);
       const key = normalizeKey(event.key);
-      const navPrevMatch = isShortcutMatch(event, settings.navPrevKey);
-      const navNextMatch = isShortcutMatch(event, settings.navNextKey);
+      const navPrevMatch =
+        isShortcutMatch(event, settings.navPrevKey) ||
+        isShortcutMatch(event, defaultSettings.navPrevKey);
+      const navNextMatch =
+        isShortcutMatch(event, settings.navNextKey) ||
+        isShortcutMatch(event, defaultSettings.navNextKey);
       const isNavKey = navPrevMatch || navNextMatch;
-      const navShortcut = navPrevMatch
-        ? settings.navPrevKey
-        : navNextMatch
-          ? settings.navNextKey
-          : "";
-      const navBaseKey = navShortcut ? getShortcutBaseKey(navShortcut) : "";
+      const navBaseKey = isNavKey ? eventBaseKey : "";
       const optionIndex = settings.optionKeys.findIndex(
         (shortcut) =>
           isShortcutMatch(event, shortcut) ||
@@ -3465,22 +5704,30 @@ function attachEventHandlers() {
         isOptionKey && settings.optionKeys[optionIndex]
           ? getShortcutBaseKey(settings.optionKeys[optionIndex])
           : "";
-      const isTyping =
-        isTypingTarget(event.target) || isTypingTarget(document.activeElement);
-      if (isTyping) return;
       const templateShortcut = getChatTemplateShortcut(event);
       if (templateShortcut && window === window.top && (!isTyping || event.ctrlKey)) {
         consumeShortcutEvent(event);
         void sendTemplateMessage(templateShortcut);
         return;
       }
-      if (isShortcutMatch(event, CHAT_NEW_SHORTCUT) && window === window.top) {
+      if (
+        CHAT_ENABLED &&
+        isShortcutMatch(event, CHAT_INPUT_TOGGLE_SHORTCUT) &&
+        window === window.top
+      ) {
+        consumeShortcutEvent(event);
+        toggleChatInputFocus();
+        return;
+      }
+      if (isTyping) return;
+      if (CHAT_ENABLED && isShortcutMatch(event, CHAT_NEW_SHORTCUT) && window === window.top) {
         consumeShortcutEvent(event);
         resetChatHistory("会話をリセットしました");
         void saveSettings({ ...settings, chatOpen: true });
         return;
       }
       if (
+        CHAT_ENABLED &&
         isShortcutMatch(event, "Ctrl+S") &&
         window === window.top
       ) {
@@ -3497,24 +5744,20 @@ function attachEventHandlers() {
         }
         return;
       }
-      if (isShortcutMatch(event, CHAT_INPUT_TOGGLE_SHORTCUT) && window === window.top) {
-        consumeShortcutEvent(event);
-        toggleChatInputFocus();
-        return;
-      }
       if (!isQuestionPage()) {
         if (shouldLogKey) {
-          console.log("[QB_SUPPORT][frame-skip]", {
+          console.log("[QB_SUPPORT][frame-skip]", JSON.stringify({
             key: event.key,
             url: location.href,
             frame: window === window.top ? "top" : "iframe",
             reason: "no-question-container",
-          });
+            diagnostics: getQuestionPageDiagnostics(),
+          }));
         }
         return;
       }
 
-      if (isShortcutMatch(event, CHAT_TOGGLE_SHORTCUT) && window === window.top) {
+      if (CHAT_ENABLED && isShortcutMatch(event, CHAT_TOGGLE_SHORTCUT) && window === window.top) {
         consumeShortcutEvent(event);
         void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
         return;
@@ -3525,7 +5768,7 @@ function attachEventHandlers() {
         if (debug) {
           console.debug("[QB_SUPPORT][toggle]", {
             prevented: true,
-            target: describeElement(event.target),
+            target: describeElement(event.target instanceof HTMLElement ? event.target : null),
           });
         }
         const next = !settings.enabled;
@@ -3539,7 +5782,9 @@ function attachEventHandlers() {
 
       const revealMatch =
         isShortcutMatch(event, settings.revealKey) ||
-        isPlainShortcutMatch(event, settings.revealKey, eventBaseKey);
+        isPlainShortcutMatch(event, settings.revealKey, eventBaseKey) ||
+        isShortcutMatch(event, defaultSettings.revealKey) ||
+        isPlainShortcutMatch(event, defaultSettings.revealKey, eventBaseKey);
       if (hasModifier(event) && !isNavKey && !isOptionKey && !revealMatch) {
         if (shouldLogKey) {
           console.log("[QB_SUPPORT][key-skip]", {
@@ -3658,7 +5903,7 @@ function attachEventHandlers() {
           sendAction(
             {
               action: "reveal",
-              key: getShortcutBaseKey(settings.revealKey).toLowerCase(),
+              key: eventBaseKey.toLowerCase(),
             },
             event
           );
@@ -3978,7 +6223,20 @@ function isExtensionUiTarget(target: EventTarget | null): boolean {
 }
 
 function isQuestionPage(): boolean {
-  return document.querySelector(".question-container") !== null;
+  return isQuestionDocument(document, location.href);
+}
+
+function getQuestionPageDiagnostics(): Record<string, unknown> {
+  return {
+    readyState: document.readyState,
+    title: document.title,
+    hasLegacyContainer: document.querySelector(".question-container") !== null,
+    hasQuestionIdQuery: new URLSearchParams(location.search).has("question_id"),
+    buttonCount: document.querySelectorAll("button").length,
+    htmlRendererCount: document.querySelectorAll(".html_renderer").length,
+    iframeSources: listFrameSources(),
+    bodyText: (document.body?.innerText ?? "").replace(/\s+/g, " ").trim().slice(0, 500),
+  };
 }
 
 function isQbHost(): boolean {
@@ -3987,6 +6245,10 @@ function isQbHost(): boolean {
 
 function isInputHost(): boolean {
   return location.hostname.includes("input.medilink-study.com");
+}
+
+function isMoshiHost(): boolean {
+  return isMoshiUrl(location.href);
 }
 
 function attachMessageHandlers() {
@@ -4050,7 +6312,7 @@ function findTargetFrame(): Window | null {
 
 function postToInputFrame(message: Record<string, unknown>): {
   sent: boolean;
-  method: "querySelector" | "window.frames" | "none";
+  method: "querySelector" | "none";
   frameIndex: number | null;
   errors: string[];
 } {
@@ -4062,14 +6324,6 @@ function postToInputFrame(message: Record<string, unknown>): {
       return { sent: true, method: "querySelector", frameIndex: null, errors };
     } catch (error) {
       errors.push(`querySelector: ${String(error)}`);
-    }
-  }
-  for (let i = 0; i < window.frames.length; i += 1) {
-    try {
-      window.frames[i].postMessage(message, QB_ACTION_ORIGIN);
-      return { sent: true, method: "window.frames", frameIndex: i, errors };
-    } catch (error) {
-      errors.push(`window.frames[${i}]: ${String(error)}`);
     }
   }
   return { sent: false, method: "none", frameIndex: null, errors };
@@ -4147,12 +6401,10 @@ function getShortcutBaseKey(shortcut: string): string {
 }
 
 function getEventBaseKey(event: KeyboardEvent): string {
-  const normalized = normalizeKey(event.key);
-  if (normalized.length === 1) return normalized;
   const code = event.code ?? "";
   if (code.startsWith("Key")) return code.slice(3).toUpperCase();
   if (code.startsWith("Digit")) return code.slice(5);
-  return normalized;
+  return normalizeKey(event.key);
 }
 
 function isPlainShortcut(shortcut: string): boolean {
@@ -4170,8 +6422,8 @@ function isPlainShortcutMatch(
   return eventBaseKey === getShortcutBaseKey(shortcut);
 }
 
-function isTargetKey(rawKey: string): boolean {
-  const key = normalizeKey(rawKey);
+function isTargetKey(event: KeyboardEvent): boolean {
+  const key = getEventBaseKey(event);
   const optionKeys = settings.optionKeys
     .map((shortcut) => getShortcutBaseKey(shortcut))
     .filter(Boolean);
@@ -4179,8 +6431,9 @@ function isTargetKey(rawKey: string): boolean {
     key === getShortcutBaseKey(settings.navPrevKey) ||
     key === getShortcutBaseKey(settings.navNextKey) ||
     key === getShortcutBaseKey(settings.revealKey) ||
-    key === getShortcutBaseKey(CHAT_TOGGLE_SHORTCUT) ||
-    getTemplateShortcutKeys().includes(key) ||
+    key === getShortcutBaseKey(defaultSettings.revealKey) ||
+    (CHAT_ENABLED && key === getShortcutBaseKey(CHAT_TOGGLE_SHORTCUT)) ||
+    (CHAT_ENABLED && getTemplateShortcutKeys().includes(key)) ||
     optionKeys.includes(key)
   );
 }
@@ -4190,6 +6443,7 @@ function hasModifier(event: KeyboardEvent): boolean {
 }
 
 function getChatTemplateShortcut(event: KeyboardEvent) {
+  if (!CHAT_ENABLED) return null;
   for (const template of getEnabledChatTemplates()) {
     if (!template.shortcut) continue;
     if (isShortcutMatch(event, template.shortcut)) return template;
@@ -4221,30 +6475,34 @@ function handleActionInFrame(
   if (!isQuestionPage()) return;
   const frameLabel = window === window.top ? "top" : "iframe";
   if (action === "nav") {
-    const target = getNavigationTarget(document, key === "arrowright" ? "next" : "prev");
-    console.log("[QB_SUPPORT][nav-target]", {
+    const target = getNavigationTarget(document, getNavigationDirection(key));
+    console.log("[QB_SUPPORT][nav-target]", JSON.stringify({
       key,
       target: describeElement(target),
       meta: describeElementMeta(target),
       url: location.href,
       frame: frameLabel,
       source,
-    });
+    }));
     if (!target) return;
     const beforeUrl = location.href;
-    void (async () => {
-      const ok = await clickWithCdp(target, "nav");
-      if (!ok) clickWithFallback(target, { tag: "nav", logAlways: true });
-    })();
+    if (source === "local") {
+      clickWithFallback(target, { tag: "nav", logAlways: true });
+    } else {
+      void (async () => {
+        const ok = await clickWithCdp(target, "nav");
+        if (!ok) clickWithFallback(target, { tag: "nav", logAlways: true });
+      })();
+    }
     window.setTimeout(() => {
-      console.log("[QB_SUPPORT][nav-effect]", {
+      console.log("[QB_SUPPORT][nav-effect]", JSON.stringify({
         key,
         beforeUrl,
         afterUrl: location.href,
         changed: location.href !== beforeUrl,
         frame: frameLabel,
         source,
-      });
+      }));
     }, 200);
     return;
   }
@@ -4286,20 +6544,24 @@ function handleActionInFrame(
 
   if (action === "reveal") {
     const revealButton = getAnswerRevealButton(document);
-    console.log("[QB_SUPPORT][reveal-target]", {
+    console.log("[QB_SUPPORT][reveal-target]", JSON.stringify({
       key,
       target: describeElement(revealButton),
       meta: describeElementMeta(revealButton),
       url: location.href,
       frame: frameLabel,
       source,
-    });
+    }));
     if (revealButton) {
       const beforeState = getRevealState();
-      void (async () => {
-        const ok = await clickWithCdp(revealButton, "reveal");
-        if (!ok) clickWithFallback(revealButton, { tag: "reveal", logAlways: true });
-      })();
+      if (source === "local") {
+        clickWithFallback(revealButton, { tag: "reveal", logAlways: true });
+      } else {
+        void (async () => {
+          const ok = await clickWithCdp(revealButton, "reveal");
+          if (!ok) clickWithFallback(revealButton, { tag: "reveal", logAlways: true });
+        })();
+      }
       window.setTimeout(() => {
         const afterState = getRevealState();
         console.log("[QB_SUPPORT][reveal-effect]", {
@@ -4314,20 +6576,24 @@ function handleActionInFrame(
       return;
     }
     const submitButton = getSubmitButton(document);
-    console.log("[QB_SUPPORT][submit-target]", {
+    console.log("[QB_SUPPORT][submit-target]", JSON.stringify({
       key,
       target: describeElement(submitButton),
       meta: describeElementMeta(submitButton),
       url: location.href,
       frame: frameLabel,
       source,
-    });
+    }));
     if (submitButton) {
       const beforeState = getRevealState();
-      void (async () => {
-        const ok = await clickWithCdp(submitButton, "submit");
-        if (!ok) clickWithFallback(submitButton, { tag: "submit", logAlways: true });
-      })();
+      if (source === "local") {
+        clickWithFallback(submitButton, { tag: "submit", logAlways: true });
+      } else {
+        void (async () => {
+          const ok = await clickWithCdp(submitButton, "submit");
+          if (!ok) clickWithFallback(submitButton, { tag: "submit", logAlways: true });
+        })();
+      }
       window.setTimeout(() => {
         const afterState = getRevealState();
         console.log("[QB_SUPPORT][submit-effect]", {
@@ -4356,10 +6622,21 @@ function sendAction(
   payload: { action: "option" | "nav" | "reveal"; key: string; index?: number },
   event: KeyboardEvent
 ) {
-  if (hasModifier(event)) return;
   event.preventDefault();
   event.stopPropagation();
   if (window !== window.top) return;
+  if (hasLocalActionTarget(payload)) {
+    console.log("[QB_SUPPORT][action-local]", {
+      url: location.href,
+      frame: "top",
+      action: payload.action,
+      key: payload.key,
+      index: payload.index ?? null,
+      reason: "target-in-top",
+    });
+    handleActionInFrame(payload.action, payload.key, payload.index ?? null, "local");
+    return;
+  }
   const message = {
     __qb_support: true,
     type: "QB_ACTION",
@@ -4403,6 +6680,29 @@ function sendAction(
   });
 }
 
+function getNavigationDirection(key: string): "next" | "prev" {
+  const normalizedKey = normalizeKey(key).toLowerCase();
+  const nextKey = getShortcutBaseKey(settings.navNextKey).toLowerCase();
+  if (normalizedKey === nextKey || normalizedKey === "arrowright") return "next";
+  return "prev";
+}
+
+function hasLocalActionTarget(payload: {
+  action: "option" | "nav" | "reveal";
+  key: string;
+  index?: number;
+}): boolean {
+  if (!isQuestionDocument(document, location.href)) return false;
+  if (payload.action === "nav") {
+    return Boolean(getNavigationTarget(document, getNavigationDirection(payload.key)));
+  }
+  if (payload.action === "option") {
+    const index = payload.index ?? -1;
+    return index >= 0 && Boolean(getOptionElements(document)[index]);
+  }
+  return Boolean(getAnswerRevealButton(document) ?? getSubmitButton(document));
+}
+
 function getOptionState(option: HTMLElement | null): Record<string, unknown> | null {
   if (!option) return null;
   const ans = option.querySelector<HTMLElement>(".ans") ?? option;
@@ -4410,6 +6710,11 @@ function getOptionState(option: HTMLElement | null): Record<string, unknown> | n
   return {
     active: ans.classList.contains("active"),
     checked: input ? input.checked : null,
+    className: option.className.toString(),
+    labelClassName: option.firstElementChild?.className?.toString() ?? null,
+    ariaPressed: option.getAttribute("aria-pressed"),
+    ariaChecked: option.getAttribute("aria-checked"),
+    style: option.getAttribute("style"),
     text: (ans.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 80),
   };
 }
@@ -4504,8 +6809,16 @@ function applySidebarVisibility(searchVisible: boolean, noteVisible: boolean) {
     style.remove();
   }
 
-  toggleWidgetVisibility("qb-support-search-style", ".widget-search", searchVisible);
-  toggleWidgetVisibility("qb-support-note-style", ".widget-note", noteVisible);
+  toggleWidgetVisibility(
+    "qb-support-search-style",
+    ".widget-search, [data-testid='side-search-header'], [data-testid='side-search-body']",
+    searchVisible
+  );
+  toggleWidgetVisibility(
+    "qb-support-note-style",
+    ".widget-note, [data-testid='side-note-header'], [data-testid='side-note-body'], #fab-note",
+    noteVisible
+  );
 }
 
 function toggleWidgetVisibility(styleId: string, selector: string, visible: boolean) {
@@ -4514,11 +6827,11 @@ function toggleWidgetVisibility(styleId: string, selector: string, visible: bool
     if (!style) {
       style = document.createElement("style");
       style.id = styleId;
-      style.textContent = `
-        ${selector} { display: none !important; }
-      `;
       document.head.appendChild(style);
     }
+    style.textContent = `
+      ${selector} { display: none !important; }
+    `;
     return;
   }
   if (style) style.remove();
@@ -4587,14 +6900,14 @@ function clickWithFallback(
 ) {
   const tag = options?.tag;
   const logAlways = options?.logAlways ?? false;
-  target.click();
-  logClick(tag, "element.click", target, logAlways);
-  const events = ["pointerdown", "pointerup", "mousedown", "mouseup", "click"];
+  const events = ["pointerdown", "mousedown", "pointerup", "mouseup"];
   for (const type of events) {
     const event = createPointerLikeEvent(type);
     const result = target.dispatchEvent(event);
     logClick(tag, `dispatch:${type}`, target, logAlways, result);
   }
+  target.click();
+  logClick(tag, "element.click", target, logAlways);
 }
 
 function describeElement(element: HTMLElement | null): string | null {

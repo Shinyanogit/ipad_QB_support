@@ -1,5 +1,7 @@
 import { webext } from "./lib/webext";
 
+type IdentityApi = NonNullable<typeof webext.identity>;
+
 const AUTH_LOG_PREFIX = "[QB_SUPPORT][auth-bg]";
 const AUTH_METHOD_TIMEOUT_MS = 8000;
 const AUTH_INTERACTIVE_TIMEOUT_MS = 30000;
@@ -194,7 +196,7 @@ function getOAuthClientId(): string | null {
   return manifest.oauth2.client_id;
 }
 
-function buildOAuthUrl(identity: chrome.identity.Identity): string {
+function buildOAuthUrl(identity: IdentityApi): string {
   const clientId = getOAuthClientId();
   if (!clientId) {
     throw new Error(
@@ -242,16 +244,17 @@ function getAuthTimeout(interactive: boolean): number {
 }
 
 async function launchWebAuthFlowToken(
-  identity: chrome.identity.Identity,
+  identity: IdentityApi,
   interactive: boolean
 ): Promise<string> {
   if (!identity.launchWebAuthFlow) {
     throw new Error("chrome.identity.launchWebAuthFlow is not available.");
   }
+  const launchWebAuthFlow = identity.launchWebAuthFlow;
   const url = buildOAuthUrl(identity);
   console.log(AUTH_LOG_PREFIX, "launchWebAuthFlow:start", { url });
   return new Promise<string>((resolve, reject) => {
-    identity.launchWebAuthFlow({ url, interactive }, (redirectUrl) => {
+    launchWebAuthFlow({ url, interactive }, (redirectUrl) => {
       const err = webext.runtime?.lastError;
       console.log(AUTH_LOG_PREFIX, "launchWebAuthFlow:callback", {
         redirectUrl: redirectUrl ?? null,
@@ -289,7 +292,7 @@ async function launchWebAuthFlowToken(
 }
 
 async function launchTabAuthFlowToken(
-  identity: chrome.identity.Identity,
+  identity: IdentityApi,
   interactive: boolean
 ): Promise<string> {
   const tabs = webext.tabs;
@@ -387,11 +390,12 @@ async function handleAuthTokenRequest(interactive: boolean): Promise<string> {
   });
   const methodTimeout = getAuthTimeout(interactive);
   if (identity.getAuthToken) {
+    const getAuthToken = identity.getAuthToken;
     try {
       console.log(AUTH_LOG_PREFIX, "getAuthToken:start");
       const token = await withAuthTimeout(
         new Promise<string>((resolve, reject) => {
-          identity.getAuthToken({ interactive }, (token) => {
+          getAuthToken({ interactive }, (token) => {
             const err = webext.runtime?.lastError;
             console.log(AUTH_LOG_PREFIX, "getAuthToken:callback", {
               tokenPresent: Boolean(token),
@@ -438,8 +442,9 @@ async function handleAuthTokenRemoval(token?: string | null): Promise<void> {
   const identity = webext.identity;
   if (!identity?.removeCachedAuthToken) return;
   if (!token) return;
+  const removeCachedAuthToken = identity.removeCachedAuthToken;
   await new Promise<void>((resolve, reject) => {
-    identity.removeCachedAuthToken({ token }, () => {
+    removeCachedAuthToken({ token }, () => {
       const err = webext.runtime?.lastError;
       if (err?.message) {
         reject(new Error(err.message));
