@@ -124,7 +124,7 @@ Air もケーブルも使わずに、QB Support と UW Support を mini で署�
   - コピーボタンは、UW Support のコピーボタンが本当に画面に見えている時だけ隠す（astra 案3）。UW のドックは body の外の shadow root にあり監視に掛からないので、500ms のタイマーで「見えているか」が変わった時だけ再評価する（`innerText` を毎回読まない）
   - コピーボタンを `settings.enabled` から切り離した。これは設定パネルが開いているかの値で（閉じると `false` で保存される）、パネルを一度閉じるとコピーボタンが出なくなっていた
   - 設定の読み込みに3秒の上限。超えたら既定値で起動し、読み込みが答えたら反映する
-- UW Support 1.6.34（`USMLE_support`、branch `qb-kokushi` で未コミット。詳細は `USMLE_support/docs/TODO_PLAN.md`）
+- UW Support 1.6.34（`USMLE_support`。2026-11-04 に 1.6.35 と一緒に main へ取り込み。詳細は `USMLE_support/docs/TODO_PLAN.md`）
   - helper のトークン同期の `chrome.storage.onChanged` を、`chrome` が無ければ `browser` で登録する（astra 案1）
   - `chat_dock.js` は `browser` があれば Promise 形式で呼ぶ（astra 案2）。Chrome には `browser` が無いので従来どおりコールバック
   - ドックの設定の読み込みに4秒の上限。超えたら既定値でタブとコピーを出し、読み込みが答えたら反映する
@@ -141,6 +141,13 @@ Air もケーブルも使わずに、QB Support と UW Support を mini で署�
 - 0.1.26 と 1.6.35 で直したこと: UW Support のドックのボタンは、問題画像（最大4枚）を background 経由で取り込んだ `snapshot` が届くまで出なかった。画像のある問題では取得が遅いか止まると、解答前にボタンが出なかった。ページの読み取り結果（`qb_adapter.js` の `copyState`）で出し入れするようにした
 - 判別テスト（`scripts/webkit_qb_check.py`、mini の WebKit 26.6、保存ページ 118E36 の解答前）: 画像の取得が止まる問題（`stem-image-stalled`）で、修正前は UW のボタンが出ず、修正後は「問題をコピー Y」で出る。`copy-before` でボタンと `Y` の両方が312字（問題文、選択肢、ヒントの依頼文）をコピーし、`copy-after`（答えの欄と解説を後から足す）では名前が「問題と解説をコピー Y」に変わり、両方が325字（解説の最後の文まで）をコピーした。ほかの12シナリオは前と同じ結果
 - 確かめていないこと: 現行の新 UI（React）の解答前の画面での表示は実機と mini の Chrome のどちらでも見ていない。読み取りは 11-03 に mini の Chrome の新 UI の解答前の問題（115D68）で選択肢のキーが効いたことで確かめてある
+
+### main 取り込み前の監査で直したこと（2026-11-04 夜、同じ 0.1.26 と 1.6.35）
+UW Support を main に入れる前の astra の Chrome 監査（A17 から A17d）で、QB の読み取りに関わる BLOCKER が出た。両方の拡張機能で同じ直し方にした（`src/core/qbCopy.ts` と `USMLE_support/qb_adapter.js`）。
+- 解答の証拠は見える文字だけ。隠れた `#resultcontent` や答えの欄、見えている枠の中で解説の本文だけ隠れているもの、見出しの「解説」だけが見えているものは、解答後とみなさない。それまでは隠れた解説がコピーに入り、名前も「問題と解説をコピー」になった
+- 両方の `squash` は `\u00a0` を明示して普通の空白にする。QB Support の方は置き換えの文字が普通の空白に化けていて、NBSP がそのままコピーに残り、UW Support と文面が一字一句同じにならなかった
+- UW Support 側だけの直し（snapshot とコピーの段階をその時に読み直す、`style` と `hidden` の変化も見る、読み込み前に設定を書かない、UWorld で保存しても QB のコピーのキーを消さない）は `USMLE_support/docs/TODO_PLAN.md` の先頭
+- 判別テストに足したシナリオ（`scripts/webkit_qb_check.py`）: `hidden-explanation`、`hidden-explanation-qb`、`hidden-inner`、`heading-only`（隠れた解説が SECRET としてコピーに入らないか）、`phase-revert`、`style-revert`（解答前に戻った時に古い解答後の状態が残らないか）、`slow-get`（読み込みが7秒かかる間にテンプレートを足しても保存済みを消さないか）、`nbsp`、`nbsp-qb`。修正前のビルドでそれぞれ再現し、修正後は25シナリオすべて期待どおり（隠れた解説の各ケースで「問題をコピー Y」、312字、SECRET なし。NBSP は両方とも329字で同じ）
 
 ## 更新時
 - 変更後は `npm run build:ext` → `./scripts/prepare-safari-extension.sh`

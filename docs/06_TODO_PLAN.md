@@ -178,7 +178,7 @@
 - Air や mini の devicectl から iPad が見えない時: 施設の Wi-Fi はマルチキャストを止めることが多く、同じ Wi-Fi でも見つからない。ケーブルを前提にしない（本人の指示）。リンク方式（`mini_install.py link`）を使う
 - QB のページで両方の拡張機能が何も出さない（2026-11-04）: サイト別の許可が無いのが原因（`07_SAFARI_SETUP.md`）。本人が両方を「許可」にして再読み込みすれば直る見込み。直ったかは次に本人が QB を開いた時に分かる
 - [x] 守りの改善（2026-11-04 夜、本人の指示で前倒し）: QB Support 0.1.25 と UW Support 1.6.34 に、astra 案3つと判別テストで出た2件（storage が答えないと両方止まる、QB の設定パネルを閉じるとコピーが出ない）の修正、UW Support のアプリ画面の許可の案内を入れた。判別テストの前後の表は `07_SAFARI_SETUP.md`。mini でビルドしてリンクで配った。iPad に入れるのと、両方の拡張機能で qb.medilink-study.com を「許可」にするのは本人
-- UW Support 1.6.34 の修正（content.js、chat_dock.js、アプリ画面の案内、版）は USMLE_support の `qb-kokushi` に未コミットのまま（1.6.32 と 1.6.33 の未コミット分と同じ扱い。main へは astra の監査を通してから）
+- [x] UW Support 1.6.32 から 1.6.35 は、astra の Chrome 監査（A17 から A17d、最後は BLOCKER 0件）を通して 2026-11-04 に USMLE_support の main へ取り込んだ（c52aaf9、origin へは未 push）。監査で出た QB の読み取りの直しは本拡張の `qbCopy.ts` にも入れた（`07_SAFARI_SETUP.md` の「main 取り込み前の監査で直したこと」）
 - Xcode プロジェクト `QB Support/` を git に入れるか決める（11-03 の2件と 11-04 の1件の修正が mini の作業コピーにしか無い）
 - 新UI修正後のAtlas実機確認（拡張リロード → QBタブ再読み込み → `key-capture` / `action-local` / 各targetログを確認）
 - 明るい背景を持つ解説カードが黒背景・白文字・白系罫線になることをAtlas実機確認（`[QB_SUPPORT][theme] normalized light explanation surfaces` はdebug有効時のみ）

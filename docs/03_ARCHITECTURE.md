@@ -36,7 +36,7 @@
 17. ユーザー確認済みのA-14現行IDだけを旧データの確定所有先として保護する。それ以外の現行IDに、確認済みA-14本文断片、旧問題名の画像マーカー／画像ストア名、または旧レコードと同一本文が存在する場合は、過去バージョンによる誤配属として読み込み時に抑止する。保存値自体は削除しない
 18. 振り返りの書式バーと`Cmd/Ctrl+B/I/U`・`Cmd/Ctrl+Shift+S`はcontenteditableの選択へインライン書式を適用し、inputイベントから既存の自動保存へ流す。本文はMarkdownへ直列化し、再表示時に書式DOMへ復元する
 19. 行頭の`- `／`* `／`+ `／`1. `をリストDOMへ変換し、Tab／Shift+Tabは`li`を親項目配下／親階層へDOM移動する。`ul`／`ol`は2スペース単位のネストMarkdownへ直列化し、読込時に同じリスト階層へ復元する
-20. コピーキー（既定 `Y`）と右下のボタンは、トップ文書で `qbCopy.ts` の `readCopyQuestion` と `copyText` を同期的に呼び、`navigator.clipboard.writeText` に渡す（Safari でユーザー操作の扱いが切れないよう await を挟まない）。失敗時は textarea と `execCommand('copy')`。ボタンは UW Support のコピーボタン（`#uw-support-chat` の shadow root の `#copy-question`）が実際に画面に見えている間だけ出さない（0.1.25。ドックは body の外なので 500ms のタイマーで見え方の変化を拾う）。設定パネルの開閉（`settings.enabled`）とは関係なく出す。ボタンの名前は解答前が「問題をコピー Y」、解答後が「問題と解説をコピー Y」で、キーは `settings.copyKey` を表示する（0.1.26）。両拡張の自前UIは明示したid/classの一覧で除外し（`qb-support` 前方一致は body のクラスに当たるので使わない）、解説の文字からも振り返り欄などの自前UIの文字を差し引く
+20. コピーキー（既定 `Y`）と右下のボタンは、トップ文書で `qbCopy.ts` の `readCopyQuestion` と `copyText` を同期的に呼び、`navigator.clipboard.writeText` に渡す（Safari でユーザー操作の扱いが切れないよう await を挟まない）。失敗時は textarea と `execCommand('copy')`。ボタンは UW Support のコピーボタン（`#uw-support-chat` の shadow root の `#copy-question`）が実際に画面に見えている間だけ出さない（0.1.25。ドックは body の外なので 500ms のタイマーで見え方の変化を拾う）。設定パネルの開閉（`settings.enabled`）とは関係なく出す。ボタンの名前は解答前が「問題をコピー Y」、解答後が「問題と解説をコピー Y」で、キーは `settings.copyKey` を表示する（0.1.26）。解答の証拠は見える文字だけで、隠れた解説や答えの欄、見出しの「解説」だけの枠は解答後とみなさない。NBSP は `\u00a0` を明示して普通の空白にする（どちらも UW Support と同じ規則）。両拡張の自前UIは明示したid/classの一覧で除外し（`qb-support` 前方一致は body のクラスに当たるので使わない）、解説の文字からも振り返り欄などの自前UIの文字を差し引く
 
 ## 振り返り → Anki準備
 - `core/reflection.ts` が問題識別、保存レコード生成、最大件数の整理を担当する。

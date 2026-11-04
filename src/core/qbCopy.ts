@@ -25,7 +25,7 @@ type Option = { row: HTMLElement; body: HTMLElement; old: boolean };
 
 const squash = (value: unknown) =>
   String(value || "")
-    .replace(/ /g, " ")
+    .replace(/\u00a0/g, " ")
     .replace(/[ \t]+/g, " ")
     .replace(/\s*\n\s*/g, "\n")
     .trim();
@@ -114,7 +114,8 @@ function textElement(doc: Document, test: (text: string) => boolean): HTMLElemen
 // Explanations appear in #resultcontent on the older UI and under a "解説" heading on the newer one.
 function explanationNode(doc: Document, opts: Option[], stem: HTMLElement): HTMLElement | null {
   const old = doc.querySelector<HTMLElement>("#resultcontent, .resultcontent, .resultContent, .result-content");
-  if (old && squash(old.textContent)) return old;
+  // Only visible explanation text counts: a hidden block, or a visible box showing just the 解説 heading, is not an answer.
+  if (old && shown(old) && squash(ownText(old)).replace(/^解説\s*/, "")) return old;
   const heading = textElement(doc, (text) => text === "解説");
   if (!heading) return null;
   // Take the largest block around the heading that still excludes the question.
@@ -131,6 +132,7 @@ function explanationNode(doc: Document, opts: Option[], stem: HTMLElement): HTML
 function answerOf(doc: Document): string {
   const pattern = /正解[\s:：]*([a-iａ-ｉ](?:[\s,，、・]*[a-iａ-ｉ])*)/;
   for (const start of [doc.getElementById("answerSection"), textElement(doc, (t) => /^正解[：:]/.test(t))]) {
+    if (!shown(start)) continue;
     let el: HTMLElement | null = start;
     for (let depth = 0; el && depth < 4; el = el.parentElement, depth++) {
       const match = squash(el.innerText).match(pattern);
