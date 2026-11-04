@@ -85,6 +85,8 @@ Air を使わずに、QB Support と UW Support を mini で署名して入れ�
 - UW Support は `../../USMLE_support/safari/gemini_api_key.txt`（gitignore）の Gemini キーを埋め込む。2026-11-04 に Air から mini へ置いた
 - iPad はロックを外し、mini と同じネットワークに置く（devicectl は Bonjour で探すので Tailscale 越しには見えない）。mini は iPad とペアリング済み（`xcrun devicectl list devices` に「shinyのiPad」）
 - 止まっている所: `setup` で App Store Connect API が `403 FORBIDDEN_ERROR.PLA_NOT_ACCEPTED` を返す。アカウント保持者が最新の Program License Agreement に同意するまで、プロファイルを作れない。同意は本人が https://developer.apple.com/account で行う。同意の後に `setup` と `install` を走らせる
+- 同意の後の確かめ方: `setup` の後の `status` で、UW Support の2つのプロファイルの application-groups に `group.com.shinyyama.uwsupport` が出ること（QB Support は空でよい）。空なら開発者サイトで `com.shinyyama.uwsupport` と `.extension` の App ID に App Groups を付け、その2つのプロファイルを消して `setup` をやり直す。最初は entitlements の無い `install qb` で全体の流れを確かめる
+- 無効になった同名のプロファイルが残っていると、`setup` が同じ名前で作り直し、xcodebuild が名前の重複で迷う。先に開発者サイトで古い方を消す
 - 確認済み: mini で両アプリとも署名なしのビルドは成功（UW Support は Gemini キー入り）。`build qb` はプロファイルが無いので署名で止まり、アプリと機能拡張がそれぞれ `mini com.shinyyama.qb-support` と `mini com.shinyyama.qb-support.extension` を探すことを確認した。署名と実機へのインストールは、プロファイルができるまで未確認
 
 ## 更新時
