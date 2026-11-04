@@ -169,12 +169,12 @@
   Vitalに該当ページが無い。QB2027 PDFを入手できれば `page_map.py` 相当で埋められる
 - [x] 2回目以降のバッチの差分抽出は、既存 `qb_batch_*_cards.json` の ExternalID から問題コードを
   引いて差集合を取る方式で解決（バッチ3で111件中65件を特定）。専用スクリプトはまだ無い
-- iPad Safariでの実機確認（0.1.23はインストール済み。iPadの設定でQB Supportを有効化、コピーとキー操作の確認は本人。0.1.24はAirでビルド成功、インストールはiPadがAirから見つからず未完了。iPadのロック解除とAirと同じWi-Fiが要る）
-- iPadへの再配備（2026-11-04 のアプリ画面修正と 0.1.24 をまとめて入れる）: Air がオンラインになったら `07_SAFARI_SETUP.md` の「Airでのビルドと配備」1〜4。入れた後、アプリを開いて案内文が出て購入・復元ボタンが無いこと、Safari の QB で `Y` コピーが動くことを本人が確認する
-- iPad の QB でコピーボタンが出ない（2026-11-04 報告）: iPad の拡張がどちらもボタン追加前の版（UW Support 1.6.32、QB Support 0.1.23）のため。UW Support 1.6.33 と QB Support 0.1.24 は 11-03 に Air でビルド済みだが、インストールは iPad が見つからず（CoreDevice error 1011）失敗したまま。UW Support のドック（`#uw-support-chat`）がある間は QB Support のボタンを出さない設計なので、UW Support 1.6.33 も一緒に入れないとボタンは出ない。本人に確認してもらう項目は FORshinya の 2026-11-04 の節
+- iPad Safariでの実機確認: 2026-11-04 17:30 に QB Support 0.1.24 と UW Support 1.6.33 を入れた（すぐ下の [x] の行）。QB の国試問題でコピーボタンと `Y` キーが動くか、アプリ画面に案内文が出るかの確認は本人
+- [x] iPadへの再配備（2026-11-04 17:30）: Air で QB Support を今日の修正込みで作り直し、UW Support 1.6.33（ビルド 20261103091516）と一緒に、Air とケーブルでつないで devicectl で入れた（どちらも1回目で成功、iPad のアプリ一覧で確認）。Air の Wi-Fi 越しには iPad を見つけられなかった（マルチキャストが止まっていた）
+- iPad の QB でコピーボタンが出ない（2026-11-04 報告）: iPad の拡張がどちらもボタン追加前の版（UW Support 1.6.32、QB Support 0.1.23）のため。UW Support 1.6.33 と QB Support 0.1.24 は 11-03 に Air でビルド済みだが、インストールは iPad が見つからず（CoreDevice error 1011）失敗したまま。UW Support のドック（`#uw-support-chat`）がある間は QB Support のボタンを出さない設計なので、UW Support 1.6.33 も一緒に入れないとボタンは出ない。2026-11-04 17:30 に両方入れたので解消の見込み。本人に確認してもらう項目は FORshinya の 2026-11-04 の節
 - 課金を使うなら: App Store Connect にアプリとサブスク商品を登録し、ID を `IAPConfig.productId` と backend の `APPLE_SUBSCRIPTION_PRODUCT_ID` に入れる。確認は TestFlight か sandbox アカウントで（実購入はしない）
-- mini から iPad へ入れる（`scripts/mini_install.py`、手順は `07_SAFARI_SETUP.md`）: 本人が https://developer.apple.com/account で最新の Program License Agreement に同意した後、`setup` で開発プロファイル4つを作り、`install` で両アプリを入れて確かめる。2026-11-04 時点は API が `PLA_NOT_ACCEPTED` で止まる
-- Air から iPad が見えない時: Air が施設の Wi-Fi（10.100.x.x/16 など）にいると端末同士の通信が遮断されうる。USB-C ケーブルでつなぐ
+- mini から iPad へ入れる（`scripts/mini_install.py`、手順は `07_SAFARI_SETUP.md`）: 本人が https://developer.apple.com/account で最新の Program License Agreement に同意すれば、あとは `link` で `setup` から自動で進み、iPad はリンクを開いて「インストール」を押すだけになる。2026-11-04 時点は API が `PLA_NOT_ACCEPTED` で止まる。同意の後、最初の `link` で署名とリンクからのインストールを通して確かめる
+- Air や mini の devicectl から iPad が見えない時: 施設の Wi-Fi はマルチキャストを止めることが多く、同じ Wi-Fi でも見つからない。ケーブルを前提にしない（本人の指示）。リンク方式（`mini_install.py link`）を使う
 - Xcode プロジェクト `QB Support/` を git に入れるか決める（11-03 の2件と 11-04 の1件の修正が mini の作業コピーにしか無い）
 - 新UI修正後のAtlas実機確認（拡張リロード → QBタブ再読み込み → `key-capture` / `action-local` / 各targetログを確認）
 - 明るい背景を持つ解説カードが黒背景・白文字・白系罫線になることをAtlas実機確認（`[QB_SUPPORT][theme] normalized light explanation surfaces` はdebug有効時のみ）

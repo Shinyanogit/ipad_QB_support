@@ -78,16 +78,17 @@ mini の Xcode には Apple のアカウントが無く、Xcode の自動署名�
 - 課金を本当に使う時: App Store Connect にアプリ（`com.shinyyama.qb-support`）とサブスク商品を登録し（有料アプリ契約が有効で、商品は最低でも Ready to Submit）、その ID を `IAPConfig.productId` と backend の `APPLE_SUBSCRIPTION_PRODUCT_ID` に入れる。Air から devicectl で入れた開発署名のアプリは sandbox を見るので、商品が出るかは TestFlight か sandbox アカウントで確かめる。`.storekit` 設定ファイルは Xcode から実行した時だけ効き、devicectl で入れたアプリには効かない
 
 ## mini から iPad へ入れる（2026-11-04 準備、契約への同意待ち）
-Air を使わずに、QB Support と UW Support を mini で署名して入れるための `scripts/mini_install.py`。
+Air もケーブルも使わずに、QB Support と UW Support を mini で署名して iPad に入れるための `scripts/mini_install.py`。
 - 署名: mini の Xcode に Apple ID は無いが、USMLE_qbank_web の `app/scripts/mini_signing.py` がチームの App Store Connect API キー（U7JT3699P2）で作った開発証明書（チーム 8WSQBQX6C5、2027-10-09 まで）が鍵束 `~/Library/Keychains/qbank-build.keychain-db` にある。これを使い回し、バンドルIDごとに `mini <バンドルID>` という開発プロファイルを API で作る。手動署名で `PROVISIONING_PROFILE_SPECIFIER=mini $(PRODUCT_BUNDLE_IDENTIFIER)` を渡すので、アプリと機能拡張がそれぞれのプロファイルを使う
 - 同じチームとバンドルIDなので、Air で入れたアプリの上書きになり、App Group のデータは残る
-- 使い方（PyJWT のある `/opt/anaconda3/bin/python3`）: `scripts/mini_install.py status`（読むだけ）、`setup`（足りないプロファイルを作って mini に置く。最初の1回）、`install [qb|uw]`（ビルドして入れる。省略で両方）
+- 使い方（PyJWT のある `/opt/anaconda3/bin/python3`）: `scripts/mini_install.py status`（読むだけ）、`setup`（足りないプロファイルを作って mini に置く）、`link [qb|uw]`（ビルドしてリンクで配る。省略で両方）、`install [qb|uw]`（ビルドして devicectl で入れる）。`build`／`link`／`install` は、mini にプロファイルが無ければ先に `setup` を走らせる
+- **普段は `link`**（ケーブルも同じ Wi-Fi も要らない）: 署名したアプリを IPA にまとめ、https://mini.taild5aa65.ts.net:19795/ で tailnet 内だけに配る（Funnel は使わない。UW Support には Gemini キーが入っている）。本人は iPad の Safari でそのページを開き、各ボタンを押して「インストール」を押すだけ。両方の IPA が取られたら配信を止め、`tailscale serve` の設定も消す。iPad の Tailscale はオンにしておく
 - UW Support は `../../USMLE_support/safari/gemini_api_key.txt`（gitignore）の Gemini キーを埋め込む。2026-11-04 に Air から mini へ置いた
-- iPad はロックを外し、mini と同じネットワークに置く（devicectl は Bonjour で探すので Tailscale 越しには見えない）。mini は iPad とペアリング済み（`xcrun devicectl list devices` に「shinyのiPad」）
-- 止まっている所: `setup` で App Store Connect API が `403 FORBIDDEN_ERROR.PLA_NOT_ACCEPTED` を返す。アカウント保持者が最新の Program License Agreement に同意するまで、プロファイルを作れない。同意は本人が https://developer.apple.com/account で行う。同意の後に `setup` と `install` を走らせる
+- `install` は devicectl を使うので、iPad が mini と同じネットワーク（マルチキャストが通るもの）にいるか、ケーブルでつながっている時だけ。施設の Wi-Fi はマルチキャストを止めることが多く、2026-11-04 の Air の Wi-Fi（10.100.x.x/16）でも Bonjour の探索に自分以外が何も見えず、Wi-Fi 越しには見つけられなかった。mini は iPad とペアリング済み
+- 止まっている所: `setup` で App Store Connect API が `403 FORBIDDEN_ERROR.PLA_NOT_ACCEPTED` を返す。アカウント保持者が最新の Program License Agreement に同意するまで、プロファイルを作れない。同意は本人が https://developer.apple.com/account にアカウント保持者でサインインし、出てくる契約で「同意」を押す。それだけで、次の `link` が `setup` から自動で進む
 - 同意の後の確かめ方: `setup` の後の `status` で、UW Support の2つのプロファイルの application-groups に `group.com.shinyyama.uwsupport` が出ること（QB Support は空でよい）。空なら開発者サイトで `com.shinyyama.uwsupport` と `.extension` の App ID に App Groups を付け、その2つのプロファイルを消して `setup` をやり直す。最初は entitlements の無い `install qb` で全体の流れを確かめる
 - 無効になった同名のプロファイルが残っていると、`setup` が同じ名前で作り直し、xcodebuild が名前の重複で迷う。先に開発者サイトで古い方を消す
-- 確認済み: mini で両アプリとも署名なしのビルドは成功（UW Support は Gemini キー入り）。`build qb` はプロファイルが無いので署名で止まり、アプリと機能拡張がそれぞれ `mini com.shinyyama.qb-support` と `mini com.shinyyama.qb-support.extension` を探すことを確認した。署名と実機へのインストールは、プロファイルができるまで未確認
+- 確認済み: mini で両アプリとも署名なしのビルドは成功（UW Support は Gemini キー入り）。`build qb` はプロファイルが無いので署名で止まり、アプリと機能拡張がそれぞれ `mini com.shinyyama.qb-support` と `mini com.shinyyama.qb-support.extension` を探すことを確認した。署名と実機へのインストールは、プロファイルができるまで未確認。`link` の IPA 作成と配信は、Air で署名済みのアプリを使って確かめた（ページ、設定ファイル、アイコン、IPA が tailnet 越しに取れ、両方取られた後に配信と `tailscale serve` の設定が消えた）。リンクから iPad に入れるところは、まだ一度も通していない
 
 ## 更新時
 - 変更後は `npm run build:ext` → `./scripts/prepare-safari-extension.sh`

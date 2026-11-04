@@ -8,7 +8,10 @@ one iOS development profile per bundle id, named "mini <bundle id>" and listing 
 signing so each target picks its own profile through PROVISIONING_PROFILE_SPECIFIER. Apps signed here replace the
 ones the Air installed in place (same team and bundle ids), so the App Group data stays.
 
-The iPad must be unlocked and on the mini's network (devicectl finds it by Bonjour, not over Tailscale).
+Two ways onto the iPad. `link` needs no cable and no shared Wi-Fi: it serves the signed apps to the tailnet only
+(never Funnel; UW Support carries the Gemini key) at https://mini.taild5aa65.ts.net:19795/, the iPad opens that page
+in Safari and taps Install on each, and the serve is removed once both apps were downloaded. `install` uses devicectl,
+which finds the iPad only by Bonjour or a cable, so it works when the iPad is on the mini's own network.
 UW Support embeds the Gemini key from USMLE_support/safari/gemini_api_key.txt (gitignored); without that file the
 build goes on without translation.
 
@@ -16,9 +19,11 @@ Usage (a Python with PyJWT: /opt/anaconda3/bin/python3):
   scripts/mini_install.py status            read-only: the profiles on the account and this Mac, the iPad's state
   scripts/mini_install.py setup             create the missing profiles and put them where Xcode looks
   scripts/mini_install.py build [qb|uw]     build and sign (both when omitted)
-  scripts/mini_install.py install [qb|uw]   build, sign and install on the iPad
+  scripts/mini_install.py link [qb|uw]      build, sign and serve an install page over the tailnet until downloaded
+  scripts/mini_install.py install [qb|uw]   build, sign and install on the iPad with devicectl
+build, link and install run setup first when a profile is missing on this Mac.
 """
-import base64, json, plistlib, subprocess, sys, time, urllib.error, urllib.request
+import base64, functools, http.server, json, plistlib, shutil, subprocess, sys, threading, time, urllib.error, urllib.request
 from pathlib import Path
 
 import jwt
@@ -33,6 +38,10 @@ TEAM = '8WSQBQX6C5'
 UDID = '00008103-000A29C83C60C01E'
 KEYCHAIN = Path.home() / 'Library/Keychains/qbank-build.keychain-db'
 PROFILE_DIRS = ('Library/MobileDevice/Provisioning Profiles', 'Library/Developer/Xcode/UserData/Provisioning Profiles')
+TAILSCALE = '/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+OTA_PORT = 19795
+OTA_BASE = f'https://mini.taild5aa65.ts.net:{OTA_PORT}'
+OTA_DIR = QB / 'build/ota'
 
 APPS = {
     'qb': {'name': 'QB Support', 'dir': QB,
@@ -126,6 +135,8 @@ def setup():
 
 def build(key):
     app = APPS[key]
+    if any(local_profile(bundle)[0] is None for bundle in app['bundles']):
+        setup()
     for step in app['prepare']:
         run(*step, cwd=app['dir'], stdout=subprocess.DEVNULL)
     run('security', 'unlock-keychain', '-p', (QBANK_SIGN / 'keychain_password').read_text(), str(KEYCHAIN))
@@ -161,9 +172,82 @@ def install(key):
     sys.exit(f"{APPS[key]['name']} was not installed; unlock the iPad and put it on the mini's network")
 
 
+def package(key, product):
+    """Zip the signed app into an IPA and write its over-the-air manifest next to it."""
+    stage = OTA_DIR / 'stage'
+    shutil.rmtree(stage, ignore_errors=True)
+    (stage / 'Payload').mkdir(parents=True)
+    shutil.copytree(product, stage / 'Payload' / product.name, symlinks=True)
+    ipa = OTA_DIR / f'{key}.ipa'
+    ipa.unlink(missing_ok=True)
+    run('zip', '-qry', str(ipa), 'Payload', cwd=stage)
+    shutil.rmtree(stage)
+    info = plistlib.loads((product / 'Info.plist').read_bytes())
+    assets = [{'kind': 'software-package', 'url': f'{OTA_BASE}/{key}.ipa'}]
+    icons = sorted(product.glob('AppIcon*.png'), key=lambda p: p.stat().st_size)
+    if icons:
+        for size, kind in ((57, 'display-image'), (512, 'full-size-image')):
+            run('sips', '-s', 'format', 'png', '-z', str(size), str(size), str(icons[-1]),
+                '--out', str(OTA_DIR / f'{key}{size}.png'), stdout=subprocess.DEVNULL)
+            assets.append({'kind': kind, 'url': f'{OTA_BASE}/{key}{size}.png'})
+    metadata = {'bundle-identifier': info['CFBundleIdentifier'], 'bundle-version': info['CFBundleShortVersionString'],
+                'kind': 'software', 'title': APPS[key]['name']}
+    (OTA_DIR / f'{key}.plist').write_bytes(plistlib.dumps({'items': [{'assets': assets, 'metadata': metadata}]}))
+    manifests = list(product.glob('PlugIns/*.appex/manifest.json'))
+    version = json.loads(manifests[0].read_text())['version'] if manifests else info['CFBundleShortVersionString']
+    return f"{APPS[key]['name']} {version}"
+
+
+def serve(labels, port=OTA_PORT, timeout=3600):
+    """Serve OTA_DIR to the tailnet until every IPA was downloaded once, then remove the serve."""
+    buttons = ''.join(f'<a class="btn" href="itms-services://?action=download-manifest&amp;url={OTA_BASE}/{key}.plist">'
+                      f'{n}. {label} を入れる</a>\n' for n, (key, label) in enumerate(labels.items(), 1))
+    (OTA_DIR / 'index.html').write_text(
+        '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1"><title>iPad インストール</title>'
+        '<style>body{font-family:-apple-system,sans-serif;max-width:640px;margin:40px auto;padding:0 16px;line-height:1.6}'
+        'a.btn{display:block;margin:16px 0;padding:18px;border-radius:12px;background:#0a66d9;color:#fff;'
+        'text-decoration:none;font-size:20px;text-align:center}</style></head><body><h1>iPad に入れる</h1>'
+        '<p>上から順に押し、出てきた確認で「インストール」を押してください。今入っているアプリの上書きなので、設定とデータは残ります。</p>\n'
+        + buttons + '</body></html>\n')
+    pending = {f'/{key}.ipa' for key in labels}
+
+    class Handler(http.server.SimpleHTTPRequestHandler):
+        extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map, '.plist': 'text/xml',
+                          '.ipa': 'application/octet-stream', '.html': 'text/html; charset=utf-8'}
+
+        def log_request(self, code='-', size='-'):
+            print(time.strftime('%H:%M:%S'), self.command, self.path, code, flush=True)
+            if str(code) == '200' and self.command == 'GET':
+                pending.discard(self.path)
+
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', port), functools.partial(Handler, directory=str(OTA_DIR)))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    run(TAILSCALE, 'serve', '--bg', f'--https={port}', f'http://127.0.0.1:{port}', stdout=subprocess.DEVNULL)
+    print(f'open on the iPad: {OTA_BASE}/ (tailnet only)', flush=True)
+    try:
+        deadline = time.time() + timeout
+        while pending and time.time() < deadline:
+            time.sleep(5)
+        time.sleep(30 if not pending else 0)
+        print('all apps downloaded' if not pending else f'stopped waiting; not downloaded: {sorted(pending)}')
+    finally:
+        subprocess.run([TAILSCALE, 'serve', f'--https={port}', 'off'], stdout=subprocess.DEVNULL)
+        server.shutdown()
+
+
+def link(keys):
+    shutil.rmtree(OTA_DIR, ignore_errors=True)
+    OTA_DIR.mkdir(parents=True)
+    labels = {key: package(key, build(key)) for key in keys}
+    serve(labels)
+
+
 if __name__ == '__main__':
     command, keys = sys.argv[1], sys.argv[2:] or list(APPS)
-    if command in ('build', 'install'):
+    if command == 'link':
+        link(keys)
+    elif command in ('build', 'install'):
         for key in keys:
             {'build': build, 'install': install}[command](key)
     else:
