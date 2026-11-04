@@ -1335,7 +1335,18 @@ ${expl}`].filter(Boolean).join("\n\n");
     return window.getComputedStyle(element).visibility !== "hidden";
   }
   async function init() {
-    await loadSettings();
+    const loaded = loadSettings();
+    const inTime = await Promise.race([
+      loaded.then(() => true),
+      new Promise((resolve) => window.setTimeout(() => resolve(false), 3e3))
+    ]);
+    if (!inTime) {
+      console.warn("[QB_SUPPORT][settings] load is slow; starting with defaults");
+      void loaded.then(() => {
+        applySettings();
+        refreshQuestionInfo();
+      });
+    }
     ensureUI();
     if (CHAT_ENABLED) {
       ensureChatUI();
@@ -4249,8 +4260,22 @@ ${expl}`].filter(Boolean).join("\n\n");
     updateHintQuickButton();
     scheduleContentThemeRepair();
   }
+  function isUwCopyVisible() {
+    const host = document.getElementById("uw-support-chat");
+    const button = host?.shadowRoot?.querySelector("#copy-question");
+    if (!host || !button || button.hidden) return false;
+    const rect = button.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0 || rect.right <= 0 || rect.bottom <= 0) return false;
+    if (rect.left >= window.innerWidth || rect.top >= window.innerHeight) return false;
+    return [host, button].every((node) => {
+      const style = window.getComputedStyle(node);
+      return style.display !== "none" && style.visibility === "visible" && Number(style.opacity) > 0;
+    });
+  }
+  var uwCopyVisible = false;
   function syncCopyButton() {
-    const visible = settings.enabled && !document.getElementById("uw-support-chat") && !!readCopyQuestion(document);
+    uwCopyVisible = isUwCopyVisible();
+    const visible = !uwCopyVisible && !!readCopyQuestion(document);
     if (!visible) {
       if (copyButton) copyButton.hidden = true;
       return;
@@ -4359,6 +4384,7 @@ ${expl}`].filter(Boolean).join("\n\n");
     });
     let lastUrl = location.href;
     window.setInterval(() => {
+      if (window === window.top && isUwCopyVisible() !== uwCopyVisible) syncCopyButton();
       if (location.href !== lastUrl) {
         lastUrl = location.href;
         scheduleRefresh();

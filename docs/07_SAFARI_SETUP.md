@@ -101,7 +101,38 @@ Air もケーブルも使わずに、QB Support と UW Support を mini で署�
   - 2つの別々の拡張機能に共通するのは Safari のサイト別の許可だけで、どちらも QB は新しいサイト（QB Support は 11-03 に初めて入れた、UW Support は 1.6.32 で QB を足した）
 - 直し方（本人が拡張機能ごとに1回）: 設定 > アプリ > Safari > 機能拡張 > QB Support と UW_SUPPORT のそれぞれで、`qb.medilink-study.com`（または「その他の Web サイト」）を「許可」にする。または QB のページでアドレスバーのメニューから各拡張機能を「常に許可」。その後ページを再読み込み
 - 後で実機で確かめる印: `html[data-qb-support-injected="true"]` と `#qb-support-marker`（QB Support が設定の読み込み前に付ける）、`#uw-support-chat`（UW Support のドックの土台）。Web インスペクタで見られる
-- astra の調査（gpt-6-astra high、読み取り専用）も同じ順位だった。astra の修正案のうち、UW Support の API 呼び出し形式を変える2つは不要（同じコードが iPad の UWorld で動いている）。QB Support のコピーボタンを「UW Support のコピーボタンが本当に見えているか」で隠す案は、別件の守りとして TODO に置いた
+- astra の調査（gpt-6-astra high、読み取り専用）も同じ順位だった。astra の修正案3つは、本人の指示で下の守りの修正と一緒に入れた（UW Support の API 呼び出し形式の2つは、同じコードが iPad の UWorld で動いているので実機の原因ではない）
+
+### 判別テストと守りの修正（2026-11-04 夜、QB Support 0.1.25 と UW Support 1.6.34）
+`scripts/webkit_qb_check.py` に、保存ページ（118E36、旧 UI）で状況を作り分けて両方の Safari 版を入れるシナリオを足した（使い方はスクリプト冒頭）。mini の WebKit 26.6 で、修正前のビルドと修正後のビルドを同じ条件で比べた。CSP 違反は全シナリオで0。
+
+| シナリオ | 修正前（UW 1.6.33、QB 0.1.24） | 修正後（UW 1.6.34、QB 0.1.25） |
+|---|---|---|
+| both（Safari と同じ API、両方を注入） | タブと UW のコピー | 同じ |
+| uw-only / qb-only | UW はタブとコピー / QB はコピー | 同じ |
+| none（サイトの許可が無い時と同じ） | 何も出ない | 何も出ない（コードでは直せない） |
+| browser-only（`browser` だけある） | UW は content.js の参照エラーで止まりタブなし。QB のコピーだけ | タブと UW のコピー |
+| promise-only（コールバックを呼ばない API） | UW のドックが設定の読み込みで止まりタブなし。QB のコピーだけ | タブと UW のコピー |
+| stalled-storage（storage が答えない） | **両方とも止まり何も出ない**（判別テストで出た新しい候補） | 4秒でタブと UW のコピー。QB は3秒で既定値のまま起動し、UW のコピーが出たら引っ込む（同じ位置で重なるのは0.5秒以内） |
+| hide-uw（UW の土台はあるが見えない） | 何も見えない（QB は土台があるだけで自分のコピーを出さない） | QB のコピーが出る |
+| no-choices（選択肢が読めない） | タブだけ | 同じ。ページの作りが違う時はタブだけ残るので見分けられる |
+| no-css / root-transform | 全部出る | 同じ |
+| qb-panel-closed（QB の設定パネルを閉じて保存） | **QB のコピーが出ない**（新しい候補。注入はされている） | QB のコピーが出る |
+
+入れた修正:
+- QB Support 0.1.25（この repo）
+  - コピーボタンは、UW Support のコピーボタンが本当に画面に見えている時だけ隠す（astra 案3）。UW のドックは body の外の shadow root にあり監視に掛からないので、500ms のタイマーで「見えているか」が変わった時だけ再評価する（`innerText` を毎回読まない）
+  - コピーボタンを `settings.enabled` から切り離した。これは設定パネルが開いているかの値で（閉じると `false` で保存される）、パネルを一度閉じるとコピーボタンが出なくなっていた
+  - 設定の読み込みに3秒の上限。超えたら既定値で起動し、読み込みが答えたら反映する
+- UW Support 1.6.34（`USMLE_support`、branch `qb-kokushi` で未コミット。詳細は `USMLE_support/docs/TODO_PLAN.md`）
+  - helper のトークン同期の `chrome.storage.onChanged` を、`chrome` が無ければ `browser` で登録する（astra 案1）
+  - `chat_dock.js` は `browser` があれば Promise 形式で呼ぶ（astra 案2）。Chrome には `browser` が無いので従来どおりコールバック
+  - ドックの設定の読み込みに4秒の上限。超えたら既定値でタブとコピーを出し、読み込みが答えたら反映する
+  - Safari の QB と qbank のページでは、ページ側の設定の読み込みにも4秒の上限を付け、キーとコピーを先に始める。読み込み自体は止めないので、保存値の移行の書き戻しは本物の値でしか走らない
+  - アプリ画面の案内に「QB でも使う場合は qb.medilink-study.com も許可、確認のままでは何も出ない」を足した（本来の原因への対策）
+- 見送り: Safari 版の `build_config.js` で `chrome` が無い時に `browser` を割り当てる案。Safari には常に `chrome` があり、`safari/tests/build_test.py` は `build_config.js` を1文として読む
+- 確認: QB の typecheck と `npm test`、USMLE_support の Node テスト33件すべてと `safari/tests/build_test.py`、headless Chrome の `tests/chat_dock_dom_test.html`（Chrome 側のドックが従来どおり動く）、mini での両方の署名ビルドと `codesign --verify --deep --strict`。QB アプリ本体に案内文と「準備中」の表示が入っていることもビルド成果物で確かめた
+- 確かめられていないこと: 実機の Safari の API の形とサイト別の許可（WebKit では分からない）。現行の新 UI（React）の保存ページが無く、新 UI は 11-03 の mini の Chrome の実画面確認と Node テストだけ（11-04 夜は mini の Chrome の AppleEvent がタイムアウトして取れなかった）。実機で何も出ないままなら、引き続きサイト別の許可が本命
 
 ## 更新時
 - 変更後は `npm run build:ext` → `./scripts/prepare-safari-extension.sh`

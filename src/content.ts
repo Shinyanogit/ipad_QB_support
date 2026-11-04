@@ -399,7 +399,19 @@ function isMoshiShortcutTargetAvailable(element: HTMLElement): boolean {
 }
 
 async function init() {
-  await loadSettings();
+  // A storage read that never answers must not keep the copy button and the panel away; it applies when it answers.
+  const loaded = loadSettings();
+  const inTime = await Promise.race([
+    loaded.then(() => true),
+    new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), 3000)),
+  ]);
+  if (!inTime) {
+    console.warn("[QB_SUPPORT][settings] load is slow; starting with defaults");
+    void loaded.then(() => {
+      applySettings();
+      refreshQuestionInfo();
+    });
+  }
   ensureUI();
   if (CHAT_ENABLED) {
     ensureChatUI();
@@ -3711,10 +3723,27 @@ function refreshQuestionInfo() {
 }
 
 // One tap or the copy key puts the question (and the explanation once shown) on the clipboard, in the
-// same text as UW Support's QB copy. UW Support's dock already shows that button, so skip ours there.
+// same text as UW Support's QB copy. Skip ours only while UW Support's copy button is really on screen:
+// its host can exist with the button hidden, blank or off screen. `settings.enabled` is the panel's
+// open state, not an on switch, so it does not gate the copy.
+function isUwCopyVisible(): boolean {
+  const host = document.getElementById("uw-support-chat");
+  const button = host?.shadowRoot?.querySelector<HTMLElement>("#copy-question");
+  if (!host || !button || button.hidden) return false;
+  const rect = button.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0 || rect.right <= 0 || rect.bottom <= 0) return false;
+  if (rect.left >= window.innerWidth || rect.top >= window.innerHeight) return false;
+  return [host, button].every((node) => {
+    const style = window.getComputedStyle(node);
+    return style.display !== "none" && style.visibility === "visible" && Number(style.opacity) > 0;
+  });
+}
+
+let uwCopyVisible = false;
+
 function syncCopyButton() {
-  const visible =
-    settings.enabled && !document.getElementById("uw-support-chat") && !!readCopyQuestion(document);
+  uwCopyVisible = isUwCopyVisible();
+  const visible = !uwCopyVisible && !!readCopyQuestion(document);
   if (!visible) {
     if (copyButton) copyButton.hidden = true;
     return;
@@ -3835,6 +3864,8 @@ function startObservers() {
 
   let lastUrl = location.href;
   window.setInterval(() => {
+    // UW Support's dock lives outside body and in a shadow root, so the observer above misses it.
+    if (window === window.top && isUwCopyVisible() !== uwCopyVisible) syncCopyButton();
     if (location.href !== lastUrl) {
       lastUrl = location.href;
       scheduleRefresh();
