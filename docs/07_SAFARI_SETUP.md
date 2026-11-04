@@ -69,6 +69,14 @@ mini の Xcode には Apple のアカウントが無く署名できないので�
 - `Shared (App)/IAPConfig.swift` と `SubscriptionManager.swift` が project に未登録で `cannot find 'SubscriptionManager' in scope`。両 App ターゲットの Sources に登録した
 - `SubscriptionManager.swift` が `Transaction.jwsRepresentation` を参照してビルド不可。JWS は `VerificationResult` 側にあるので、`.verified` を取り出す箇所から `jws` を受け渡す形にした
 
+2026-11-04 にもう1点直した（mini の作業コピーのみ。Air の写しへは次の配備の rsync で入る）。
+- 症状: アプリを開くと「QB Support Plus／商品情報を取得中…／復元に失敗しました。」と購入・復元ボタンだけになり、先に進めないように見える
+- 原因: `IAPConfig.productId` がテンプレートの `<<<PRODUCT_ID>>>` のままで、App Store Connect 側にも商品が無い。`Product.products` は何も返さず、商品名の欄は成功時にしか書き換わらないので「取得中」のまま残る。一時的な取得失敗ではなく毎回起きる。「復元に失敗しました。」は復元ボタンを押して `AppStore.sync()` が失敗した表示
+- 影響: 拡張機能は課金状態を見ていない（`SafariWebExtensionHandler` はテンプレートの echo だけ、`src/` に課金判定は無い）。購入しなくても Safari で使える。先に進めないように見えたのは、`ViewController` が「設定で有効にしてください」の `Main.html` を隠していたため
+- 修正: `SubscriptionManager.isConfigured`（商品IDが空かプレースホルダなら false）の間は StoreKit を呼ばず「購入はまだできません（準備中）」を出し、購入・復元ボタンを隠す。商品取得に失敗した時は商品名の欄に失敗を出す。iOS の画面には、機能拡張のオンにし方と「購入しなくても使えます」を常に出す
+- 検証: mini で `xcodebuild -project "QB Support/QB Support.xcodeproj" -scheme "QB Support (iOS)" -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` が成功。iPad シミュレータで案内文が出てボタンが消えることを確認
+- 課金を本当に使う時: App Store Connect にアプリ（`com.shinyyama.qb-support`）とサブスク商品を登録し（有料アプリ契約が有効で、商品は最低でも Ready to Submit）、その ID を `IAPConfig.productId` と backend の `APPLE_SUBSCRIPTION_PRODUCT_ID` に入れる。Air から devicectl で入れた開発署名のアプリは sandbox を見るので、商品が出るかは TestFlight か sandbox アカウントで確かめる。`.storekit` 設定ファイルは Xcode から実行した時だけ効き、devicectl で入れたアプリには効かない
+
 ## 更新時
 - 変更後は `npm run build:ext` → `./scripts/prepare-safari-extension.sh`
 - 生成済みのXcodeプロジェクトにファイルを上書きするか、再変換してください
