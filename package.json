@@ -5,7 +5,8 @@
     "build": "esbuild src/content.ts --bundle --outfile=extension/content.js --format=iife --target=es2020",
     "build:ext": "esbuild src/content.ts --bundle --outfile=extension/content.js --format=iife --target=es2020 && esbuild src/background.ts --bundle --outfile=extension/background.js --format=iife --target=es2020",
     "build:watch": "esbuild src/content.ts --bundle --outfile=extension/content.js --format=iife --target=es2020 --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node tests/copy_text.test.mjs"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.266",

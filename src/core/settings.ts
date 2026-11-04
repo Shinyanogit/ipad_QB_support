@@ -159,6 +159,7 @@ export const defaultSettings: Settings = {
   navPrevKey: "ArrowLeft",
   navNextKey: "ArrowRight",
   revealKey: "S",
+  copyKey: "Y",
   optionKeys: [...DEFAULT_OPTION_KEYS],
   position: "bottom-right",
   shortcut: "Alt+Q",
@@ -217,6 +218,7 @@ export function normalizeSettings(
       normalizedRevealKey === "Ctrl+S"
         ? defaultSettings.revealKey
         : normalizedRevealKey || defaultSettings.revealKey,
+    copyKey: normalizeShortcut(input.copyKey) || defaultSettings.copyKey,
     optionKeys,
     position: isPosition(input.position) ? input.position : defaultSettings.position,
     shortcut: normalizeShortcut(input.shortcut) || defaultSettings.shortcut,

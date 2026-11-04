@@ -18,6 +18,8 @@
 - 新 `/quiz?question_id=...` UIのトップ文書DOM検出
 - 新UIの `A`〜`G` / `S` / 左右キー操作と旧設定の自動移行
 - 新UIのTailwind utility class向けダークモード
+- 問題と解説のコピー（2026-11-03、0.1.24）: `Y`キー（設定の「ショートカット」で変更可）と右下の丸いボタンで、問題文と選択肢（解答前はヒント依頼文つき）、解答後は正解・自分の解答（違う時のみ）・解説全文をコピー。抽出と文面は `src/core/qbCopy.ts`。UW Support（`../../USMLE_support/qb_adapter.js` + `chat_core.js` の `fullText`）と一字一句同じ文面になるよう移植し、`tests/copy_text.test.mjs`（`npm test`）と UW Support 側のテストが同じ期待文面を持つ。miniのChromeのQB実画面で、本拡張の抽出コードを注入した出力とUW Supportのコピーが一致（7,168字）することを確認。UW Supportと同居する時は、キーはUW Supportが先に処理し、本拡張のボタンは `#uw-support-chat` がある間は出さない
+- iPadへの初インストール（2026-11-03、0.1.23）: MacBook Air の `~/qbsupport-ipad` で `build_only.command` をGUIセッションから開いてビルドし、`xcrun devicectl device install app` で入れた。手順は `07_SAFARI_SETUP.md` の「Airでのビルドと配備」
 - トップ文書優先・明示iframe限定のアクション配送と二重クリック解消
 - 新UI左ナビのinline白背景をダークテーマで明示上書き
 - `S` を保存設定に依存しない解答エイリアスとして追加
@@ -166,7 +168,7 @@
   Vitalに該当ページが無い。QB2027 PDFを入手できれば `page_map.py` 相当で埋められる
 - [x] 2回目以降のバッチの差分抽出は、既存 `qb_batch_*_cards.json` の ExternalID から問題コードを
   引いて差集合を取る方式で解決（バッチ3で111件中65件を特定）。専用スクリプトはまだ無い
-- iPad Safariでの動作検証（Xcodeビルドと実機確認）
+- iPad Safariでの実機確認（0.1.23はインストール済み。iPadの設定でQB Supportを有効化、コピーとキー操作の確認は本人。0.1.24はAirでビルド成功、インストールはiPadがAirから見つからず未完了。iPadのロック解除とAirと同じWi-Fiが要る）
 - 新UI修正後のAtlas実機確認（拡張リロード → QBタブ再読み込み → `key-capture` / `action-local` / 各targetログを確認）
 - 明るい背景を持つ解説カードが黒背景・白文字・白系罫線になることをAtlas実機確認（`[QB_SUPPORT][theme] normalized light explanation surfaces` はdebug有効時のみ）
 - 必要になった時点でQB Chatを再有効化し、現行API/認証経路を再検証

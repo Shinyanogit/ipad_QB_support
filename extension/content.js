@@ -117,8 +117,8 @@
   function getClickableOptionElement(option) {
     const input = option.querySelector("input");
     if (input instanceof HTMLElement && isEnabled(input)) return input;
-    const label = option.querySelector("label");
-    if (label instanceof HTMLElement && isEnabled(label)) return label;
+    const label2 = option.querySelector("label");
+    if (label2 instanceof HTMLElement && isEnabled(label2)) return label2;
     const button = option.querySelector("button");
     if (button instanceof HTMLElement && isEnabled(button)) return button;
     const div = option.querySelector(".ans");
@@ -229,8 +229,8 @@
       (element) => !element.closest(".html_renderer")
     );
     return labels.some((element) => {
-      const label = normalizeSpace(element.textContent ?? "").toLowerCase();
-      return OPTION_LABEL_PATTERN.test(label) || FULLWIDTH_OPTION_LABEL_PATTERN.test(label);
+      const label2 = normalizeSpace(element.textContent ?? "").toLowerCase();
+      return OPTION_LABEL_PATTERN.test(label2) || FULLWIDTH_OPTION_LABEL_PATTERN.test(label2);
     });
   }
   function findNewUiNavigationTarget(doc, direction) {
@@ -270,9 +270,9 @@
   function extractOptionTexts(container) {
     const doc = container.ownerDocument;
     const legacyOptions = Array.from(container.querySelectorAll(SELECTORS.options));
-    const options = legacyOptions.length > 0 ? legacyOptions : getNewUiOptionElements(doc);
+    const options2 = legacyOptions.length > 0 ? legacyOptions : getNewUiOptionElements(doc);
     const results = [];
-    for (const option of options) {
+    for (const option of options2) {
       const text = normalizeSpace(option.textContent ?? "");
       if (!text) continue;
       if (!results.includes(text)) results.push(text);
@@ -504,6 +504,7 @@
     navPrevKey: "ArrowLeft",
     navNextKey: "ArrowRight",
     revealKey: "S",
+    copyKey: "Y",
     optionKeys: [...DEFAULT_OPTION_KEYS],
     position: "bottom-right",
     shortcut: "Alt+Q",
@@ -536,6 +537,7 @@
       navPrevKey: normalizeShortcut(input.navPrevKey) || defaultSettings.navPrevKey,
       navNextKey: normalizeShortcut(input.navNextKey) || defaultSettings.navNextKey,
       revealKey: normalizedRevealKey === "Ctrl+S" ? defaultSettings.revealKey : normalizedRevealKey || defaultSettings.revealKey,
+      copyKey: normalizeShortcut(input.copyKey) || defaultSettings.copyKey,
       optionKeys,
       position: isPosition(input.position) ? input.position : defaultSettings.position,
       shortcut: normalizeShortcut(input.shortcut) || defaultSettings.shortcut,
@@ -577,11 +579,11 @@
         prompt: ""
       };
       const raw = input[i];
-      const enabled = typeof raw?.enabled === "boolean" ? raw.enabled : fallback.enabled;
-      const label = typeof raw?.label === "string" && raw.label.trim() ? raw.label.trim() : fallback.label;
+      const enabled2 = typeof raw?.enabled === "boolean" ? raw.enabled : fallback.enabled;
+      const label2 = typeof raw?.label === "string" && raw.label.trim() ? raw.label.trim() : fallback.label;
       const shortcut = normalizeShortcut(raw?.shortcut ?? "") || fallback.shortcut || "";
       const prompt = typeof raw?.prompt === "string" ? raw.prompt : fallback.prompt;
-      next.push({ enabled, label, shortcut, prompt });
+      next.push({ enabled: enabled2, label: label2, shortcut, prompt });
     }
     for (let i = next.length; i < CHAT_TEMPLATE_LIMIT; i += 1) {
       next.push(
@@ -621,15 +623,15 @@
       key = normalizeKeyLabel(part);
     }
     if (!key) return "";
-    const ordered = MODIFIER_LABELS.filter((label) => modifiers.has(label));
+    const ordered = MODIFIER_LABELS.filter((label2) => modifiers.has(label2));
     return [...ordered, key].join("+");
   }
   function shortcutFromEvent(event) {
-    const modifiers = MODIFIER_LABELS.filter((label) => {
-      if (label === "Ctrl") return event.ctrlKey;
-      if (label === "Alt") return event.altKey;
-      if (label === "Shift") return event.shiftKey;
-      if (label === "Meta") return event.metaKey;
+    const modifiers = MODIFIER_LABELS.filter((label2) => {
+      if (label2 === "Ctrl") return event.ctrlKey;
+      if (label2 === "Alt") return event.altKey;
+      if (label2 === "Shift") return event.shiftKey;
+      if (label2 === "Meta") return event.metaKey;
       return false;
     });
     const key = normalizeKeyLabel(event.key);
@@ -728,6 +730,131 @@
     if (entries.length <= maxEntries) return store;
     entries.sort(([, a], [, b]) => b.updatedAt.localeCompare(a.updatedAt));
     return Object.fromEntries(entries.slice(0, maxEntries));
+  }
+
+  // src/core/qbCopy.ts
+  var LETTERS = "abcdefghi";
+  var FULLWIDTH = "\uFF41\uFF42\uFF43\uFF44\uFF45\uFF46\uFF47\uFF48\uFF49";
+  var OLD_OPTIONS = ".multiple-answer-options li, .single-answer-options li";
+  var OURS = "#qb-support-root, #qb-support-reflection, #qb-support-reflection-lightbox, #qb-support-chat-root, #qb-support-chat-toggle, #qb-support-chat-templates, .qb-support-chat-resizer, .qb-support-chat-overlay-handle, .qb-support-copy-button, .qb-support-copy-toast, .qb-support-copy-buffer, #uw-support-settings-panel, #uw-support-settings-btn, #uw-support-chat, #uw-support-capture-toast, [data-uw-support]";
+  var HINT = "\u4E0A\u8A18\u306B\u3064\u3044\u3066\u7D76\u5999\u306A\u30D2\u30F3\u30C8\u3092\u304F\u3060\u3055\u3044\u3002\u4ECA\u306E\u8003\u5BDF\u306F\u4EE5\u4E0B\u3067\u3059\u3002\n\u30FB";
+  var squash = (value) => String(value || "").replace(/ /g, " ").replace(/[ \t]+/g, " ").replace(/\s*\n\s*/g, "\n").trim();
+  var ours = (el) => !!el?.closest?.(OURS);
+  var ownText = (el) => Array.from(el.querySelectorAll(OURS)).filter((own) => !own.parentElement?.closest(OURS)).reduce((text, own) => text.replace(own.innerText, ""), el.innerText);
+  var enabled = (el) => el.getAttribute("aria-disabled") !== "true" && !el.disabled;
+  var shown = (el) => !!el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
+  var label = (text) => {
+    const ch = String(text || "").trim().charAt(0).toLowerCase();
+    const i = FULLWIDTH.indexOf(ch);
+    return i >= 0 ? LETTERS[i] : LETTERS.includes(ch) && ch ? ch : "";
+  };
+  var letters = (text) => [...String(text || "").matchAll(/[a-iａ-ｉ]/g)].map((m) => label(m[0])).filter(Boolean);
+  var labelSpan = (row) => Array.from(row.querySelectorAll("span")).find(
+    (s) => !s.closest(".html_renderer") && /^[a-iａ-ｉ]$/i.test(squash(s.textContent))
+  );
+  function options(doc) {
+    const old = Array.from(doc.querySelectorAll(OLD_OPTIONS)).filter((li) => !ours(li));
+    if (old.length) {
+      return old.map((li) => ({ row: li, body: li.querySelector(".ans") || li, old: true }));
+    }
+    return Array.from(doc.querySelectorAll("button")).filter((b) => enabled(b) && !ours(b) && b.querySelector(".html_renderer") && labelSpan(b)).map((b) => ({ row: b, body: b, old: false }));
+  }
+  function choiceOf(option, index) {
+    if (option.old) {
+      const text = squash(option.body.innerText || option.body.textContent);
+      const letter = label(text) || LETTERS[index];
+      return {
+        letter,
+        text: text.replace(/^[a-iａ-ｉ][\s.．、]*/i, ""),
+        selected: option.body.classList.contains("active")
+      };
+    }
+    const row = option.row;
+    const pressed = row.getAttribute("aria-pressed") === "true" || row.getAttribute("aria-checked") === "true" || /\b(selected|active)\b|qb-green/.test(row.className);
+    return {
+      letter: label(labelSpan(row)?.textContent) || LETTERS[index],
+      text: squash(row.querySelector(".html_renderer")?.innerText),
+      selected: pressed
+    };
+  }
+  function stemNode(doc, opts) {
+    const old = doc.querySelector(".question-content .body");
+    if (old) return old;
+    const first = opts[0]?.row;
+    if (!first) return null;
+    return Array.from(doc.querySelectorAll(".html_renderer")).filter(
+      (node) => !ours(node) && !node.closest("button") && node.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).pop() || null;
+  }
+  function textElement(doc, test) {
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    let node;
+    while (node = walker.nextNode()) {
+      const text = squash(node.nodeValue);
+      const parent = node.parentElement;
+      if (text && test(text) && !ours(parent) && shown(parent)) return parent;
+    }
+    return null;
+  }
+  function explanationNode(doc, opts, stem) {
+    const old = doc.querySelector("#resultcontent, .resultcontent, .resultContent, .result-content");
+    if (old && squash(old.textContent)) return old;
+    const heading = textElement(doc, (text) => text === "\u89E3\u8AAC");
+    if (!heading) return null;
+    const question = (el) => opts.some((o) => el.contains(o.row)) || el.contains(stem);
+    let node = heading;
+    while (node.parentElement && node.parentElement !== doc.body && !question(node.parentElement)) {
+      node = node.parentElement;
+    }
+    if (question(node)) return null;
+    return squash(ownText(node)).length > squash(heading.innerText).length + 20 ? node : null;
+  }
+  function answerOf(doc) {
+    const pattern = /正解[\s:：]*([a-iａ-ｉ](?:[\s,，、・]*[a-iａ-ｉ])*)/;
+    for (const start2 of [doc.getElementById("answerSection"), textElement(doc, (t) => /^正解[：:]/.test(t))]) {
+      let el = start2;
+      for (let depth = 0; el && depth < 4; el = el.parentElement, depth++) {
+        const match = squash(el.innerText).match(pattern);
+        if (match) return letters(match[1]).join(", ");
+      }
+    }
+    return "";
+  }
+  function readCopyQuestion(doc) {
+    const opts = options(doc);
+    if (!opts.length) return null;
+    const stem = stemNode(doc, opts);
+    const text = squash(stem?.innerText);
+    if (!stem || !text) return null;
+    const choices = opts.map(choiceOf);
+    const explanation = explanationNode(doc, opts, stem);
+    const answer = answerOf(doc);
+    const answered = !!(explanation || answer);
+    const history = answered && squash(doc.body.innerText).match(
+      /\d{4}\/\d{1,2}\/\d{1,2}\s+([a-iａ-ｉ](?:[\s,，、・]*[a-iａ-ｉ])*)\s+(?:正解|不正解)/
+    );
+    const selected = choices.filter((c) => c.selected).map((c) => c.letter).join(", ") || (history ? letters(history[1]).join(", ") : "");
+    return {
+      stem: text,
+      choices: choices.map(({ letter, text: text2 }) => ({ letter, text: text2 })),
+      answered,
+      answer: answered ? answer : "",
+      selected: answered ? selected : "",
+      explanation: answered ? squash(explanation && ownText(explanation)).replace(/^解説\s*/, "") : ""
+    };
+  }
+  var plain = (value) => String(value ?? "").replace(/\*([^*\n]+)\*/g, "$1");
+  var choiceText = (value) => plain(value).replace(/\s*\(?\s*\d+(?:\.\d+)?\s*%\s*\)?\s*$/g, "").trim();
+  function copyText(q) {
+    const question = [plain(q.stem), q.choices.map((c) => `${c.letter}. ${choiceText(c.text)}`).join("\n")].join("\n\n");
+    if (!q.answered) return `${question}
+
+${HINT}`;
+    const own = q.selected && q.selected !== q.answer ? `\uFF08\u81EA\u5206\u306E\u89E3\u7B54: ${q.selected}\uFF09` : "";
+    const long = q.explanation.length > 2e4;
+    const expl = plain(q.explanation).slice(0, 2e4) + (long ? "\n[Explanation truncated at 20,000 characters.]" : "");
+    return [question, `\u6B63\u89E3: ${q.answer}${own}`, expl && `\u89E3\u8AAC:
+${expl}`].filter(Boolean).join("\n\n");
   }
 
   // src/core/moshiDom.ts
@@ -1072,6 +1199,8 @@
   var navPrevInput = null;
   var navNextInput = null;
   var revealInput = null;
+  var copyInput = null;
+  var copyButton = null;
   var optionInputs = [];
   var authProfile = null;
   var authStatusField = null;
@@ -1196,7 +1325,7 @@
     ];
     return candidates.find((element) => {
       const text = (element.textContent ?? "").replace(/\s+/g, " ").trim();
-      return revealLabels.some((label) => text.includes(label));
+      return revealLabels.some((label2) => text.includes(label2));
     }) ?? null;
   }
   function isMoshiShortcutTargetAvailable(element) {
@@ -1274,7 +1403,7 @@
       apiKeyEnabled: settings.chatApiKeyEnabled
     });
   }
-  async function saveSettings(next, options) {
+  async function saveSettings(next, options2) {
     settings = normalizeSettings(next);
     const area = getStorageArea(true);
     if (area) {
@@ -1309,7 +1438,7 @@
       }
     }
     applySettings();
-    if (!options?.skipRemote) {
+    if (!options2?.skipRemote) {
       scheduleRemoteSettingsSync();
     }
   }
@@ -1848,11 +1977,11 @@
         const fallback = modifierLabelFromKey(event.key);
         if (fallback) input.value = fallback;
       });
-      const label = document.createElement("label");
-      label.className = "qb-support-field";
-      label.appendChild(makeSpan(labelText));
-      label.appendChild(input);
-      return { label, input };
+      const label2 = document.createElement("label");
+      label2.className = "qb-support-field";
+      label2.appendChild(makeSpan(labelText));
+      label2.appendChild(input);
+      return { label: label2, input };
     };
     const buildShortcutField = (labelText, placeholder = "\u4F8B: Ctrl+S") => {
       const input = document.createElement("input");
@@ -1874,23 +2003,25 @@
         const fallback = modifierLabelFromKey(event.key);
         if (fallback) input.value = fallback;
       });
-      const label = document.createElement("label");
-      label.className = "qb-support-field";
-      label.appendChild(makeSpan(labelText));
-      label.appendChild(input);
-      return { label, input };
+      const label2 = document.createElement("label");
+      label2.className = "qb-support-field";
+      label2.appendChild(makeSpan(labelText));
+      label2.appendChild(input);
+      return { label: label2, input };
     };
     const navPrevField = buildKeyField("\u524D\u3078");
     const navNextField = buildKeyField("\u6B21\u3078");
     const revealField = buildShortcutField("\u89E3\u7B54", "\u4F8B: Ctrl+S");
+    const copyField = buildShortcutField("\u554F\u984C\u3068\u89E3\u8AAC\u3092\u30B3\u30D4\u30FC", "\u4F8B: Y");
     navPrevInput = navPrevField.input;
     navNextInput = navNextField.input;
     revealInput = revealField.input;
+    copyInput = copyField.input;
     const optionsWrap = document.createElement("div");
     optionsWrap.className = "qb-support-options";
     optionInputs = [];
-    DEFAULT_OPTION_KEYS.forEach((label) => {
-      const field = buildKeyField(label);
+    DEFAULT_OPTION_KEYS.forEach((label2) => {
+      const field = buildKeyField(label2);
       optionInputs.push(field.input);
       optionsWrap.appendChild(field.label);
     });
@@ -1909,6 +2040,7 @@
     shortcutSection.appendChild(navPrevField.label);
     shortcutSection.appendChild(navNextField.label);
     shortcutSection.appendChild(revealField.label);
+    shortcutSection.appendChild(copyField.label);
     shortcutSection.appendChild(optionsWrap);
     const templateSection = document.createElement("div");
     templateSection.className = "qb-support-section";
@@ -1943,11 +2075,11 @@
     templateList.className = "qb-support-template-list";
     chatTemplateRows = [];
     const buildTemplateField = (labelText, input) => {
-      const label = document.createElement("label");
-      label.className = "qb-support-field qb-support-template-field";
-      label.appendChild(makeSpan(labelText));
-      label.appendChild(input);
-      return label;
+      const label2 = document.createElement("label");
+      label2.className = "qb-support-field qb-support-template-field";
+      label2.appendChild(makeSpan(labelText));
+      label2.appendChild(input);
+      return label2;
     };
     for (let i = 0; i < 5; i += 1) {
       const row = document.createElement("div");
@@ -2024,9 +2156,9 @@
     commonPromptInput.placeholder = "\u5168\u3066\u306E\u4F1A\u8A71\u306B\u4ED8\u4E0E\u3059\u308B\u5171\u901A\u30D7\u30ED\u30F3\u30D7\u30C8";
     commonPromptLabel.appendChild(commonPromptInput);
     explanationLevelSelect = createOverlaySelect(
-      Object.entries(EXPLANATION_LEVEL_LABELS).map(([value, label]) => ({
+      Object.entries(EXPLANATION_LEVEL_LABELS).map(([value, label2]) => ({
         value,
-        label
+        label: label2
       })),
       "qb-support-explanation-level"
     );
@@ -2040,11 +2172,11 @@
       textarea.rows = 3;
       textarea.placeholder = "\u30D7\u30ED\u30F3\u30D7\u30C8";
       explanationPromptInputs[key] = textarea;
-      const label = document.createElement("label");
-      label.className = "qb-support-field qb-support-template-field";
-      label.appendChild(makeSpan(labelText));
-      label.appendChild(textarea);
-      return label;
+      const label2 = document.createElement("label");
+      label2.className = "qb-support-field qb-support-template-field";
+      label2.appendChild(makeSpan(labelText));
+      label2.appendChild(textarea);
+      return label2;
     };
     const promptWrap = document.createElement("div");
     promptWrap.className = "qb-support-template-fields qb-support-explanation-prompts";
@@ -2776,9 +2908,9 @@
   }
   var HINT_PHRASE = "\u7D76\u5999\u306A\u30D2\u30F3\u30C8";
   function isHintTemplateSetting(template) {
-    const label = template.label ?? "";
+    const label2 = template.label ?? "";
     const prompt = template.prompt ?? "";
-    return label.includes("\u30D2\u30F3\u30C8") || label.includes(HINT_PHRASE) || prompt.includes(HINT_PHRASE);
+    return label2.includes("\u30D2\u30F3\u30C8") || label2.includes(HINT_PHRASE) || prompt.includes(HINT_PHRASE);
   }
   function getHintTemplate() {
     for (const entry of getEnabledChatTemplatesWithIndex()) {
@@ -2976,9 +3108,9 @@
   }
   function createChatModelSelect() {
     const backendMode = isBackendMode();
-    const options = getChatModelOptions(backendMode);
+    const options2 = getChatModelOptions(backendMode);
     const select = createOverlaySelect(
-      options.map((model) => ({ value: model, label: model })),
+      options2.map((model) => ({ value: model, label: model })),
       "qb-support-chat-input qb-support-chat-model"
     );
     select.value = backendMode ? resolveBackendModel(settings.chatModel) : settings.chatModel;
@@ -3069,6 +3201,7 @@
         applyUpdate("navPrevKey", navPrevKey);
         applyUpdate("navNextKey", navNextKey);
         applyUpdate("revealKey", revealKey);
+        applyUpdate("copyKey", normalizeShortcut(copyInput?.value ?? "") || defaultSettings.copyKey);
         applyUpdate("optionKeys", optionKeys);
         if (shortcutsToggle) {
           applyUpdate("shortcutsEnabled", shortcutsToggle.checked);
@@ -3083,12 +3216,12 @@
     }
     if (chatTemplateRows.length) {
       const nextTemplates = chatTemplateRows.map((row, index) => {
-        const label = row.label.value.trim() || `\u30C6\u30F3\u30D7\u30EC${index + 1}`;
+        const label2 = row.label.value.trim() || `\u30C6\u30F3\u30D7\u30EC${index + 1}`;
         const shortcut = normalizeShortcut(row.shortcut.value);
         const prompt = row.prompt.value.trim();
         return {
           enabled: row.enabled.checked,
-          label,
+          label: label2,
           shortcut,
           prompt
         };
@@ -3198,13 +3331,13 @@
   function getChatModelOptions(backendMode) {
     return backendMode ? BACKEND_ALLOWED_MODELS : CHAT_MODEL_OPTIONS;
   }
-  function updateModelSelectOptions(select, options, selected) {
+  function updateModelSelectOptions(select, options2, selected) {
     if (!select) return;
-    const signature = options.join("|");
+    const signature = options2.join("|");
     if (select.dataset.optionSignature !== signature) {
       select.dataset.optionSignature = signature;
       select.innerHTML = "";
-      options.forEach((model) => {
+      options2.forEach((model) => {
         const option = document.createElement("option");
         option.value = model;
         option.textContent = model;
@@ -3530,11 +3663,11 @@
       chatHistory = chatHistory.slice(-maxMessages);
     }
   }
-  function appendChatMessage(role, content, options) {
+  function appendChatMessage(role, content, options2) {
     if (!chatMessagesEl) return null;
     const message = document.createElement("div");
     message.className = `qb-support-chat-msg is-${role}`;
-    if (options?.pending) message.classList.add("is-pending");
+    if (options2?.pending) message.classList.add("is-pending");
     setChatMessageContent(message, role, content);
     if (role === "assistant") {
       ensureCopyButton(message);
@@ -3638,12 +3771,12 @@
   }
   function setChatMessageMeta(message, meta) {
     let metaEl = message.querySelector(".qb-support-chat-meta");
-    const copyButton = message.querySelector(".qb-support-chat-copy");
+    const copyButton2 = message.querySelector(".qb-support-chat-copy");
     if (!metaEl) {
       metaEl = document.createElement("div");
       metaEl.className = "qb-support-chat-meta";
-      if (copyButton) {
-        message.insertBefore(metaEl, copyButton);
+      if (copyButton2) {
+        message.insertBefore(metaEl, copyButton2);
       } else {
         message.appendChild(metaEl);
       }
@@ -3781,12 +3914,12 @@
     if (snapshot.questionText) lines.push(`\u554F\u984C\u6587: ${snapshot.questionText}`);
     if (snapshot.optionTexts.length) {
       const labels = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-      const options = snapshot.optionTexts.map((text, index) => {
-        const label = labels[index] ?? `${index + 1}`;
-        return `${label}. ${text}`;
+      const options2 = snapshot.optionTexts.map((text, index) => {
+        const label2 = labels[index] ?? `${index + 1}`;
+        return `${label2}. ${text}`;
       });
       lines.push("\u9078\u629E\u80A2:");
-      lines.push(...options);
+      lines.push(...options2);
     }
     const imageCount = imageCountOverride ?? snapshot.imageUrls.length;
     if (imageCount) {
@@ -4053,6 +4186,7 @@
     if (navPrevInput) navPrevInput.value = settings.navPrevKey;
     if (navNextInput) navNextInput.value = settings.navNextKey;
     if (revealInput) revealInput.value = settings.revealKey;
+    if (copyInput) copyInput.value = settings.copyKey;
     if (themeToggle) {
       const prefersDark = themeQuery?.matches ?? window.matchMedia("(prefers-color-scheme: dark)").matches;
       const isDark = settings.themePreference === "dark" || settings.themePreference === "system" && prefersDark;
@@ -4110,9 +4244,72 @@
     if (window === window.top) {
       captureQuestionImageBaseSizes();
       void syncReflectionPanel("refresh");
+      syncCopyButton();
     }
     updateHintQuickButton();
     scheduleContentThemeRepair();
+  }
+  function syncCopyButton() {
+    const visible = settings.enabled && !document.getElementById("uw-support-chat") && !!readCopyQuestion(document);
+    if (!visible) {
+      if (copyButton) copyButton.hidden = true;
+      return;
+    }
+    if (!copyButton || !copyButton.isConnected) {
+      copyButton = document.createElement("button");
+      copyButton.type = "button";
+      copyButton.className = "qb-support-copy-button";
+      copyButton.title = "\u554F\u984C\u3068\u89E3\u8AAC\u3092\u30B3\u30D4\u30FC";
+      copyButton.setAttribute("aria-label", "\u554F\u984C\u3068\u89E3\u8AAC\u3092\u30B3\u30D4\u30FC");
+      copyButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>';
+      copyButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        copyCurrentQuestion();
+      });
+      document.body.appendChild(copyButton);
+    }
+    copyButton.hidden = false;
+  }
+  function copyCurrentQuestion() {
+    const question = readCopyQuestion(document);
+    if (!question) {
+      showCopyToast("\u554F\u984C\u3092\u8AAD\u307F\u8FBC\u3081\u307E\u305B\u3093", false);
+      return;
+    }
+    const text = copyText(question);
+    const done = (ok) => showCopyToast(
+      ok ? question.answered ? "\u554F\u984C\u3068\u89E3\u8AAC\u3092\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F" : "\u554F\u984C\u3092\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F" : "\u30B3\u30D4\u30FC\u3067\u304D\u307E\u305B\u3093",
+      ok
+    );
+    const fallback = () => {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.className = "qb-support-copy-buffer";
+      document.body.appendChild(area);
+      area.select();
+      let ok = false;
+      try {
+        ok = document.execCommand("copy");
+      } catch {
+      }
+      area.remove();
+      done(ok);
+    };
+    try {
+      navigator.clipboard.writeText(text).then(() => done(true), fallback);
+    } catch {
+      fallback();
+    }
+  }
+  function showCopyToast(message, ok) {
+    document.querySelector(".qb-support-copy-toast")?.remove();
+    const toast = document.createElement("div");
+    toast.className = `qb-support-copy-toast${ok ? "" : " is-error"}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    window.setTimeout(() => toast.remove(), 2400);
   }
   function captureQuestionImageBaseSizes() {
     const container = document.querySelector(".question-container");
@@ -5708,6 +5905,11 @@ ${serializeReflectionList(nested, depth + 1)}`;
           void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
           return;
         }
+        if (window === window.top && !event.repeat && (isShortcutMatch(event, settings.copyKey) || isPlainShortcutMatch(event, settings.copyKey, eventBaseKey))) {
+          consumeShortcutEvent(event);
+          copyCurrentQuestion();
+          return;
+        }
         if (isShortcutMatch(event, settings.shortcut)) {
           consumeShortcutEvent(event);
           if (debug) {
@@ -5794,14 +5996,14 @@ ${serializeReflectionList(nested, depth + 1)}`;
             );
             return;
           }
-          const options = getOptionElements(document);
-          if (options.length <= index) return;
-          const clickable = getClickableOptionElement(options[index]);
+          const options2 = getOptionElements(document);
+          if (options2.length <= index) return;
+          const clickable = getClickableOptionElement(options2[index]);
           if (shouldLogKey) {
             console.log("[QB_SUPPORT][option-target]", {
               key: optionBaseKey,
               index,
-              optionCount: options.length,
+              optionCount: options2.length,
               target: describeElement(clickable),
               meta: describeElementMeta(clickable),
               url: location.href,
@@ -5812,18 +6014,18 @@ ${serializeReflectionList(nested, depth + 1)}`;
             console.debug("[QB_SUPPORT][option]", {
               key: optionBaseKey,
               index,
-              optionCount: options.length,
+              optionCount: options2.length,
               target: describeElement(clickable)
             });
           }
           if (!clickable) return;
           event.preventDefault();
           event.stopPropagation();
-          const beforeState = getOptionState(options[index]);
+          const beforeState = getOptionState(options2[index]);
           clickWithFallback(clickable, { tag: "option", logAlways: shouldLogKey });
           if (shouldLogKey) {
             window.setTimeout(() => {
-              const afterState = getOptionState(options[index]);
+              const afterState = getOptionState(options2[index]);
               console.log("[QB_SUPPORT][option-effect]", {
                 key: optionBaseKey,
                 before: beforeState,
@@ -6013,22 +6215,22 @@ ${serializeReflectionList(nested, depth + 1)}`;
     input.addEventListener("change", () => {
       onChange(input.checked);
     });
-    const label = document.createElement("label");
-    label.className = "qb-support-toggle qb-support-switch";
-    label.appendChild(input);
-    label.appendChild(makeSpan(labelText));
+    const label2 = document.createElement("label");
+    label2.className = "qb-support-toggle qb-support-switch";
+    label2.appendChild(input);
+    label2.appendChild(makeSpan(labelText));
     const track = document.createElement("span");
     track.className = "qb-support-switch-track";
-    label.appendChild(track);
-    return { label, input };
+    label2.appendChild(track);
+    return { label: label2, input };
   }
-  function createOverlaySelect(options, className) {
+  function createOverlaySelect(options2, className) {
     const select = document.createElement("select");
     select.className = `qb-support-select qb-support-select-overlay qb-support-select-pill${className ? ` ${className}` : ""}`;
-    options.forEach(({ value, label }) => {
+    options2.forEach(({ value, label: label2 }) => {
       const option = document.createElement("option");
       option.value = value;
-      option.textContent = label;
+      option.textContent = label2;
       select.appendChild(option);
     });
     return select;
@@ -6311,13 +6513,13 @@ ${serializeReflectionList(nested, depth + 1)}`;
     }
     if (action === "option") {
       if (index === null) return;
-      const options = getOptionElements(document);
-      if (options.length <= index) return;
-      const clickable = getClickableOptionElement(options[index]);
+      const options2 = getOptionElements(document);
+      if (options2.length <= index) return;
+      const clickable = getClickableOptionElement(options2[index]);
       console.log("[QB_SUPPORT][option-target]", {
         key,
         index,
-        optionCount: options.length,
+        optionCount: options2.length,
         target: describeElement(clickable),
         meta: describeElementMeta(clickable),
         url: location.href,
@@ -6325,13 +6527,13 @@ ${serializeReflectionList(nested, depth + 1)}`;
         source
       });
       if (!clickable) return;
-      const beforeState = getOptionState(options[index]);
+      const beforeState = getOptionState(options2[index]);
       void (async () => {
         const ok = await clickWithCdp(clickable, "option");
         if (!ok) clickWithFallback(clickable, { tag: "option", logAlways: true });
       })();
       window.setTimeout(() => {
-        const afterState = getOptionState(options[index]);
+        const afterState = getOptionState(options2[index]);
         console.log("[QB_SUPPORT][option-effect]", {
           key,
           before: beforeState,
@@ -6662,9 +6864,9 @@ ${serializeReflectionList(nested, depth + 1)}`;
       }, timeoutMs);
     });
   }
-  function clickWithFallback(target, options) {
-    const tag = options?.tag;
-    const logAlways = options?.logAlways ?? false;
+  function clickWithFallback(target, options2) {
+    const tag = options2?.tag;
+    const logAlways = options2?.logAlways ?? false;
     const events = ["pointerdown", "mousedown", "pointerup", "mouseup"];
     for (const type of events) {
       const event = createPointerLikeEvent(type);

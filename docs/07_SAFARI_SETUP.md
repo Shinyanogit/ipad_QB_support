@@ -58,6 +58,17 @@ xcrun safari-web-extension-converter safari/extension
 - Safari専用の修正を入れる場合は、`extension/` に反映してから生成するか、生成後に `safari/extension` を編集してください
 - デバッグログは設定の `debugEnabled` がONのときのみ出力されます
 
+## Airでのビルドと配備（2026-11-03）
+mini の Xcode には Apple のアカウントが無く署名できないので、iPad 版は MacBook Air で作る。
+1. mini で `npm run build:ext` → `./scripts/prepare-safari-extension.sh`
+2. `rsync -a --delete --exclude .git --exclude node_modules --exclude backend --exclude '参考にしたいページ' --exclude build --exclude '.env*' --exclude build_only.command ./ air-ts:qbsupport-ipad/`
+3. `ssh air-ts 'open ~/qbsupport-ipad/build_only.command'`（GUIセッションで xcodebuild を走らせる。署名に login keychain が要るため SSH から直接は走らせない）。ログは Air の `~/qbsupport-ipad-build.log`、最後に `build exit=0`
+4. `ssh air-ts` で `xcrun devicectl device install app --device 70544873-D9E6-5A89-862C-903CB8E32674 "build/DerivedData/Build/Products/Debug-iphoneos/QB Support.app"`。初回は Connection reset で失敗しがちなので再試行する
+
+落とし穴: Xcode プロジェクト `QB Support/` は `.gitignore` 対象で、git に入っていない。2026-11-03 に次の2点を直した（mini の作業コピーと Air の写しのみ）。
+- `Shared (App)/IAPConfig.swift` と `SubscriptionManager.swift` が project に未登録で `cannot find 'SubscriptionManager' in scope`。両 App ターゲットの Sources に登録した
+- `SubscriptionManager.swift` が `Transaction.jwsRepresentation` を参照してビルド不可。JWS は `VerificationResult` 側にあるので、`.verified` を取り出す箇所から `jws` を受け渡す形にした
+
 ## 更新時
 - 変更後は `npm run build:ext` → `./scripts/prepare-safari-extension.sh`
 - 生成済みのXcodeプロジェクトにファイルを上書きするか、再変換してください

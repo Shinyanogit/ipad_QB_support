@@ -4,6 +4,7 @@
 - `src/`
   - `core/` : DOM抽出・設定解釈などの純粋ロジック
     - `moshiDom.ts` : MM模試の問題情報抽出と振り返り欄挿入位置の検出
+    - `qbCopy.ts` : コピー用の問題・選択肢・正解・解説の抽出と文面。UW Support の `qb_adapter.js` と `chat_core.js` の `fullText` から移植し、出力を一字一句そろえる
   - `lib/webext.ts` : `chrome`/`browser` 互換ラッパー
   - `content.ts` : UI注入・DOM監視・チャット/認証/設定同期
   - `background.ts` : CDPクリック/Chat API呼び出し/Google OAuthトークン取得
@@ -35,6 +36,7 @@
 17. ユーザー確認済みのA-14現行IDだけを旧データの確定所有先として保護する。それ以外の現行IDに、確認済みA-14本文断片、旧問題名の画像マーカー／画像ストア名、または旧レコードと同一本文が存在する場合は、過去バージョンによる誤配属として読み込み時に抑止する。保存値自体は削除しない
 18. 振り返りの書式バーと`Cmd/Ctrl+B/I/U`・`Cmd/Ctrl+Shift+S`はcontenteditableの選択へインライン書式を適用し、inputイベントから既存の自動保存へ流す。本文はMarkdownへ直列化し、再表示時に書式DOMへ復元する
 19. 行頭の`- `／`* `／`+ `／`1. `をリストDOMへ変換し、Tab／Shift+Tabは`li`を親項目配下／親階層へDOM移動する。`ul`／`ol`は2スペース単位のネストMarkdownへ直列化し、読込時に同じリスト階層へ復元する
+20. コピーキー（既定 `Y`）と右下のボタンは、トップ文書で `qbCopy.ts` の `readCopyQuestion` と `copyText` を同期的に呼び、`navigator.clipboard.writeText` に渡す（Safari でユーザー操作の扱いが切れないよう await を挟まない）。失敗時は textarea と `execCommand('copy')`。UW Support のドック（`#uw-support-chat`）がある間はボタンを出さない。両拡張の自前UIは明示したid/classの一覧で除外し（`qb-support` 前方一致は body のクラスに当たるので使わない）、解説の文字からも振り返り欄などの自前UIの文字を差し引く
 
 ## 振り返り → Anki準備
 - `core/reflection.ts` が問題識別、保存レコード生成、最大件数の整理を担当する。

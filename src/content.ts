@@ -31,6 +31,7 @@ import {
   QB_REFLECTION_PDF_ID,
   QB_REFLECTION_STORAGE_KEY,
 } from "./core/reflection";
+import { copyText, readCopyQuestion } from "./core/qbCopy";
 import {
   detectMoshiLegacyContamination,
   extractMoshiReflectionData,
@@ -232,6 +233,8 @@ let themeToggle: HTMLInputElement | null = null;
 let navPrevInput: HTMLInputElement | null = null;
 let navNextInput: HTMLInputElement | null = null;
 let revealInput: HTMLInputElement | null = null;
+let copyInput: HTMLInputElement | null = null;
+let copyButton: HTMLButtonElement | null = null;
 let optionInputs: HTMLInputElement[] = [];
 let authProfile: AuthProfile | null = null;
 let authStatusField: HTMLElement | null = null;
@@ -1141,10 +1144,12 @@ function ensureUI() {
   const navPrevField = buildKeyField("前へ");
   const navNextField = buildKeyField("次へ");
   const revealField = buildShortcutField("解答", "例: Ctrl+S");
+  const copyField = buildShortcutField("問題と解説をコピー", "例: Y");
 
   navPrevInput = navPrevField.input;
   navNextInput = navNextField.input;
   revealInput = revealField.input;
+  copyInput = copyField.input;
 
   const optionsWrap = document.createElement("div");
   optionsWrap.className = "qb-support-options";
@@ -1173,6 +1178,7 @@ function ensureUI() {
   shortcutSection.appendChild(navPrevField.label);
   shortcutSection.appendChild(navNextField.label);
   shortcutSection.appendChild(revealField.label);
+  shortcutSection.appendChild(copyField.label);
   shortcutSection.appendChild(optionsWrap);
 
   const templateSection = document.createElement("div");
@@ -2498,6 +2504,7 @@ async function commitSettingsFromPanel() {
       applyUpdate("navPrevKey", navPrevKey);
       applyUpdate("navNextKey", navNextKey);
       applyUpdate("revealKey", revealKey);
+      applyUpdate("copyKey", normalizeShortcut(copyInput?.value ?? "") || defaultSettings.copyKey);
       applyUpdate("optionKeys", optionKeys);
       if (shortcutsToggle) {
         applyUpdate("shortcutsEnabled", shortcutsToggle.checked);
@@ -3635,6 +3642,7 @@ function applySettings() {
   if (navPrevInput) navPrevInput.value = settings.navPrevKey;
   if (navNextInput) navNextInput.value = settings.navNextKey;
   if (revealInput) revealInput.value = settings.revealKey;
+  if (copyInput) copyInput.value = settings.copyKey;
   if (themeToggle) {
     const prefersDark = themeQuery?.matches ?? window.matchMedia("(prefers-color-scheme: dark)").matches;
     const isDark =
@@ -3696,9 +3704,82 @@ function refreshQuestionInfo() {
   if (window === window.top) {
     captureQuestionImageBaseSizes();
     void syncReflectionPanel("refresh");
+    syncCopyButton();
   }
   updateHintQuickButton();
   scheduleContentThemeRepair();
+}
+
+// One tap or the copy key puts the question (and the explanation once shown) on the clipboard, in the
+// same text as UW Support's QB copy. UW Support's dock already shows that button, so skip ours there.
+function syncCopyButton() {
+  const visible =
+    settings.enabled && !document.getElementById("uw-support-chat") && !!readCopyQuestion(document);
+  if (!visible) {
+    if (copyButton) copyButton.hidden = true;
+    return;
+  }
+  if (!copyButton || !copyButton.isConnected) {
+    copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "qb-support-copy-button";
+    copyButton.title = "問題と解説をコピー";
+    copyButton.setAttribute("aria-label", "問題と解説をコピー");
+    copyButton.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>';
+    copyButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      copyCurrentQuestion();
+    });
+    document.body.appendChild(copyButton);
+  }
+  copyButton.hidden = false;
+}
+
+// Built and written synchronously so Safari keeps the key press or tap as the clipboard's user gesture.
+function copyCurrentQuestion() {
+  const question = readCopyQuestion(document);
+  if (!question) {
+    showCopyToast("問題を読み込めません", false);
+    return;
+  }
+  const text = copyText(question);
+  const done = (ok: boolean) =>
+    showCopyToast(
+      ok ? (question.answered ? "問題と解説をコピーしました" : "問題をコピーしました") : "コピーできません",
+      ok
+    );
+  const fallback = () => {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.className = "qb-support-copy-buffer";
+    document.body.appendChild(area);
+    area.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch {
+      // Reported below.
+    }
+    area.remove();
+    done(ok);
+  };
+  try {
+    navigator.clipboard.writeText(text).then(() => done(true), fallback);
+  } catch {
+    fallback();
+  }
+}
+
+function showCopyToast(message: string, ok: boolean) {
+  document.querySelector(".qb-support-copy-toast")?.remove();
+  const toast = document.createElement("div");
+  toast.className = `qb-support-copy-toast${ok ? "" : " is-error"}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 2400);
 }
 
 function captureQuestionImageBaseSizes() {
@@ -5760,6 +5841,17 @@ function attachEventHandlers() {
       if (CHAT_ENABLED && isShortcutMatch(event, CHAT_TOGGLE_SHORTCUT) && window === window.top) {
         consumeShortcutEvent(event);
         void saveSettings({ ...settings, chatOpen: !settings.chatOpen });
+        return;
+      }
+
+      if (
+        window === window.top &&
+        !event.repeat &&
+        (isShortcutMatch(event, settings.copyKey) ||
+          isPlainShortcutMatch(event, settings.copyKey, eventBaseKey))
+      ) {
+        consumeShortcutEvent(event);
+        copyCurrentQuestion();
         return;
       }
 

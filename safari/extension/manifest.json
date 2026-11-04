@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "QB Support",
-  "version": "0.1.0",
-  "description": "QBオンライン問題演習ページ向けの学習支援パネル",
+  "version": "0.1.24",
+  "description": "QBオンラインとMM医師国試模試向けの学習支援パネル",
   "permissions": ["storage"],
   "host_permissions": [
     "https://qb.medilink-study.com/*",
     "https://input.medilink-study.com/*",
+    "https://moshi.medilink-study.com/*",
     "https://api.openai.com/*",
     "https://ipad-qb-support-400313981210.asia-northeast1.run.app/*",
     "https://accounts.google.com/*",
@@ -27,7 +28,8 @@
     {
       "matches": [
         "https://qb.medilink-study.com/*",
-        "https://input.medilink-study.com/*"
+        "https://input.medilink-study.com/*",
+        "https://moshi.medilink-study.com/*"
       ],
       "js": ["content.js"],
       "css": ["content.css"],

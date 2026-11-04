@@ -41,6 +41,7 @@ export interface Settings {
   navPrevKey: string;
   navNextKey: string;
   revealKey: string;
+  copyKey: string;
   optionKeys: string[];
   position: PanelPosition;
   shortcut: string;
