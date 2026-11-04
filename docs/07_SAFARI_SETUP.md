@@ -91,6 +91,18 @@ Air もケーブルも使わずに、QB Support と UW Support を mini で署�
 - 確認済み（2026-11-04）: mini で両アプリを署名してビルドでき、`codesign --verify --deep --strict` が通る。アプリと機能拡張がそれぞれ `mini <バンドルID>` で署名され、UW Support の2つには App Group が入る。`link` のページ、設定ファイル、tailnet 越しの取得、両方送りきった後の自動停止、中断時の `tailscale serve` の後片付けも確認した。リンクから iPad に入れるところは、本人が押した時に確かめる
 - `link` の完了判定は IPA を最後まで送りきった回数で数える。動作確認で自分から IPA を取ると、iPad が取る前に数えられてしまうので、ページか設定ファイルだけを取って確かめる
 
+## QB のページで拡張機能が何も出さない時（2026-11-04）
+- 症状: iPad の Safari で QB の問題ページを開いても、UW Support の白いタブ（右端の真ん中）も、白い丸のコピーボタン（右下）も、左上の設定ボタンも出ない。機能拡張の管理画面では両方オン
+- 原因（消去法で確定。実機では未観察）: 両方の拡張機能が qb.medilink-study.com のサイト別の許可を得ておらず、スクリプトがページに入っていない。Safari は新しいサイトを既定で「確認」にし、許可されるまで注入しない。許可を求める表示はアドレスバーのメニューの中にしか出ないので気づきにくい
+  - UW Support の白いタブは、スクリプトが入れば問題の読み取りやアプリの状態に関係なく必ず出る（`chat_dock.js` の `mount()`）
+  - WebKit 26.6（iPadOS 26.6 と同じ系統）で、QB の問題ページのキャプチャに両方の Safari 版を入れると、タブ、両方のコピー、設定ボタンがすべて出てエラーは0（`scripts/webkit_qb_check.py`）
+  - 同じ時間帯（18:03〜18:28）に、同じ iPad の UW Support が UWorld では動いていた（helper の tailnet-audit に iPad からの `/uw-capture`）
+  - QB のサイトに CSP は無い（ヘッダーにも HTML にも無い）。スタイルが止められて見えない説は消えた
+  - 2つの別々の拡張機能に共通するのは Safari のサイト別の許可だけで、どちらも QB は新しいサイト（QB Support は 11-03 に初めて入れた、UW Support は 1.6.32 で QB を足した）
+- 直し方（本人が拡張機能ごとに1回）: 設定 > アプリ > Safari > 機能拡張 > QB Support と UW_SUPPORT のそれぞれで、`qb.medilink-study.com`（または「その他の Web サイト」）を「許可」にする。または QB のページでアドレスバーのメニューから各拡張機能を「常に許可」。その後ページを再読み込み
+- 後で実機で確かめる印: `html[data-qb-support-injected="true"]` と `#qb-support-marker`（QB Support が設定の読み込み前に付ける）、`#uw-support-chat`（UW Support のドックの土台）。Web インスペクタで見られる
+- astra の調査（gpt-6-astra high、読み取り専用）も同じ順位だった。astra の修正案のうち、UW Support の API 呼び出し形式を変える2つは不要（同じコードが iPad の UWorld で動いている）。QB Support のコピーボタンを「UW Support のコピーボタンが本当に見えているか」で隠す案は、別件の守りとして TODO に置いた
+
 ## 更新時
 - 変更後は `npm run build:ext` → `./scripts/prepare-safari-extension.sh`
 - 生成済みのXcodeプロジェクトにファイルを上書きするか、再変換してください

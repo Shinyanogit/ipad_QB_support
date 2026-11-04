@@ -175,6 +175,8 @@
 - 課金を使うなら: App Store Connect にアプリとサブスク商品を登録し、ID を `IAPConfig.productId` と backend の `APPLE_SUBSCRIPTION_PRODUCT_ID` に入れる。確認は TestFlight か sandbox アカウントで（実購入はしない）
 - mini から iPad へ入れる（`scripts/mini_install.py`、手順は `07_SAFARI_SETUP.md`）: 2026-11-04 に契約への同意、App ID の登録、プロファイル4つの作成、mini での署名ビルドまで済んだ。残りは、リンクから iPad に入れるところを本人が一度押して確かめること。以後は `link` が普段の入れ方（Air もケーブルも使わない）
 - Air や mini の devicectl から iPad が見えない時: 施設の Wi-Fi はマルチキャストを止めることが多く、同じ Wi-Fi でも見つからない。ケーブルを前提にしない（本人の指示）。リンク方式（`mini_install.py link`）を使う
+- QB のページで両方の拡張機能が何も出さない（2026-11-04）: サイト別の許可が無いのが原因（`07_SAFARI_SETUP.md`）。本人が両方を「許可」にして再読み込みすれば直る見込み。直ったかは次に本人が QB を開いた時に分かる
+- 守りの改善（急がない）: QB Support の `syncCopyButton` が UW Support のドックの土台があるだけで自分のボタンを隠すのをやめ、UW Support のコピーボタンが実際に見えている時だけ隠す（astra 案）。UW Support のアプリ画面にも「QB で使うなら qb.medilink-study.com を許可」と書く（USMLE_support 側）
 - Xcode プロジェクト `QB Support/` を git に入れるか決める（11-03 の2件と 11-04 の1件の修正が mini の作業コピーにしか無い）
 - 新UI修正後のAtlas実機確認（拡張リロード → QBタブ再読み込み → `key-capture` / `action-local` / 各targetログを確認）
 - 明るい背景を持つ解説カードが黒背景・白文字・白系罫線になることをAtlas実機確認（`[QB_SUPPORT][theme] normalized light explanation surfaces` はdebug有効時のみ）
