@@ -59,7 +59,7 @@ xcrun safari-web-extension-converter safari/extension
 - デバッグログは設定の `debugEnabled` がONのときのみ出力されます
 
 ## Airでのビルドと配備（2026-11-03）
-mini の Xcode には Apple のアカウントが無く、Xcode の自動署名では作れないので、iPad 版は MacBook Air で作る。mini で API キーの証明書を使って入れる道は下の「mini から iPad へ入れる」（契約への同意待ち）。
+mini の Xcode には Apple のアカウントが無く、Xcode の自動署名では作れないので、iPad 版は MacBook Air で作る。2026-11-04 からは mini で入れられる（下の「mini から iPad へ入れる」）。
 1. mini で `npm run build:ext` → `./scripts/prepare-safari-extension.sh`
 2. `rsync -a --delete --exclude .git --exclude node_modules --exclude backend --exclude '参考にしたいページ' --exclude build --exclude '.env*' --exclude build_only.command ./ air-ts:qbsupport-ipad/`
 3. `ssh air-ts 'open ~/qbsupport-ipad/build_only.command'`（GUIセッションで xcodebuild を走らせる。署名に login keychain が要るため SSH から直接は走らせない）。ログは Air の `~/qbsupport-ipad-build.log`、最後に `build exit=0`
@@ -77,7 +77,7 @@ mini の Xcode には Apple のアカウントが無く、Xcode の自動署名�
 - 検証: mini で `xcodebuild -project "QB Support/QB Support.xcodeproj" -scheme "QB Support (iOS)" -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` が成功。iPad シミュレータで案内文が出てボタンが消えることを確認。共有の Swift は macOS 版にも入るので macOS scheme もビルドした。macOS 版は project の `MACOSX_DEPLOYMENT_TARGET` が 10.14 のままで今の Xcode（12.0 以上）では元から通らず、コマンドラインで `MACOSX_DEPLOYMENT_TARGET=12.0` を渡すと成功する（project は未変更）
 - 課金を本当に使う時: App Store Connect にアプリ（`com.shinyyama.qb-support`）とサブスク商品を登録し（有料アプリ契約が有効で、商品は最低でも Ready to Submit）、その ID を `IAPConfig.productId` と backend の `APPLE_SUBSCRIPTION_PRODUCT_ID` に入れる。Air から devicectl で入れた開発署名のアプリは sandbox を見るので、商品が出るかは TestFlight か sandbox アカウントで確かめる。`.storekit` 設定ファイルは Xcode から実行した時だけ効き、devicectl で入れたアプリには効かない
 
-## mini から iPad へ入れる（2026-11-04 準備、契約への同意待ち）
+## mini から iPad へ入れる（2026-11-04 から使える）
 Air もケーブルも使わずに、QB Support と UW Support を mini で署名して iPad に入れるための `scripts/mini_install.py`。
 - 署名: mini の Xcode に Apple ID は無いが、USMLE_qbank_web の `app/scripts/mini_signing.py` がチームの App Store Connect API キー（U7JT3699P2）で作った開発証明書（チーム 8WSQBQX6C5、2027-10-09 まで）が鍵束 `~/Library/Keychains/qbank-build.keychain-db` にある。これを使い回し、バンドルIDごとに `mini <バンドルID>` という開発プロファイルを API で作る。手動署名で `PROVISIONING_PROFILE_SPECIFIER=mini $(PRODUCT_BUNDLE_IDENTIFIER)` を渡すので、アプリと機能拡張がそれぞれのプロファイルを使う
 - 同じチームとバンドルIDなので、Air で入れたアプリの上書きになり、App Group のデータは残る
@@ -85,10 +85,11 @@ Air もケーブルも使わずに、QB Support と UW Support を mini で署�
 - **普段は `link`**（ケーブルも同じ Wi-Fi も要らない）: 署名したアプリを IPA にまとめ、https://mini.taild5aa65.ts.net:19795/ で tailnet 内だけに配る（Funnel は使わない。UW Support には Gemini キーが入っている）。本人は iPad の Safari でそのページを開き、各ボタンを押して「インストール」を押すだけ。両方の IPA が取られたら配信を止め、`tailscale serve` の設定も消す。iPad の Tailscale はオンにしておく
 - UW Support は `../../USMLE_support/safari/gemini_api_key.txt`（gitignore）の Gemini キーを埋め込む。2026-11-04 に Air から mini へ置いた
 - `install` は devicectl を使うので、iPad が mini と同じネットワーク（マルチキャストが通るもの）にいるか、ケーブルでつながっている時だけ。施設の Wi-Fi はマルチキャストを止めることが多く、2026-11-04 の Air の Wi-Fi（10.100.x.x/16）でも Bonjour の探索に自分以外が何も見えず、Wi-Fi 越しには見つけられなかった。mini は iPad とペアリング済み
-- 止まっている所: `setup` で App Store Connect API が `403 FORBIDDEN_ERROR.PLA_NOT_ACCEPTED` を返す。アカウント保持者が最新の Program License Agreement に同意するまで、プロファイルを作れない。同意は本人が https://developer.apple.com/account にアカウント保持者でサインインし、出てくる契約で「同意」を押す。それだけで、次の `link` が `setup` から自動で進む
+- 2026-11-04 の準備: 本人が最新の Program License Agreement に同意した（それまで API は `403 PLA_NOT_ACCEPTED`）。`setup` で QB Support の App ID 2つ（`com.shinyyama.qb-support` と `.extension`）を登録し、4つのプロファイルを作った（2027-11-04 まで）。QB Support は Air でチーム共通のワイルドカードのプロファイル（`8WSQBQX6C5.*`）で署名されていたので、明示の App ID が無かった。`setup` は未登録のバンドルIDを自分で登録する。プロファイルが切れる前に `setup` をやり直す
 - 同意の後の確かめ方: `setup` の後の `status` で、UW Support の2つのプロファイルの application-groups に `group.com.shinyyama.uwsupport` が出ること（QB Support は空でよい）。空なら開発者サイトで `com.shinyyama.uwsupport` と `.extension` の App ID に App Groups を付け、その2つのプロファイルを消して `setup` をやり直す。最初は entitlements の無い `install qb` で全体の流れを確かめる
 - 無効になった同名のプロファイルが残っていると、`setup` が同じ名前で作り直し、xcodebuild が名前の重複で迷う。先に開発者サイトで古い方を消す
-- 確認済み: mini で両アプリとも署名なしのビルドは成功（UW Support は Gemini キー入り）。`build qb` はプロファイルが無いので署名で止まり、アプリと機能拡張がそれぞれ `mini com.shinyyama.qb-support` と `mini com.shinyyama.qb-support.extension` を探すことを確認した。署名と実機へのインストールは、プロファイルができるまで未確認。`link` の IPA 作成と配信は、Air で署名済みのアプリを使って確かめた（ページ、設定ファイル、アイコン、IPA が tailnet 越しに取れ、両方取られた後に配信と `tailscale serve` の設定が消えた）。リンクから iPad に入れるところは、まだ一度も通していない
+- 確認済み（2026-11-04）: mini で両アプリを署名してビルドでき、`codesign --verify --deep --strict` が通る。アプリと機能拡張がそれぞれ `mini <バンドルID>` で署名され、UW Support の2つには App Group が入る。`link` のページ、設定ファイル、tailnet 越しの取得、両方送りきった後の自動停止、中断時の `tailscale serve` の後片付けも確認した。リンクから iPad に入れるところは、本人が押した時に確かめる
+- `link` の完了判定は IPA を最後まで送りきった回数で数える。動作確認で自分から IPA を取ると、iPad が取る前に数えられてしまうので、ページか設定ファイルだけを取って確かめる
 
 ## 更新時
 - 変更後は `npm run build:ext` → `./scripts/prepare-safari-extension.sh`

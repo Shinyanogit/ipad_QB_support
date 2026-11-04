@@ -116,9 +116,9 @@ def setup():
         for bundle in app['bundles']:
             p = profiles.get(profile_name(bundle))
             if not p or p['attributes']['profileState'] != 'ACTIVE':
-                b = bundle_id(bundle)
-                if not b:
-                    sys.exit(f'{bundle} is not registered on the account')
+                # QB Support was signed with the team wildcard profile on the Air, so its explicit App IDs did not exist.
+                b = bundle_id(bundle) or call('POST', '/v1/bundleIds', {'data': {'type': 'bundleIds', 'attributes': {
+                    'identifier': bundle, 'name': bundle.replace('.', ' '), 'platform': 'IOS'}}})['data']
                 p = call('POST', '/v1/profiles', {'data': {'type': 'profiles', 'attributes': {
                     'name': profile_name(bundle), 'profileType': 'IOS_APP_DEVELOPMENT'}, 'relationships': {
                     'bundleId': {'data': {'type': 'bundleIds', 'id': b['id']}},
@@ -218,7 +218,11 @@ def serve(labels, port=OTA_PORT, timeout=3600):
 
         def log_request(self, code='-', size='-'):
             print(time.strftime('%H:%M:%S'), self.command, self.path, code, flush=True)
-            if str(code) == '200' and self.command == 'GET':
+
+        def do_GET(self):
+            super().do_GET()  # raises if the connection drops mid-file, so only whole downloads count
+            if self.path in pending:
+                print(time.strftime('%H:%M:%S'), 'sent whole', self.path, flush=True)
                 pending.discard(self.path)
 
     server = http.server.ThreadingHTTPServer(('127.0.0.1', port), functools.partial(Handler, directory=str(OTA_DIR)))

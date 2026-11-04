@@ -173,7 +173,7 @@
 - [x] iPadへの再配備（2026-11-04 17:30）: Air で QB Support を今日の修正込みで作り直し、UW Support 1.6.33（ビルド 20261103091516）と一緒に、Air とケーブルでつないで devicectl で入れた（どちらも1回目で成功、iPad のアプリ一覧で確認）。Air の Wi-Fi 越しには iPad を見つけられなかった（マルチキャストが止まっていた）
 - iPad の QB でコピーボタンが出ない（2026-11-04 報告）: iPad の拡張がどちらもボタン追加前の版（UW Support 1.6.32、QB Support 0.1.23）のため。UW Support 1.6.33 と QB Support 0.1.24 は 11-03 に Air でビルド済みだが、インストールは iPad が見つからず（CoreDevice error 1011）失敗したまま。UW Support のドック（`#uw-support-chat`）がある間は QB Support のボタンを出さない設計なので、UW Support 1.6.33 も一緒に入れないとボタンは出ない。2026-11-04 17:30 に両方入れたので解消の見込み。本人に確認してもらう項目は FORshinya の 2026-11-04 の節
 - 課金を使うなら: App Store Connect にアプリとサブスク商品を登録し、ID を `IAPConfig.productId` と backend の `APPLE_SUBSCRIPTION_PRODUCT_ID` に入れる。確認は TestFlight か sandbox アカウントで（実購入はしない）
-- mini から iPad へ入れる（`scripts/mini_install.py`、手順は `07_SAFARI_SETUP.md`）: 本人が https://developer.apple.com/account で最新の Program License Agreement に同意すれば、あとは `link` で `setup` から自動で進み、iPad はリンクを開いて「インストール」を押すだけになる。2026-11-04 時点は API が `PLA_NOT_ACCEPTED` で止まる。同意の後、最初の `link` で署名とリンクからのインストールを通して確かめる
+- mini から iPad へ入れる（`scripts/mini_install.py`、手順は `07_SAFARI_SETUP.md`）: 2026-11-04 に契約への同意、App ID の登録、プロファイル4つの作成、mini での署名ビルドまで済んだ。残りは、リンクから iPad に入れるところを本人が一度押して確かめること。以後は `link` が普段の入れ方（Air もケーブルも使わない）
 - Air や mini の devicectl から iPad が見えない時: 施設の Wi-Fi はマルチキャストを止めることが多く、同じ Wi-Fi でも見つからない。ケーブルを前提にしない（本人の指示）。リンク方式（`mini_install.py link`）を使う
 - Xcode プロジェクト `QB Support/` を git に入れるか決める（11-03 の2件と 11-04 の1件の修正が mini の作業コピーにしか無い）
 - 新UI修正後のAtlas実機確認（拡張リロード → QBタブ再読み込み → `key-capture` / `action-local` / 各targetログを確認）
