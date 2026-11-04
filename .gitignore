@@ -6,3 +6,4 @@ backend/node_modules/
 FOR*.md
 .env
 .env.*
+build/

@@ -173,6 +173,8 @@
 - iPadへの再配備（2026-11-04 のアプリ画面修正と 0.1.24 をまとめて入れる）: Air がオンラインになったら `07_SAFARI_SETUP.md` の「Airでのビルドと配備」1〜4。入れた後、アプリを開いて案内文が出て購入・復元ボタンが無いこと、Safari の QB で `Y` コピーが動くことを本人が確認する
 - iPad の QB でコピーボタンが出ない（2026-11-04 報告）: iPad の拡張がどちらもボタン追加前の版（UW Support 1.6.32、QB Support 0.1.23）のため。UW Support 1.6.33 と QB Support 0.1.24 は 11-03 に Air でビルド済みだが、インストールは iPad が見つからず（CoreDevice error 1011）失敗したまま。UW Support のドック（`#uw-support-chat`）がある間は QB Support のボタンを出さない設計なので、UW Support 1.6.33 も一緒に入れないとボタンは出ない。本人に確認してもらう項目は FORshinya の 2026-11-04 の節
 - 課金を使うなら: App Store Connect にアプリとサブスク商品を登録し、ID を `IAPConfig.productId` と backend の `APPLE_SUBSCRIPTION_PRODUCT_ID` に入れる。確認は TestFlight か sandbox アカウントで（実購入はしない）
+- mini から iPad へ入れる（`scripts/mini_install.py`、手順は `07_SAFARI_SETUP.md`）: 本人が https://developer.apple.com/account で最新の Program License Agreement に同意した後、`setup` で開発プロファイル4つを作り、`install` で両アプリを入れて確かめる。2026-11-04 時点は API が `PLA_NOT_ACCEPTED` で止まる
+- Air から iPad が見えない時: Air が施設の Wi-Fi（10.100.x.x/16 など）にいると端末同士の通信が遮断されうる。USB-C ケーブルでつなぐ
 - Xcode プロジェクト `QB Support/` を git に入れるか決める（11-03 の2件と 11-04 の1件の修正が mini の作業コピーにしか無い）
 - 新UI修正後のAtlas実機確認（拡張リロード → QBタブ再読み込み → `key-capture` / `action-local` / 各targetログを確認）
 - 明るい背景を持つ解説カードが黒背景・白文字・白系罫線になることをAtlas実機確認（`[QB_SUPPORT][theme] normalized light explanation surfaces` はdebug有効時のみ）
