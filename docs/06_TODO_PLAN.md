@@ -18,7 +18,8 @@
 - 新 `/quiz?question_id=...` UIのトップ文書DOM検出
 - 新UIの `A`〜`G` / `S` / 左右キー操作と旧設定の自動移行
 - 新UIのTailwind utility class向けダークモード
-- 問題と解説のコピー（2026-11-03、0.1.24）: `Y`キー（設定の「ショートカット」で変更可）と右下の丸いボタンで、問題文と選択肢（解答前はヒント依頼文つき）、解答後は正解・自分の解答（違う時のみ）・解説全文をコピー。抽出と文面は `src/core/qbCopy.ts`。UW Support（`../../USMLE_support/qb_adapter.js` + `chat_core.js` の `fullText`）と一字一句同じ文面になるよう移植し、`tests/copy_text.test.mjs`（`npm test`）と UW Support 側のテストが同じ期待文面を持つ。miniのChromeのQB実画面で、本拡張の抽出コードを注入した出力とUW Supportのコピーが一致（7,168字）することを確認。UW Supportと同居する時は、キーはUW Supportが先に処理し、本拡張のボタンは `#uw-support-chat` がある間は出さない
+- 問題と解説のコピー（2026-11-03、0.1.24）: `Y`キー（設定の「ショートカット」で変更可）と右下の丸いボタンで、問題文と選択肢（解答前はヒント依頼文つき）、解答後は正解・自分の解答（違う時のみ）・解説全文をコピー。抽出と文面は `src/core/qbCopy.ts`。UW Support（`../../USMLE_support/qb_adapter.js` + `chat_core.js` の `fullText`）と一字一句同じ文面になるよう移植し、`tests/copy_text.test.mjs`（`npm test`）と UW Support 側のテストが同じ期待文面を持つ。miniのChromeのQB実画面で、本拡張の抽出コードを注入した出力とUW Supportのコピーが一致（7,168字）することを確認。UW Supportと同居する時は、キーはUW Supportが先に処理し、本拡張のボタンはUW Supportのコピーボタンが見えている間は出さない（0.1.25）
+- [x] 解答前のコピーを分かりやすく（2026-11-04 夜、0.1.26 と UW Support 1.6.35）: 本人の要望「問題の段階でもコピーしたい」。解答前のコピーはもともとできたが、UW Support のボタンは問題画像の取り込みを待ってから出ていたので、画像のある問題で解答前に出ないことがあった。UW Support はページの読み取り結果でボタンを出すようにし、両方のボタンの名前を解答前は「問題をコピー Y」、解答後は「問題と解説をコピー Y」にした。キーは既存の `Y` のまま、両方のアプリ画面と docs に書いた。詳細と判別テストは `07_SAFARI_SETUP.md`
 - iPadへの初インストール（2026-11-03、0.1.23）: MacBook Air の `~/qbsupport-ipad` で `build_only.command` をGUIセッションから開いてビルドし、`xcrun devicectl device install app` で入れた。手順は `07_SAFARI_SETUP.md` の「Airでのビルドと配備」
 - アプリ画面の「商品情報を取得中…」止まり（2026-11-04 報告。iPad の QB Support は 11-03 17:26 JST に入れた 0.1.23。報告にあったビルド 20261103061110 は UW Support 1.6.32 の番号）: 商品IDが未設定のプレースホルダで毎回起きる表示の不具合で、拡張機能の動作は止めていない。未設定の間は購入・復元を隠し、機能拡張のオンにし方を常に出すよう直した（Xcode プロジェクトは git 外。詳細は `07_SAFARI_SETUP.md` の落とし穴）
 - トップ文書優先・明示iframe限定のアクション配送と二重クリック解消

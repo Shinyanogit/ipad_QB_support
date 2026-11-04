@@ -19,6 +19,10 @@ Scenarios (--matrix runs them all and prints one row each):
   no-css          the site's CSS is not served
   root-transform  html and body get transform and filter (containing block changes for fixed UI)
   qb-panel-closed QB Support alone with its settings panel saved as closed (enabled: false)
+  stem-image-stalled  the question has an image whose fetch through the background never answers
+  copy-before     both extensions, then the shown copy button is tapped and Y is pressed before answering;
+                  prints what reached the clipboard
+  copy-after      like copy-before, but an answer box and an explanation are added first (the page after answering)
 
 Three things made the first runs lie: the saved site JS re-rendered the page and lost the question (so it is blocked),
 CSS served without text/css was not applied, and a promise-only API stub never called chat_dock.js's callbacks (Safari's
@@ -33,7 +37,7 @@ UW = next((ROOT / 'USMLE_support/safari/build/DerivedData-mini/Build/Products/De
 QB = next((ROOT / 'ipad拡張機能/QB_support/build/DerivedData-mini/Build/Products/Debug-iphoneos/QB Support.app/PlugIns').glob('*.appex'))
 UW_FILES = ['build_config.js', 'note_search_transport.js', 'qb_adapter.js', 'content.js', 'chat_core.js', 'chat_dock.js']
 SCENARIOS = ['both', 'uw-only', 'qb-only', 'none', 'browser-only', 'promise-only', 'stalled-storage', 'hide-uw',
-             'no-choices', 'no-css', 'root-transform', 'qb-panel-closed']
+             'no-choices', 'no-css', 'root-transform', 'qb-panel-closed', 'stem-image-stalled', 'copy-before', 'copy-after']
 
 STUB = r"""
 (() => {
@@ -46,7 +50,8 @@ STUB = r"""
   const ev = () => ({ addListener() {}, removeListener() {}, hasListener() { return false; } });
   const never = () => new Promise(() => {});
   const api = {
-    runtime: { id: 'stub', getURL: p => 'safari-web-extension://stub/' + p, sendMessage: async () => ({}), sendNativeMessage: async () => ({}),
+    runtime: { id: 'stub', getURL: p => 'safari-web-extension://stub/' + p,
+               sendMessage: async m => MODE === 'stem-image-stalled' && m && m.action === 'fetchImage' ? never() : ({}), sendNativeMessage: async () => ({}),
                connect: () => ({ name: 'stub', postMessage() {}, disconnect() {}, onMessage: ev(), onDisconnect: ev() }),
                onMessage: ev(), lastError: undefined, getManifest: () => ({ version: 'stub' }) },
     storage: { local: { get: async k => { if (k == null) return { ...store }; const ks = Array.isArray(k) ? k : typeof k === 'string' ? [k] : Object.keys(k);
@@ -65,6 +70,10 @@ STUB = r"""
   }
   window.browser = api;
   if (MODE !== 'browser-only') window.chrome = api;
+  if (MODE === 'stem-image-stalled') document.addEventListener('DOMContentLoaded', () => document.querySelector('.question-content .body')
+    ?.insertAdjacentHTML('beforeend', '<img src="https://qb.medilink-study.com/stall.png" width="40" height="40">'), true);
+  if (MODE === 'copy-before' || MODE === 'copy-after') { window.__copied = [];
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: t => { window.__copied.push(t); return Promise.resolve(); } } }); }
   if (MODE === 'no-choices') document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.multiple-answer-options').forEach(n => n.remove()), true);
 })();
 """
@@ -79,7 +88,7 @@ MEASURE = """() => {
     for (let n = el; n; n = n.parentElement || n.getRootNode().host) { const s = getComputedStyle(n);
       if (s.display === 'none' || s.visibility !== 'visible' || Number(s.opacity) === 0) return false; }
     return true; };
-  const box = el => el ? (r => ({ x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), shown: shown(el) }))(el.getBoundingClientRect()) : null;
+  const box = el => el ? (r => ({ x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), shown: shown(el), label: el.getAttribute('aria-label') }))(el.getBoundingClientRect()) : null;
   return { bridge: !!globalThis.UWSupportBridge, qbank: !!globalThis.UWSupportQbank, qbMarker: document.documentElement.dataset.qbSupportInjected === 'true',
            host: !!host, tab: box(tab), copyUw: box(copyUw), copyQb: box(copyQb),
            qbTheme: document.documentElement.dataset.qbTheme || null, errs: window.__errs || [], csp: window.__csp || [] };
@@ -123,7 +132,20 @@ def run(browser, scenario, html, files_dir, url, shots, wait=4000):
     if scenario == 'hide-uw':
         page.evaluate("() => { const h = document.getElementById('uw-support-chat'); if (h) h.style.display = 'none'; }")
         page.wait_for_timeout(1500)
+    if scenario == 'copy-after':
+        page.evaluate("""() => { document.getElementById('answerSection')?.insertAdjacentHTML('afterbegin', '<div>正解：c</div>');
+          document.querySelector('.question-content')?.insertAdjacentHTML('afterend', '<div id="resultcontent"><p>解説</p><p>心窩部から右下腹部へ移る痛みは虫垂炎を疑う。</p></div>'); }""")
+        page.wait_for_timeout(1500)
     state = page.evaluate(MEASURE)
+    if scenario in ('copy-before', 'copy-after'):
+        page.evaluate("""() => { const uw = document.getElementById('uw-support-chat')?.shadowRoot?.getElementById('copy-question');
+          const qb = document.querySelector('.qb-support-copy-button'); (uw && !uw.hidden ? uw : qb)?.click(); }""")
+        page.wait_for_timeout(300)
+        page.mouse.click(400, 300)
+        page.keyboard.press('y')
+        page.wait_for_timeout(300)
+        state['copied'] = [{'length': len(t), 'start': t[:30], 'end': t.splitlines()[-1][:40] if t else ''}
+                           for t in page.evaluate('() => window.__copied || []')]
     state['logs'] = logs[:15]
     if shots:
         page.screenshot(path=str(Path(shots) / f'webkit_qb_{scenario}.png'))
@@ -134,7 +156,8 @@ def row(name, s):
     b = lambda v: 'yes' if v else 'no'
     seen = lambda box: 'none' if box is None else ('shown' if box['shown'] else 'hidden')
     return (f"{name:16} bridge={b(s['bridge']):3} host={b(s['host']):3} tab={seen(s['tab']):6} copyUw={seen(s['copyUw']):6} "
-            f"copyQb={seen(s['copyQb']):6} qbMarker={b(s['qbMarker']):3} errs={len(s['errs'])} csp={len(s['csp'])}")
+            f"copyQb={seen(s['copyQb']):6} qbMarker={b(s['qbMarker']):3} errs={len(s['errs'])} csp={len(s['csp'])}"
+            + (f" copied={s['copied']}" if 'copied' in s else ''))
 
 def main():
     args = sys.argv[1:]

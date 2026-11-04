@@ -4275,8 +4275,8 @@ ${expl}`].filter(Boolean).join("\n\n");
   var uwCopyVisible = false;
   function syncCopyButton() {
     uwCopyVisible = isUwCopyVisible();
-    const visible = !uwCopyVisible && !!readCopyQuestion(document);
-    if (!visible) {
+    const question = uwCopyVisible ? null : readCopyQuestion(document);
+    if (!question) {
       if (copyButton) copyButton.hidden = true;
       return;
     }
@@ -4284,8 +4284,6 @@ ${expl}`].filter(Boolean).join("\n\n");
       copyButton = document.createElement("button");
       copyButton.type = "button";
       copyButton.className = "qb-support-copy-button";
-      copyButton.title = "\u554F\u984C\u3068\u89E3\u8AAC\u3092\u30B3\u30D4\u30FC";
-      copyButton.setAttribute("aria-label", "\u554F\u984C\u3068\u89E3\u8AAC\u3092\u30B3\u30D4\u30FC");
       copyButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>';
       copyButton.addEventListener("click", (event) => {
         event.preventDefault();
@@ -4294,6 +4292,9 @@ ${expl}`].filter(Boolean).join("\n\n");
       });
       document.body.appendChild(copyButton);
     }
+    const title = `${question.answered ? "\u554F\u984C\u3068\u89E3\u8AAC\u3092\u30B3\u30D4\u30FC" : "\u554F\u984C\u3092\u30B3\u30D4\u30FC"} ${settings.copyKey}`;
+    copyButton.title = title;
+    copyButton.setAttribute("aria-label", title);
     copyButton.hidden = false;
   }
   function copyCurrentQuestion() {

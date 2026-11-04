@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "QB Support",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "QBオンラインとMM医師国試模試向けの学習支援パネル(ipad対応)",
   "permissions": ["storage", "unlimitedStorage", "debugger", "identity", "tabs", "webNavigation"],
   "host_permissions": [

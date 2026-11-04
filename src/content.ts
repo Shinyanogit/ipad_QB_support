@@ -3743,8 +3743,8 @@ let uwCopyVisible = false;
 
 function syncCopyButton() {
   uwCopyVisible = isUwCopyVisible();
-  const visible = !uwCopyVisible && !!readCopyQuestion(document);
-  if (!visible) {
+  const question = uwCopyVisible ? null : readCopyQuestion(document);
+  if (!question) {
     if (copyButton) copyButton.hidden = true;
     return;
   }
@@ -3752,8 +3752,6 @@ function syncCopyButton() {
     copyButton = document.createElement("button");
     copyButton.type = "button";
     copyButton.className = "qb-support-copy-button";
-    copyButton.title = "問題と解説をコピー";
-    copyButton.setAttribute("aria-label", "問題と解説をコピー");
     copyButton.innerHTML =
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg>';
     copyButton.addEventListener("click", (event) => {
@@ -3763,6 +3761,10 @@ function syncCopyButton() {
     });
     document.body.appendChild(copyButton);
   }
+  // Before answering it copies the question and choices; after, the answer and explanation too.
+  const title = `${question.answered ? "問題と解説をコピー" : "問題をコピー"} ${settings.copyKey}`;
+  copyButton.title = title;
+  copyButton.setAttribute("aria-label", title);
   copyButton.hidden = false;
 }
 
