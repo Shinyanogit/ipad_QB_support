@@ -179,7 +179,7 @@
 - QB のページで両方の拡張機能が何も出さない（2026-11-04）: サイト別の許可が無いのが原因（`07_SAFARI_SETUP.md`）。本人が両方を「許可」にして再読み込みすれば直る見込み。直ったかは次に本人が QB を開いた時に分かる
 - [x] 守りの改善（2026-11-04 夜、本人の指示で前倒し）: QB Support 0.1.25 と UW Support 1.6.34 に、astra 案3つと判別テストで出た2件（storage が答えないと両方止まる、QB の設定パネルを閉じるとコピーが出ない）の修正、UW Support のアプリ画面の許可の案内を入れた。判別テストの前後の表は `07_SAFARI_SETUP.md`。mini でビルドしてリンクで配った。iPad に入れるのと、両方の拡張機能で qb.medilink-study.com を「許可」にするのは本人
 - [x] UW Support 1.6.32 から 1.6.35 は、astra の Chrome 監査（A17 から A17d、最後は BLOCKER 0件）を通して 2026-11-04 に USMLE_support の main へ取り込んだ（c52aaf9、同日 origin へ push）。監査で出た QB の読み取りの直しは本拡張の `qbCopy.ts` にも入れた（`07_SAFARI_SETUP.md` の「main 取り込み前の監査で直したこと」）
-- [x] UW Support 1.6.36（iPad で拡張の background が数分止まっても翻訳を mini の helper へ直接頼む、ページ移動後の1回目の翻訳で前の問題のキャッシュを使う不具合と、やり直しがそのキャッシュを消す不具合の修正、Safari だけ）を、astra の監査 A21 から A21e（最後は指摘0件）を通して 2026-11-05 に USMLE_support の main へ取り込んだ（515cab9、同日 origin へ push）。QB Support は 0.1.26 のままで、同じリンクで一緒に配った。詳細は `USMLE_support/docs/TODO_PLAN.md` と `USMLE_support/docs/IPAD_CHAT_CONTRACTS.md` §18
+- [x] UW Support 1.6.36（iPad で拡張の background が数分止まっても翻訳を mini の helper へ直接頼む、ページ移動後の1回目の翻訳で前の問題のキャッシュを使う不具合と、やり直しがそのキャッシュを消す不具合の修正、Safari だけ）を、astra の監査 A21 から A21e（最後は指摘0件）を通して 2026-11-05 に USMLE_support の main へ取り込んだ（515cab9、同日 origin へ push）。QB Support は 0.1.26 のままで、同じリンクで一緒に配ったが、17:31 から 18:31 の間にどちらも取られずに止まった（iPad の UW Support はまだ 1.6.33、入れるにはリンクを開き直す）。詳細は `USMLE_support/docs/TODO_PLAN.md` と `USMLE_support/docs/IPAD_CHAT_CONTRACTS.md` §18
 - Xcode プロジェクト `QB Support/` を git に入れるか決める（11-03 の2件と 11-04 の1件の修正が mini の作業コピーにしか無い）
 - 新UI修正後のAtlas実機確認（拡張リロード → QBタブ再読み込み → `key-capture` / `action-local` / 各targetログを確認）
 - 明るい背景を持つ解説カードが黒背景・白文字・白系罫線になることをAtlas実機確認（`[QB_SUPPORT][theme] normalized light explanation surfaces` はdebug有効時のみ）
