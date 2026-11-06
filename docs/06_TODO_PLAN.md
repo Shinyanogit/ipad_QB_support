@@ -153,6 +153,7 @@
 - 将来: UWorld 版（`プログラミング/USMLE_support`）にも同じ流れを展開（単元区分はUW仕様）。
 
 ## Next
+- [ ] `?`（Shift+/）でショートカットのチートシートを開く（2026-11-06、本人の要望）。UW Support と同じ形にそろえる。内容と条件は `../../USMLE_support/docs/TODO_PLAN.md` の中期タスク
 - **保存済み振り返りのVault出力/helper API（優先度上げ・2026-08-19）**。storage.local は
   ブラウザ×プロファイル単位で孤立し、Atlas→Chrome 移行で振り返りが2箇所に分裂した
   （exporter側は全ブラウザ走査＋マージで暫定対応済み）。ブラウザ非依存の正本を helper 経由で
