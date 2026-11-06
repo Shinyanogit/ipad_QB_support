@@ -737,7 +737,7 @@
   var FULLWIDTH = "\uFF41\uFF42\uFF43\uFF44\uFF45\uFF46\uFF47\uFF48\uFF49";
   var OLD_OPTIONS = ".multiple-answer-options li, .single-answer-options li";
   var OURS = "#qb-support-root, #qb-support-reflection, #qb-support-reflection-lightbox, #qb-support-chat-root, #qb-support-chat-toggle, #qb-support-chat-templates, .qb-support-chat-resizer, .qb-support-chat-overlay-handle, .qb-support-copy-button, .qb-support-copy-toast, .qb-support-copy-buffer, #uw-support-settings-panel, #uw-support-settings-btn, #uw-support-chat, #uw-support-capture-toast, [data-uw-support]";
-  var HINT = "\u4E0A\u8A18\u306B\u3064\u3044\u3066\u7D76\u5999\u306A\u30D2\u30F3\u30C8\u3092\u304F\u3060\u3055\u3044\u3002\u4ECA\u306E\u8003\u5BDF\u306F\u4EE5\u4E0B\u3067\u3059\u3002\n\u30FB";
+  var HINT = "\u7D76\u5999\u306A\u30D2\u30F3\u30C8\uFF08\u7B54\u3048\u3042\u308A\u304D\u3067\u306A\u304F\u3001\u6240\u898B\u3084\u75C7\u72B6\u304B\u3089\u63A8\u8AD6\u3059\u308B\u8996\u70B9\u3067\u601D\u8003\u529B\u3092\u990A\u3046\u7B54\u3048\u306B\u8FEB\u308A\u3059\u304E\u306A\u3044\u3082\u306E\uFF09\u3092\u3069\u3046\u305E\u3002\u4ECA\u306E\u8003\u5BDF\u306F\u4EE5\u4E0B\u3067\u3059\u3002\n\u30FB";
   var squash = (value) => String(value || "").replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").replace(/\s*\n\s*/g, "\n").trim();
   var ours = (el) => !!el?.closest?.(OURS);
   var ownText = (el) => Array.from(el.querySelectorAll(OURS)).filter((own) => !own.parentElement?.closest(OURS)).reduce((text, own) => text.replace(own.innerText, ""), el.innerText);

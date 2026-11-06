@@ -19,7 +19,8 @@ const OURS =
   "#qb-support-root, #qb-support-reflection, #qb-support-reflection-lightbox, #qb-support-chat-root, #qb-support-chat-toggle, " +
   "#qb-support-chat-templates, .qb-support-chat-resizer, .qb-support-chat-overlay-handle, .qb-support-copy-button, .qb-support-copy-toast, " +
   ".qb-support-copy-buffer, #uw-support-settings-panel, #uw-support-settings-btn, #uw-support-chat, #uw-support-capture-toast, [data-uw-support]";
-const HINT = "上記について絶妙なヒントをください。今の考察は以下です。\n・";
+// The closing request in the owner's words (2026-11-06); UW Support's chat_core.js has the same string.
+const HINT = "絶妙なヒント（答えありきでなく、所見や症状から推論する視点で思考力を養う答えに迫りすぎないもの）をどうぞ。今の考察は以下です。\n・";
 
 type Option = { row: HTMLElement; body: HTMLElement; old: boolean };
 
