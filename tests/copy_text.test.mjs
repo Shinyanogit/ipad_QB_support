@@ -8,7 +8,7 @@ const two = {
   choices: [{ letter: "a", text: "直腸指診を行う．" }, { letter: "b", text: "CT を撮る．" }],
   answered: false, answer: "", selected: "", explanation: "",
 };
-assert.equal(copyText(two), "23歳の男性．\n腹痛を主訴に来院した．\n\na. 直腸指診を行う．\nb. CT を撮る．\n\n上記について絶妙なヒントをください。今の考察は以下です。\n・");
+assert.equal(copyText(two), "23歳の男性．\n腹痛を主訴に来院した．\n\na. 直腸指診を行う．\nb. CT を撮る．\n\n絶妙なヒント（答えありきでなく、所見や症状から推論する視点で思考力を養う答えに迫りすぎないもの）をどうぞ。今の考察は以下です。\n・");
 assert.equal(copyText({ ...two, answered: true, answer: "a", selected: "b", explanation: "虫垂炎を疑う．" }),
   "23歳の男性．\n腹痛を主訴に来院した．\n\na. 直腸指診を行う．\nb. CT を撮る．\n\n正解: a（自分の解答: b）\n\n解説:\n虫垂炎を疑う．");
 assert.equal(copyText({ ...two, answered: true, answer: "c, e", selected: "c, e" }),
